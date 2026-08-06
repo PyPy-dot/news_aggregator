@@ -64,41 +64,46 @@ class TestBaseAgent:
         """Тест очистки истории с сохранением системного промпта."""
         agent = BaseAgent(system_prompt="System", message_history_limit=3)
 
-        # Добавляем сообщения
+        # Добавляем сообщения (системное + 3 пользовательских = 4)
         agent.message_list.append({'role': 'user', 'content': 'Hello'})
         agent.message_list.append({'role': 'assistant', 'content': 'Hi'})
         agent.message_list.append({'role': 'user', 'content': 'How are you?'})
 
         assert len(agent.message_list) == 4
 
-        # Очищаем
+        # Очищаем — должно остаться системное + 2 последних (limit=3)
         agent.clear_message_list()
 
-        # Должен остаться только системный промпт
-        assert len(agent.message_list) == 1
+        # Лимит 3, системное занимает 1 место, значит остаётся 2 последних
+        assert len(agent.message_list) == 3
         assert agent.message_list[0]['role'] == 'system'
+        assert agent.message_list[0]['content'] == 'System'
 
     def test_clear_message_list_without_system(self):
         """Тест очистки истории без системного промпта."""
         agent = BaseAgent(message_history_limit=3)
 
-        # Добавляем сообщения
+        # Добавляем 5 сообщений
         for i in range(5):
             agent.message_list.append({'role': 'user', 'content': f'Message {i}'})
 
         assert len(agent.message_list) == 5
 
-        # Очищаем
+        # Очищаем — должно остаться последние 3 (limit)
         agent.clear_message_list()
 
-        # Должно остаться 2 последних сообщения (limit=3, но одно уже добавлено)
-        assert len(agent.message_list) == 2
+        # Лимит 3, нет системного, значит остаётся 3 последних
+        assert len(agent.message_list) == 3
+        # Проверяем, что остались последние сообщения
+        assert agent.message_list[0]['content'] == 'Message 2'
+        assert agent.message_list[1]['content'] == 'Message 3'
+        assert agent.message_list[2]['content'] == 'Message 4'
 
     def test_reset(self):
         """Тест полного сброса истории."""
         agent = BaseAgent(system_prompt="System", message_history_limit=3)
 
-        # Добавляем сообщения
+        # Добавляем сообщения (системное + 2 = 3)
         agent.message_list.append({'role': 'user', 'content': 'Hello'})
         agent.message_list.append({'role': 'assistant', 'content': 'Hi'})
 
@@ -110,6 +115,7 @@ class TestBaseAgent:
         # Должен остаться только системный промпт
         assert len(agent.message_list) == 1
         assert agent.message_list[0]['role'] == 'system'
+        assert agent.message_list[0]['content'] == 'System'
 
     def test_parse_json_response_simple(self):
         """Тест парсинга простого JSON."""

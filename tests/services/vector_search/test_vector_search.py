@@ -19,17 +19,20 @@ class TestEmbeddingService:
         service2 = EmbeddingService()
         assert service1 is service2
 
-    def test_embed_returns_list(self):
+    @pytest.mark.asyncio
+    async def test_embed_returns_list(self):
         """Проверка, что embed возвращает список float."""
+        import numpy as np
         # Мокаем модель
         with patch('services.vector_search.embeddings.SentenceTransformer') as mock_model_class:
             mock_model = MagicMock()
-            mock_model.encode.return_value = [0.1, 0.2, 0.3, 0.4]
+            # Возвращаем numpy array как в реальности
+            mock_model.encode.return_value = np.array([0.1, 0.2, 0.3, 0.4])
             mock_model.get_sentence_embedding_dimension.return_value = 4
             mock_model_class.return_value = mock_model
 
             service = EmbeddingService()
-            embedding = service.embed("test text")
+            embedding = await service.embed("test text")
 
             assert isinstance(embedding, list)
             assert len(embedding) == 4
@@ -37,9 +40,15 @@ class TestEmbeddingService:
 
     def test_embed_batch_returns_list_of_lists(self):
         """Проверка, что embed_batch возвращает список списков."""
+        import numpy as np
+        # Сбрасываем singleton для чистоты теста
+        EmbeddingService._instance = None
+        EmbeddingService._model = None
+
         with patch('services.vector_search.embeddings.SentenceTransformer') as mock_model_class:
             mock_model = MagicMock()
-            mock_model.encode.return_value = [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]]
+            # Возвращаем 2D numpy array как в реальности
+            mock_model.encode.return_value = np.array([[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]])
             mock_model.get_sentence_embedding_dimension.return_value = 2
             mock_model_class.return_value = mock_model
 

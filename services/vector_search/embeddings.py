@@ -87,12 +87,16 @@ class EmbeddingService:
         Returns:
             Вектор эмбеддинга
         """
-        embedding = self.model.encode(
+        import numpy as np
+        result = self.model.encode(
             text,
             convert_to_numpy=True,
             normalize_embeddings=True,
-        ).tolist()
-        return embedding
+        )
+        # Конвертируем numpy array в список
+        if isinstance(result, np.ndarray):
+            return result.tolist()
+        return result
 
     async def embed(self, text: str) -> list[float]:
         """
@@ -109,10 +113,6 @@ class EmbeddingService:
         """
         import time
         start = time.time()
-
-        # Проверяем кэш сначала
-        if text in self._embed_cached.cache_info().__dict__.get('cache', {}):
-            logger.debug(f"⚡ Эмбеддинг взят из кэша для '{text[:30]}...'")
 
         # Выполняем в background thread для неблокирующего выполнения
         embedding = await asyncio.to_thread(
@@ -142,15 +142,22 @@ class EmbeddingService:
             Список векторных эмбеддингов
         """
         import time
+        import numpy as np
         start = time.time()
 
-        embeddings = self.model.encode(
+        result = self.model.encode(
             texts,
             convert_to_numpy=True,
             normalize_embeddings=True,
             batch_size=batch_size,
             show_progress_bar=show_progress,
-        ).tolist()
+        )
+
+        # Конвертируем numpy array в список списков
+        if isinstance(result, np.ndarray):
+            embeddings = result.tolist()
+        else:
+            embeddings = result
 
         elapsed_ms = (time.time() - start) * 1000
         logger.info(
