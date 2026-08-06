@@ -14,7 +14,7 @@ from database import async_session, RepositoryFactory
 from services.bot.handlers.keyboards import (
     publishers_menu_kb,
     publishers_list_view_kb,
-    publisher_action_kb,
+    create_publisher_action_kb,
     create_publishers_choice_kb,
     add_publisher_kb,
     kb2,
@@ -193,22 +193,56 @@ async def cb_publisher_action(callback: CallbackQuery):
         f"Статус: {status}\n"
         f"Описание: {publisher.description[:100] if publisher.description else 'Нет'}\n\n"
         "Выберите действие:",
-        reply_markup=publisher_action_kb,
+        reply_markup=create_publisher_action_kb(publisher_id),
     )
 
 
 # === Активация/деактивация ===
-@router.callback_query(F.data == 'activate_publisher')
-@router.callback_query(F.data == 'deactivate_publisher')
+@router.callback_query(F.data.startswith('activate_publisher_'))
+@router.callback_query(F.data.startswith('deactivate_publisher_'))
 async def cb_toggle_publisher(callback: CallbackQuery):
-    """Активировать или деактивировать канал."""
+    """
+    Активировать или деактивировать канал публикации.
+
+    Обработчик для callback вида 'activate_publisher_<id>' или 'deactivate_publisher_<id>'.
+    """
     if not await check_admin_access(callback):
         return
 
     await callback.answer()
 
-    # Получаем ID из предыдущего сообщения (нужно будет доработать)
-    await callback.message.answer("⚠️ Функция в разработке. Выберите канал из списка.")
+    # Извлекаем ID publisher и действие из callback
+    try:
+        parts = callback.data.split('_')
+        action = parts[0]  # 'activate' или 'deactivate'
+        publisher_id = int(parts[-1])
+    except (ValueError, IndexError):
+        await callback.message.answer("❌ Неверный формат команды.", reply_markup=publishers_list_view_kb)
+        return
+
+    async with async_session() as session:
+        factory = RepositoryFactory(session)
+        publisher = await factory.publishers().get_by_id(publisher_id)
+
+        if not publisher:
+            await callback.message.answer("❌ Канал не найден.", reply_markup=publishers_list_view_kb)
+            return
+
+        # Устанавливаем новое состояние
+        new_status = action == 'activate'
+        publisher.is_active = new_status
+        await session.commit()
+
+        status_text = "✅ Активирован" if new_status else "❌ Деактивирован"
+
+    await callback.message.answer(
+        f"📢 **Канал {status_text}**\n\n"
+        f"🔹 {publisher.title}\n"
+        f"🆔 ID: `{publisher.channel_id}`\n\n"
+        f"Теперь канал {'будет' if new_status else 'не будет'} получать новости для публикации.",
+        reply_markup=publishers_list_view_kb,
+    )
+    logger.info(f"Publisher ID={publisher_id} ({publisher.title}) {'активирован' if new_status else 'деактивирован'}")
 
 
 # === Удаление ===

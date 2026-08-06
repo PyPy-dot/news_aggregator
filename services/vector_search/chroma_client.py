@@ -178,16 +178,19 @@ class ChromaVectorStore:
             include=['metadatas', 'distances'],
         )
 
-        # Форматируем результаты
+        # Форматируем результаты с защитой от отсутствующих ключей
         formatted = []
         if results['ids'] and results['ids'][0]:
             for i, id in enumerate(results['ids'][0]):
+                metadata = results['metadatas'][0][i] if results['metadatas'] else {}
+                distance = results['distances'][0][i] if results['distances'] else 0
+
                 formatted.append({
                     'id': id,
-                    'text': results['metadatas'][0][i].get('text', ''),
-                    'metadata': results['metadatas'][0][i],
-                    'distance': results['distances'][0][i] if results['distances'] else 0,
-                    'score': 1 - results['distances'][0][i] if results['distances'] else 1,  # Косинусное сходство
+                    'text': metadata.get('text', ''),
+                    'metadata': metadata,
+                    'distance': distance,
+                    'score': 1 - distance,  # Косинусное сходство (distance ∈ [0, 1])
                 })
 
         logger.debug(

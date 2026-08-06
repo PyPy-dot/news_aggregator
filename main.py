@@ -51,8 +51,10 @@ async def main():
         await shutdown_event.wait()
     except (KeyboardInterrupt, asyncio.CancelledError):
         logger.info("Получен сигнал прерывания")
-    except Exception as e:
-        logger.error(f"Ошибка в основном цикле: {e}")
+    except asyncio.TimeoutError as e:
+        logger.error(f"Timeout в основном цикле: {e}")
+    except RuntimeError as e:
+        logger.error(f"RuntimeError в основном цикле: {e}")
     finally:
         logger.info("Остановка ботов и планировщика...")
 
@@ -65,18 +67,24 @@ async def main():
 
         try:
             await listener.on_stop()
-        except Exception as e:
+        except (asyncio.CancelledError, RuntimeError) as e:
             logger.error(f"Ошибка при остановке listener: {e}")
+        except Exception as e:
+            logger.error(f"Неожиданная ошибка при остановке listener: {e}")
 
         try:
             await scheduler.stop()
-        except Exception as e:
+        except (asyncio.CancelledError, RuntimeError) as e:
             logger.error(f"Ошибка при остановке планировщика: {e}")
+        except Exception as e:
+            logger.error(f"Неожиданная ошибка при остановке планировщика: {e}")
 
         try:
             await main_bot.bot.session.close()
-        except Exception:
+        except (asyncio.CancelledError, RuntimeError):
             pass
+        except Exception as e:
+            logger.error(f"Ошибка при закрытии сессии бота: {e}")
 
         logger.info('👋 Бот выключен')
 

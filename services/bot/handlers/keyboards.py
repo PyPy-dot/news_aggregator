@@ -101,14 +101,24 @@ add_publisher_kb = ReplyKeyboardMarkup(keyboard=[
     [KeyboardButton(text='🔙 Назад')]
 ], resize_keyboard=True, one_time_keyboard=True)
 
-publisher_action_kb = InlineKeyboardMarkup(
-    inline_keyboard=[
-        [InlineKeyboardButton(text='✅ Активировать', callback_data='activate_publisher'),
-         InlineKeyboardButton(text='❌ Деактивировать', callback_data='deactivate_publisher')],
-        [InlineKeyboardButton(text='🗑️ Удалить', callback_data='delete_publisher')],
-        [InlineKeyboardButton(text='🔙 Назад', callback_data='publishers_menu')]
-    ]
-)
+def create_publisher_action_kb(publisher_id: int) -> InlineKeyboardMarkup:
+    """
+    Создать клавиатуру действий для конкретного publisher.
+
+    Args:
+        publisher_id: ID publisher
+
+    Returns:
+        InlineKeyboardMarkup с кнопками действий
+    """
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text='✅ Активировать', callback_data=f'activate_publisher_{publisher_id}'),
+             InlineKeyboardButton(text='❌ Деактивировать', callback_data=f'deactivate_publisher_{publisher_id}')],
+            [InlineKeyboardButton(text='🗑️ Удалить', callback_data=f'delete_publisher_{publisher_id}')],
+            [InlineKeyboardButton(text='🔙 Назад', callback_data='publishers_menu')]
+        ]
+    )
 
 # Клавиатура для выбора канала публикации (при одобрении новости)
 def create_publishers_choice_kb(publishers: list) -> InlineKeyboardMarkup:

@@ -212,7 +212,7 @@ async def find_similar_events(
     """
     try:
         search_engine = get_vector_search_engine()
-        results = search_engine.find_similar_events(
+        results = await search_engine.find_similar_events(
             query_text=text,
             category_filter=category,
             limit=limit,
@@ -245,7 +245,7 @@ async def find_similar_posts(
     """
     try:
         search_engine = get_vector_search_engine()
-        results = search_engine.find_similar_posts(
+        results = await search_engine.find_similar_posts(
             query_text=text,
             category_filter=category,
             limit=limit,
@@ -331,7 +331,7 @@ async def add_event_to_vector_index(
         # Формируем текст для поиска
         search_text = f"{summary} {json.dumps(context_data, ensure_ascii=False)}".strip()
 
-        search_engine.add_event(
+        await search_engine.add_event(
             id=f"event_{event_id}",
             text=search_text,
             event_category=event_category,
@@ -364,7 +364,7 @@ async def add_news_to_vector_index(
     try:
         search_engine = get_vector_search_engine()
 
-        search_engine.add_news(
+        await search_engine.add_news(
             id=f"news_{news_id}",
             text=text,
             category=category,

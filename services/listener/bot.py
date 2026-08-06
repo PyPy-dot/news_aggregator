@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 _event_handlers_registered = False
 _event_bus_started = False
 _processed_messages = set()  # Кэш для предотвращения дублирования постов
+_messages_lock = asyncio.Lock()  # Lock для защиты _processed_messages от race condition
 
 # Очередь для категоризации (пропускная способность 2 запроса)
 _categorization_queue = deque(maxlen=10)
@@ -473,15 +474,20 @@ class ListenerBot:
 
         msg_key = f"{channel_id}:{message_id}"
 
-        if msg_key in _processed_messages:
-            logger.debug(f"Сообщение {msg_key} уже обработано, пропускаем")
-            return
+        # Проверяем и добавляем сообщение в обработанные с защитой от race condition
+        async with _messages_lock:
+            if msg_key in _processed_messages:
+                logger.debug(f"Сообщение {msg_key} уже обработано, пропускаем")
+                return
 
-        _processed_messages.add(msg_key)
+            _processed_messages.add(msg_key)
 
-        if len(_processed_messages) > 1000:
-            for _ in range(500):
-                _processed_messages.pop()
+            # Очищаем старые записи, используя deque для эффективности
+            if len(_processed_messages) > 1000:
+                # Оставляем только последние 500
+                items = list(_processed_messages)
+                _processed_messages.clear()
+                _processed_messages.update(items[-500:])
 
         # Получаем канал через репозиторий
         async with async_session() as session:

@@ -3,6 +3,7 @@ User repository для работы с пользователями.
 """
 
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy import select, update
@@ -11,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database.models import User
 from database.repositories.base import BaseRepository
 from services.util import encrypt_user_id, decrypt_user_id, hash_user_id_for_lookup, get_encryption_key
+
+logger = logging.getLogger(__name__)
 
 
 class UserRepository(BaseRepository[User]):
@@ -221,5 +224,30 @@ class UserRepository(BaseRepository[User]):
 
         Returns:
             Telegram ID
+
+        Raises:
+            ValueError: Если не удалось расшифровать ID
         """
-        return decrypt_user_id(user.user_id_encrypted)
+        try:
+            return decrypt_user_id(user.user_id_encrypted)
+        except ValueError as e:
+            logger.error(f"Ошибка расшифровки user_id для пользователя ID={user.id}: {e}")
+            raise
+
+    def get_user_telegram_id_safe(self, user: User) -> int | None:
+        """
+        Безопасно расшифровать Telegram ID пользователя.
+
+        В отличие от get_user_telegram_id(), возвращает None вместо выброса исключения.
+
+        Args:
+            user: Пользователь
+
+        Returns:
+            Telegram ID или None если не удалось расшифровать
+        """
+        try:
+            return decrypt_user_id(user.user_id_encrypted)
+        except ValueError as e:
+            logger.warning(f"Не удалось расшифровать user_id для пользователя ID={user.id}: {e}")
+            return None

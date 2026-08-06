@@ -2,6 +2,7 @@
 Vector Search Engine — высокоуровневый API для поиска похожих событий и новостей.
 """
 
+import json
 import logging
 from typing import Optional, Any
 
@@ -62,7 +63,7 @@ class VectorSearchEngine:
 
     # === Добавление данных ===
 
-    def add_event(
+    async def add_event(
         self,
         id: str,
         text: str,
@@ -85,7 +86,7 @@ class VectorSearchEngine:
         # Создаём объединённый текст для лучшего поиска
         search_text = f"{summary} {text}".strip()
 
-        embedding = self.embeddings.embed(search_text)
+        embedding = await self.embeddings.embed(search_text)
 
         self.vector_store.add(
             collection_name=COLLECTION_EVENTS,
@@ -96,11 +97,10 @@ class VectorSearchEngine:
                 'event_category': event_category,
                 'post_id': post_id,
                 'tags': json.dumps(tags) if tags else '[]',
-                'type': 'event',
             },
         )
 
-    def add_news(
+    async def add_news(
         self,
         id: str,
         text: str,
@@ -118,8 +118,7 @@ class VectorSearchEngine:
             source_post_ids: ID исходных постов
             tags: Теги новости
         """
-        import json
-        embedding = self.embeddings.embed(text)
+        embedding = await self.embeddings.embed(text)
 
         self.vector_store.add(
             collection_name=COLLECTION_NEWS,
@@ -130,11 +129,10 @@ class VectorSearchEngine:
                 'category': category,
                 'source_post_ids': json.dumps(source_post_ids),
                 'tags': json.dumps(tags) if tags else '[]',
-                'type': 'news',
             },
         )
 
-    def add_post(
+    async def add_post(
         self,
         id: str,
         text: str,
@@ -152,7 +150,7 @@ class VectorSearchEngine:
             category: Категория
             urgency: Срочность (1-5)
         """
-        embedding = self.embeddings.embed(text)
+        embedding = await self.embeddings.embed(text)
 
         self.vector_store.add(
             collection_name=COLLECTION_POSTS,
@@ -163,13 +161,12 @@ class VectorSearchEngine:
                 'channel_id': channel_id,
                 'category': category,
                 'urgency': urgency,
-                'type': 'post',
             },
         )
 
     # === Поиск ===
 
-    def find_similar_events(
+    async def find_similar_events(
         self,
         query_text: str,
         limit: int = 5,
@@ -188,7 +185,7 @@ class VectorSearchEngine:
         Returns:
             Список похожих событий с score
         """
-        query_embedding = self.embeddings.embed(query_text)
+        query_embedding = await self.embeddings.embed(query_text)
 
         filter_metadata = None
         if category_filter:
@@ -210,7 +207,7 @@ class VectorSearchEngine:
 
         return filtered
 
-    def find_similar_posts(
+    async def find_similar_posts(
         self,
         query_text: str,
         limit: int = 10,
@@ -229,7 +226,7 @@ class VectorSearchEngine:
         Returns:
             Список похожих постов с score
         """
-        query_embedding = self.embeddings.embed(query_text)
+        query_embedding = await self.embeddings.embed(query_text)
 
         filter_metadata = None
         if category_filter:
@@ -248,7 +245,7 @@ class VectorSearchEngine:
 
         return filtered
 
-    def find_related_news(
+    async def find_related_news(
         self,
         query_text: str,
         limit: int = 5,
@@ -267,7 +264,7 @@ class VectorSearchEngine:
         Returns:
             Список связанных новостей с score
         """
-        query_embedding = self.embeddings.embed(query_text)
+        query_embedding = await self.embeddings.embed(query_text)
 
         filter_metadata = None
         if category_filter:
@@ -286,7 +283,7 @@ class VectorSearchEngine:
 
         return filtered
 
-    def group_posts_to_events(
+    async def group_posts_to_events(
         self,
         post_text: str,
         post_category: str,
@@ -303,7 +300,7 @@ class VectorSearchEngine:
         Returns:
             Найденное событие или None
         """
-        similar_events = self.find_similar_events(
+        similar_events = await self.find_similar_events(
             query_text=post_text,
             category_filter=post_category,
             limit=1,
@@ -344,7 +341,3 @@ class VectorSearchEngine:
             f"(events: {stats['events']}, news: {stats['news']}, "
             f"posts: {stats['posts']})"
         )
-
-
-# Импортируем json для сериализации
-import json

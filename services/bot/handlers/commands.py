@@ -7,6 +7,7 @@ from services.bot.handlers.keyboards import admin_kb, user_kb, ikb1, ikb_trusted
 from services.bot.handlers.states import AddChannel, TrustedChannel
 from services.bot.utils import show_last_posts, show_generated_news
 from services.bot.handlers import publishers  # noqa: F401
+from services.bot.handlers.access import check_admin_access, is_admin
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import Command
 from aiogram.types import Message
@@ -25,11 +26,9 @@ async def start(message: Message):
         await user_repo.get_or_create_user(telegram_id=message.from_user.id)
 
     # Проверяем, является ли пользователь админом
-    async with async_session() as session:
-        user_repo = UserRepository(session)
-        is_admin = await user_repo.is_admin(message.from_user.id)
+    admin_status = await is_admin(message.from_user.id)
 
-    if is_admin:
+    if admin_status:
         await message.answer(
             '👋 Привет! Я бот для управления новостями.\n\n'
             '**Админ-панель**\nВыберите действие в меню:',
@@ -46,13 +45,8 @@ async def start(message: Message):
 @admin.message(Command('get_photo_id'))
 async def get_photo(message: Message):
     """Команда /get_photo_id — получить ID фото."""
-    # Проверяем права администратора
-    async with async_session() as session:
-        user_repo = UserRepository(session)
-        user = await user_repo.get_by_telegram_id(message.from_user.id)
-        if not user or user.role != 'admin':
-            await message.answer('❌ У вас нет прав для этой команды')
-            return
+    if not await check_admin_access(message):
+        return
 
     await message.answer('Пришли фото, id которого нужно получить')
 
@@ -61,13 +55,8 @@ async def get_photo(message: Message):
 @admin.message(Command('edit_channels'))
 async def edit_channels(message: Message, state: FSMContext):
     """Команда /edit_channels — управление каналами."""
-    # Проверяем права администратора
-    async with async_session() as session:
-        user_repo = UserRepository(session)
-        user = await user_repo.get_by_telegram_id(message.from_user.id)
-        if not user or user.role != 'admin':
-            await message.answer('❌ У вас нет прав для управления каналами')
-            return
+    if not await check_admin_access(message):
+        return
 
     await state.set_state(AddChannel.edit_channels)
     await message.answer('Что сделать?', reply_markup=ikb1)
@@ -77,13 +66,8 @@ async def edit_channels(message: Message, state: FSMContext):
 @admin.message(Command('trusted_channels'))
 async def trusted_channels(message: Message, state: FSMContext):
     """Команда /trusted_channels — управление доверенными источниками."""
-    # Проверяем права администратора
-    async with async_session() as session:
-        user_repo = UserRepository(session)
-        user = await user_repo.get_by_telegram_id(message.from_user.id)
-        if not user or user.role != 'admin':
-            await message.answer('❌ У вас нет прав для управления доверенными источниками')
-            return
+    if not await check_admin_access(message):
+        return
 
     await state.set_state(TrustedChannel.select_channel)
     await message.answer(
@@ -96,13 +80,8 @@ async def trusted_channels(message: Message, state: FSMContext):
 @admin.message(Command('edit_sites'))
 async def edit_sites(message: Message):
     """Команда /edit_sites — работа с сайтами (не реализовано)."""
-    # Проверяем права администратора
-    async with async_session() as session:
-        user_repo = UserRepository(session)
-        user = await user_repo.get_by_telegram_id(message.from_user.id)
-        if not user or user.role != 'admin':
-            await message.answer('❌ У вас нет прав для этой команды')
-            return
+    if not await check_admin_access(message):
+        return
 
     await message.answer('Пока не реализовано')
 
@@ -110,13 +89,8 @@ async def edit_sites(message: Message):
 @admin.message(Command('gen_news_by_id'))
 async def gen_news_by_id(message: Message):
     """Команда /gen_news_by_id — генерация новости по ID поста."""
-    # Проверяем права администратора
-    async with async_session() as session:
-        user_repo = UserRepository(session)
-        user = await user_repo.get_by_telegram_id(message.from_user.id)
-        if not user or user.role != 'admin':
-            await message.answer('❌ У вас нет прав для этой команды')
-            return
+    if not await check_admin_access(message):
+        return
 
     try:
         parts = message.text.split()
@@ -136,13 +110,8 @@ async def gen_news_by_id(message: Message):
 @admin.message(Command('last_posts'))
 async def last_posts(message: Message):
     """Команда /last_posts — показать последние посты."""
-    # Проверяем права администратора
-    async with async_session() as session:
-        user_repo = UserRepository(session)
-        user = await user_repo.get_by_telegram_id(message.from_user.id)
-        if not user or user.role != 'admin':
-            await message.answer('❌ У вас нет прав для просмотра этой информации')
-            return
+    if not await check_admin_access(message):
+        return
 
     await show_last_posts(message, limit=10)
 
@@ -150,13 +119,8 @@ async def last_posts(message: Message):
 @admin.message(Command('generated_news'))
 async def generated_news_list(message: Message):
     """Команда /generated_news — показать последние сгенерированные новости."""
-    # Проверяем права администратора
-    async with async_session() as session:
-        user_repo = UserRepository(session)
-        user = await user_repo.get_by_telegram_id(message.from_user.id)
-        if not user or user.role != 'admin':
-            await message.answer('❌ У вас нет прав для просмотра этой информации')
-            return
+    if not await check_admin_access(message):
+        return
 
     await show_generated_news(message, limit=10)
 
@@ -164,13 +128,8 @@ async def generated_news_list(message: Message):
 @admin.message(Command('publishers'))
 async def publishers_menu(message: Message):
     """Команда /publishers — управление каналами публикации."""
-    # Проверяем права администратора
-    async with async_session() as session:
-        user_repo = UserRepository(session)
-        user = await user_repo.get_by_telegram_id(message.from_user.id)
-        if not user or user.role != 'admin':
-            await message.answer('❌ У вас нет прав для управления каналами')
-            return
+    if not await check_admin_access(message):
+        return
 
     from services.bot.handlers.publishers import cmd_publishers
     await cmd_publishers(message)
@@ -180,13 +139,8 @@ async def publishers_menu(message: Message):
 @admin.message(Command('direct_news'))
 async def direct_news_menu(message: Message, state: FSMContext):
     """Команда /direct_news — прямая генерация новости админом."""
-    # Проверяем права администратора
-    async with async_session() as session:
-        user_repo = UserRepository(session)
-        user = await user_repo.get_by_telegram_id(message.from_user.id)
-        if not user or user.role != 'admin':
-            await message.answer('❌ У вас нет прав для генерации новостей')
-            return
+    if not await check_admin_access(message):
+        return
 
     from services.bot.handlers.states import DirectNewsStates
     from aiogram.types import ReplyKeyboardRemove
@@ -227,8 +181,6 @@ async def pending_moderation(message: Message):
 async def approve_news(message: Message):
     """Команда /approve_news <ID> — одобрить новость."""
     from services.bot.utils import approve_news_by_id
-    from database.repositories.users import UserRepository
-    from database.models import async_session
 
     try:
         parts = message.text.split()
@@ -238,16 +190,10 @@ async def approve_news(message: Message):
 
         news_id = int(parts[1])
 
-        # Получаем ID админа из БД
-        async with async_session() as session:
-            user_repo = UserRepository(session)
-            user = await user_repo.get_by_telegram_id(message.from_user.id)
-            if not user or user.role != 'admin':
-                await message.answer('❌ У вас нет прав администратора')
-                return
-            admin_telegram_id = message.from_user.id
+        if not await check_admin_access(message):
+            return
 
-        await approve_news_by_id(message, news_id, admin_telegram_id)
+        await approve_news_by_id(message, news_id, message.from_user.id)
 
     except ValueError:
         await message.answer('Неверный формат ID. Используйте число.')
@@ -257,8 +203,6 @@ async def approve_news(message: Message):
 async def reject_news(message: Message):
     """Команда /reject_news <ID> — отклонить новость."""
     from services.bot.utils import reject_news_by_id
-    from database.repositories.users import UserRepository
-    from database.models import async_session
 
     try:
         parts = message.text.split()
@@ -268,16 +212,10 @@ async def reject_news(message: Message):
 
         news_id = int(parts[1])
 
-        # Получаем ID админа из БД
-        async with async_session() as session:
-            user_repo = UserRepository(session)
-            user = await user_repo.get_by_telegram_id(message.from_user.id)
-            if not user or user.role != 'admin':
-                await message.answer('❌ У вас нет прав администратора')
-                return
-            admin_telegram_id = message.from_user.id
+        if not await check_admin_access(message):
+            return
 
-        await reject_news_by_id(message, news_id, admin_telegram_id)
+        await reject_news_by_id(message, news_id, message.from_user.id)
 
     except ValueError:
         await message.answer('Неверный формат ID. Используйте число.')

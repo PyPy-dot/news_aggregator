@@ -2,6 +2,7 @@
 Embedding Service — генерация векторных эмбеддингов через sentence-transformers.
 """
 
+import asyncio
 import logging
 from functools import lru_cache
 from typing import Optional
@@ -74,9 +75,31 @@ class EmbeddingService:
             _ = self.model  # Загружаем модель
         return self._embedding_dim  # type: ignore[return-value]
 
-    def embed(self, text: str) -> list[float]:
+    # Кэш для часто используемых текстов (максимум 1000 записей)
+    @lru_cache(maxsize=1000)
+    def _embed_cached(self, text: str) -> list[float]:
         """
-        Генерирует векторный эмбеддинг для текста.
+        Генерирует эмбеддинг с кэшированием.
+
+        Args:
+            text: Текст для эмбеддинга
+
+        Returns:
+            Вектор эмбеддинга
+        """
+        embedding = self.model.encode(
+            text,
+            convert_to_numpy=True,
+            normalize_embeddings=True,
+        ).tolist()
+        return embedding
+
+    async def embed(self, text: str) -> list[float]:
+        """
+        Генерирует векторный эмбеддинг для текста (асинхронно).
+
+        Использует кэш для часто используемых текстов.
+        Выполняется в background thread для неблокирующего выполнения.
 
         Args:
             text: Текст для эмбеддинга
@@ -87,11 +110,14 @@ class EmbeddingService:
         import time
         start = time.time()
 
-        embedding = self.model.encode(
-            text,
-            convert_to_numpy=True,
-            normalize_embeddings=True,  # L2 нормализация для косинусного сходства
-        ).tolist()
+        # Проверяем кэш сначала
+        if text in self._embed_cached.cache_info().__dict__.get('cache', {}):
+            logger.debug(f"⚡ Эмбеддинг взят из кэша для '{text[:30]}...'")
+
+        # Выполняем в background thread для неблокирующего выполнения
+        embedding = await asyncio.to_thread(
+            self._embed_cached, text
+        )
 
         elapsed_ms = (time.time() - start) * 1000
         logger.debug(f"⏱ Эмбеддинг сгенерирован за {elapsed_ms:.0f} мс")

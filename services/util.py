@@ -171,17 +171,29 @@ class ExecutionTimer:
 
 # === Шифрование user_id ===
 
-DEFAULT_ENCRYPTION_KEY = "news_aggregator_default_key_change_in_prod"
-
 
 def get_encryption_key() -> bytes:
     """
-    Получить ключ шифрования из окружения или использовать дефолтный.
+    Получить ключ шифрования из окружения.
 
     Returns:
         32-байтовый ключ для AES-256
+
+    Raises:
+        ValueError: Если ключ шифрования не задан в окружении
     """
-    key = os.getenv('ENCRYPTION_KEY', DEFAULT_ENCRYPTION_KEY)
+    key = os.getenv('ENCRYPTION_KEY')
+    if not key:
+        raise ValueError(
+            "Ключ шифрования не задан! Установите переменную окружения ENCRYPTION_KEY. "
+            "Минимальная длина ключа — 32 символа. "
+            "Пример: ENCRYPTION_KEY=your_secret_key_min_32_characters_long"
+        )
+    if len(key) < 32:
+        raise ValueError(
+            f"Ключ шифрования слишком короткий (длина: {len(key)}, минимум: 32). "
+            "Установите более длинный ключ в переменной окружения ENCRYPTION_KEY"
+        )
     return sha256(key.encode()).digest()
 
 
@@ -223,21 +235,35 @@ def decrypt_user_id(encrypted: str, key: bytes | None = None) -> int:
         Оригинальный user_id как int
 
     Raises:
-        ValueError: Если не удалось расшифровать
+        ValueError: Если не удалось расшифровать (некорректные данные или ключ)
     """
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from cryptography.exceptions import InvalidTag
 
     if key is None:
         key = get_encryption_key()
 
-    data = b64decode(encrypted)
-    nonce = data[:12]
-    ciphertext = data[12:]
+    try:
+        data = b64decode(encrypted)
+        if len(data) < 12:
+            raise ValueError("Некорректный формат зашифрованных данных")
 
-    aesgcm = AESGCM(key)
-    plaintext = aesgcm.decrypt(nonce, ciphertext, None)
+        nonce = data[:12]
+        ciphertext = data[12:]
 
-    return int(plaintext.decode('utf-8'))
+        aesgcm = AESGCM(key)
+        plaintext = aesgcm.decrypt(nonce, ciphertext, None)
+
+        return int(plaintext.decode('utf-8'))
+    except InvalidTag as e:
+        logger.error(f"Неверный ключ шифрования или повреждённые данные: {e}")
+        raise ValueError("Не удалось расшифровать: неверный ключ или повреждённые данные") from e
+    except (ValueError, UnicodeDecodeError) as e:
+        logger.error(f"Ошибка при расшифровке user_id: {e}")
+        raise ValueError(f"Не удалось расшифровать user_id: {e}") from e
+    except Exception as e:
+        logger.error(f"Неожиданная ошибка при расшифровке: {e}")
+        raise ValueError(f"Ошибка расшифровки: {e}") from e
 
 
 def hash_user_id_for_lookup(user_id: int, key: bytes | None = None) -> str:
