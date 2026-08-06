@@ -1,1 +1,38 @@
+# Environment
 /.env
+
+# Database
+/db.sqlite3
+
+# Telegram sessions
+/userbot.session
+/userbot.session-journal
+
+# Logs
+/logs/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+.env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Temporary files
+*.tmp
+*.bak
