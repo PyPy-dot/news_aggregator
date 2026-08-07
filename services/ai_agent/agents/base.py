@@ -8,6 +8,7 @@ import json
 from typing import Optional, Any
 
 from ollama import AsyncClient, ResponseError
+from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +25,8 @@ class BaseAgent:
 
     def __init__(
         self,
-        model: str = 'qwen2.5:7b',
-        message_history_limit: int = 5,
+        model: Optional[str] = None,
+        message_history_limit: Optional[int] = None,
         system_prompt: Optional[str] = None,
         base_url: str = 'http://localhost:11434',
     ) -> None:
@@ -33,14 +34,14 @@ class BaseAgent:
         Инициализация базового агента.
 
         Args:
-            model: Название модели
-            message_history_limit: Лимит истории сообщений
+            model: Название модели (по умолчанию из конфига)
+            message_history_limit: Лимит истории сообщений (по умолчанию из конфига)
             system_prompt: Системный промпт (загружается из файла)
             base_url: URL Ollama API
         """
-        self.model = model
+        self.model = model or settings.agent_model
         self.client = AsyncClient(base_url)
-        self._context_len = message_history_limit
+        self._context_len = message_history_limit or settings.agent_message_history_limit
         self._system_prompt = system_prompt
         self.message_list = self._init_message_list()
 

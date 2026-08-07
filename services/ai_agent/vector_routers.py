@@ -68,10 +68,14 @@ def register_vector_search_handlers(event_bus: EventBus) -> None:
     async def handle_generate_news(event: Event) -> None:
         """
         Обработчик генерации новости.
-        После генерации добавляет новость в векторный индекс.
+        После генерации добавляет новость в векторный индекс и отправляет уведомление админам.
         """
         from services.listener.helpers import add_generated_news
         from services.ai_agent.agents import EditorAgent
+        from services.telegram.notification import NotificationService
+        from database.repositories.posts import PostRepository
+        from database.repositories.channels import ChannelRepository
+        from services.core.database import get_database_service
 
         payload = event.payload
         post_id = payload.get('post_id')
@@ -109,6 +113,27 @@ def register_vector_search_handlers(event_bus: EventBus) -> None:
                 tags=news_result.get('tags', []),
             )
             logger.info(f"✅ Новость ID={news_id} сгенерирована и добавлена в векторный индекс")
+
+            # Отправляем уведомление админам о новости на модерации
+            # Получаем пост и канал для получения информации
+            if post_id:
+                async with get_database_service().session_context() as session:
+                    posts_repo = PostRepository(session)
+                    channels_repo = ChannelRepository(session)
+
+                    post = await posts_repo.get(post_id)
+                    if post:
+                        channel = await channels_repo.get_by_telegram_id(post.channel_id)
+                        channel_title = channel.title if channel else 'Неизвестно'
+
+                        notification_service = NotificationService()
+                        await notification_service.notify_pending_news(
+                            post_id=news_id,  # ID сгенерированной новости
+                            text=news_result.get('text', '')[:500],
+                            category=category,
+                            channel_title=channel_title,
+                        )
+                        logger.info(f"📬 Отправлено уведомление о новости ID={news_id} на модерации")
 
     @event_bus.on(EventType.NEW_NEWS)
     async def handle_new_news(event: Event) -> None:

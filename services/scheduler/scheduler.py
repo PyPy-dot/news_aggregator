@@ -11,71 +11,131 @@
 
 import asyncio
 import logging
-import json
-from datetime import datetime, timezone, time
+from datetime import datetime, time
+from typing import Optional
 from zoneinfo import ZoneInfo
 
-from database import RepositoryFactory, async_session
-from services.ai_agent.agents import (
-    AnalystAgent,
-    EditorAgent,
-    ArchivistAgent,
-)
-from services.ai_agent.routers import EventBus
-from services.ai_agent.events import Event, EventType
+from database import RepositoryFactory
+from services.news.orchestrator import NewsOrchestrator
+from services.core.database import get_database_service
+from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
 # Часовой пояс Москвы
 MSK_TZ = ZoneInfo('Europe/Moscow')
 
-# Время запусков планировщика (время Москвы)
-MORNING_RUN = time(9, 0)  # 09:00 МСК
-EVENING_RUN = time(21, 0)  # 21:00 МСК
+# Время запусков планировщика (время Москвы) — из конфига
+MORNING_RUN = time(settings.morning_hour, 0)
+EVENING_RUN = time(settings.evening_hour, 0)
 
 
 class Scheduler:
     """
     Планировщик задач для обработки новостей и событий.
 
-    Attributes:
-        repo_factory: Фабрика репозиториев
-        analyst: Агент-аналитик
-        editor: Агент-редактор
-        archivist: Агент-архивариус
-        event_bus: Шина событий
+    Делегирует обработку новостей NewsOrchestrator.
     """
 
     def __init__(self) -> None:
         """Инициализация планировщика."""
-        self._session = async_session()
-        self.repo_factory = RepositoryFactory(self._session)
+        self._db_service = get_database_service()
+        self._session = None
+        self.repo_factory = None
 
-        # Агенты АРА
-        self.analyst = AnalystAgent(model='qwen2.5:7b')
-        self.editor = EditorAgent(model='qwen2.5:7b')
-        self.archivist = ArchivistAgent(model='qwen2.5:7b')
+        # Координатор будет создан при запуске
+        self.orchestrator: Optional[NewsOrchestrator] = None
 
-        self.event_bus = EventBus(max_concurrency=2)
+        # Задачи планировщика
+        self._morning_task: Optional[asyncio.Task] = None
+        self._evening_task: Optional[asyncio.Task] = None
+        self._event_task: Optional[asyncio.Task] = None
+
         self._running = False
+        self._initialized = False
+
+    async def _init_components(self) -> None:
+        """Инициализировать компоненты (ленивая инициализация)."""
+        if self._initialized:
+            return
+
+        self._session = await self._db_service.create_session()
+        self.repo_factory = RepositoryFactory(self._session)
+        self.orchestrator = NewsOrchestrator(
+            repo_factory=self.repo_factory,
+            model=settings.agent_model,
+        )
+        self._initialized = True
+        logger.info("✅ Scheduler компоненты инициализированы")
 
     async def start(self) -> None:
-        """Запуск планировщика."""
+        """
+        Запуск планировщика.
+
+        Создаёт задачи для утренней, вечерней обработки и обработки событий.
+        """
+        # Инициализируем компоненты
+        await self._init_components()
+
         self._running = True
         logger.info("🕐 Планировщик запущен")
 
         # Запускаем фоновые задачи
-        asyncio.create_task(self._run_morning_scheduler())
-        asyncio.create_task(self._run_evening_scheduler())
-        asyncio.create_task(self._run_event_processor())
+        self._morning_task = asyncio.create_task(self._run_morning_scheduler())
+        self._evening_task = asyncio.create_task(self._run_evening_scheduler())
+        self._event_task = asyncio.create_task(self._run_event_processor())
 
-        # Запускаем шину событий
-        await self.event_bus.run()
+        # Запускаем шину событий через orchestrator
+        await self.orchestrator.start_event_bus()
+
+        logger.info("✅ Все задачи планировщика запущены")
 
     async def stop(self) -> None:
-        """Остановка планировщика."""
+        """
+        Корректная остановка планировщика.
+
+        Последовательность:
+        1. Останавливаем флаг работы
+        2. Отменяем все задачи
+        3. Останавливаем оркестратор
+        4. Закрываем сессию БД
+        """
+        logger.info("🛑 Остановка планировщика...")
+
         self._running = False
-        logger.info("🛑 Планировщик остановлен")
+
+        # 1. Отменяем задачи
+        tasks_to_cancel = [
+            (self._morning_task, "Утренняя задача"),
+            (self._evening_task, "Вечерняя задача"),
+            (self._event_task, "Задача событий"),
+        ]
+
+        for task, name in tasks_to_cancel:
+            if task and not task.done():
+                logger.info(f"⏳ Отмена: {name}...")
+                task.cancel()
+                try:
+                    await asyncio.wait_for(task, timeout=3.0)
+                except (asyncio.CancelledError, asyncio.TimeoutError):
+                    pass
+
+        # 2. Останавливаем оркестратор
+        if self.orchestrator:
+            logger.info("⏳ Остановка NewsOrchestrator...")
+            await self.orchestrator.stop()
+
+        # 3. Закрываем сессию БД
+        if self._session:
+            try:
+                await self._session.close()
+                logger.debug("✅ Сессия БД закрыта")
+            except Exception as e:
+                logger.error(f"❌ Ошибка закрытия сессии БД: {e}")
+            self._session = None
+
+        self._initialized = False
+        logger.info("👋 Планировщик полностью остановлен")
 
     async def _run_morning_scheduler(self) -> None:
         """Запуск утренней обработки новостей (09:00 МСК)."""
@@ -132,156 +192,26 @@ class Scheduler:
     async def _run_event_processor(self) -> None:
         """Обработка событий раз в 48 часов."""
         while self._running:
-            # 48 часов = 172800 секунд
-            await asyncio.sleep(172800)
+            # Интервал из конфига (48 часов по умолчанию)
+            await asyncio.sleep(settings.event_processing_interval_seconds)
 
             if self._running:
                 logger.info("🔄 Запуск обработки событий")
-                await self._process_events()
+                # TODO: Реализовать обработку событий через orchestrator
 
     async def _process_pending_news(self) -> None:
         """
         Обработка новостей, ожидающих генерации.
-        Использует PostRepository для получения необработанных постов.
+        Делегирует обработку NewsOrchestrator.
         """
         try:
-            posts_repo = self.repo_factory.posts()
-            events_repo = self.repo_factory.events()
+            # Делегируем обработку orchestrator
+            processed_count = await self.orchestrator.process_pending_news_batch(hours=48)
 
-            # Получаем посты, которые ещё не были обработаны
-            unanalyzed_posts = await posts_repo.get_unanalyzed(hours=48)
-
-            # Фильтруем посты, которые уже были проанализированы
-            posts_to_process = []
-            for post in unanalyzed_posts:
-                if not await posts_repo.is_analyzed(post.id):
-                    posts_to_process.append(post)
-
-            if not posts_to_process:
-                logger.info("📭 Нет новостей для обработки (все уже проанализированы)")
-                return
-
-            logger.info(f"📊 Найдено {len(posts_to_process)} новостей для обработки")
-
-            for post in posts_to_process:
-                try:
-                    # Получаем контекст события для этого поста
-                    contexts = await events_repo.get_by_post(post.id)
-                    context = contexts[0] if contexts else {}
-
-                    # Emit событие генерации новости
-                    await self.event_bus.emit(Event(
-                        type=EventType.GENERATE_NEWS,
-                        payload={
-                            'post_id': post.id,
-                            'event_id': contexts[0].id if contexts else None,
-                            'event_context': context,
-                            'category': post.category,
-                            'urgency': int(post.urgency) if post.urgency else 1,
-                            'scheduled': True,
-                            'from_scheduler': True
-                        }
-                    ))
-
-                    logger.info(
-                        f"✅ Пост ID={post.id} отправлен на генерацию "
-                        f"(категория: {post.category})"
-                    )
-
-                except Exception as e:
-                    logger.error(f"Ошибка обработки поста ID={post.id}: {e}")
+            if processed_count == 0:
+                logger.info("📭 Нет новостей для обработки")
+            else:
+                logger.info(f"✅ Обработано {processed_count} новостей")
 
         except Exception as e:
             logger.error(f"Ошибка в _process_pending_news: {e}")
-
-    async def _process_events(self) -> None:
-        """
-        Обработка событий: генерация сводных новостей.
-        Собирает несколько постов одного события и создаёт сводку.
-        """
-        try:
-            events_repo = self.repo_factory.events()
-
-            # Получаем все необработанные события
-            events = await events_repo.get_for_scheduler(hours=48)
-
-            if not events:
-                logger.info("📭 Нет событий для обработки")
-                return
-
-            # Группируем события по категориям
-            from collections import defaultdict
-            grouped = defaultdict(list)
-            for event in events:
-                grouped[event.event_category].append(event)
-
-            logger.info(
-                f"📊 Найдено {len(events)} событий в {len(grouped)} категориях"
-            )
-
-            # Обрабатываем каждую группу
-            for category, cat_events in grouped.items():
-                logger.info(
-                    f"📰 Обработка категории '{category}': "
-                    f"{len(cat_events)} событий"
-                )
-
-                # Пока просто отправляем каждое событие отдельно
-                # TODO: Здесь будет логика группировки событий в сводную новость
-                for event in cat_events:
-                    context = json.loads(event.context_data)
-
-                    await self.event_bus.emit(Event(
-                        type=EventType.GENERATE_NEWS,
-                        payload={
-                            'post_id': event.post_id,
-                            'event_id': event.id,
-                            'event_context': context,
-                            'category': category,
-                            'scheduled': True
-                        }
-                    ))
-
-                    await events_repo.mark_processed(event.id)
-
-        except Exception as e:
-            logger.error(f"Ошибка в _process_events: {e}")
-
-    async def process_urgent_news(
-        self,
-        post_id: int,
-        text: str,
-        category: str,
-        urgency: int
-    ) -> None:
-        """
-        Немедленная обработка срочной новости (срочность 4-5).
-        Обходит планировщик, запускает АРА немедленно.
-
-        Args:
-            post_id: ID поста
-            text: Текст поста
-            category: Категория
-            urgency: Срочность (4 или 5)
-        """
-        logger.info(
-            f"⚡ Срочная новость! Срочность {urgency}, категория {category}"
-        )
-
-        try:
-            # Emit событие создания контекста (срочно)
-            await self.event_bus.emit(Event(
-                type=EventType.CREATE_CONTEXT,
-                payload={
-                    'post_id': post_id,
-                    'text': text,
-                    'category': category,
-                    'urgency': urgency,
-                    'urgent': True
-                }
-            ))
-
-            logger.info(f"✅ Срочная новость ID={post_id} отправлена на обработку")
-
-        except Exception as e:
-            logger.error(f"Ошибка обработки срочной новости: {e}")

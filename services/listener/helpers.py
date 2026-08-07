@@ -2,6 +2,7 @@
 Helper functions для ListenerBot.
 
 Эти функции предоставляют удобный интерфейс для работы с репозиториями.
+Используют RepositoryFactory для соблюдения паттерна Repository.
 """
 
 import logging
@@ -9,11 +10,8 @@ import json
 from datetime import datetime, timezone
 from typing import Optional
 
-from database import async_session
-from database.repositories.channels import ChannelRepository
-from database.repositories.posts import PostRepository
-from database.repositories.events import EventRepository
-from database.repositories.news import NewsRepository
+from database import RepositoryFactory
+from services.core.database import get_database_service
 from services.vector_search import VectorSearchEngine
 
 logger = logging.getLogger(__name__)
@@ -40,9 +38,10 @@ async def get_channel_full(channel_id: int):
     Returns:
         Объект Channel или None
     """
-    async with async_session() as session:
-        channels_repo = ChannelRepository(session)
-        return await channels_repo.get_by_telegram_id(channel_id)
+    db_service = get_database_service()
+    async with db_service.session_context() as session:
+        factory = RepositoryFactory(session)
+        return await factory.channels().get_by_telegram_id(channel_id)
 
 
 async def add_tg_post(
@@ -69,9 +68,10 @@ async def add_tg_post(
     Returns:
         ID созданного поста
     """
-    async with async_session() as session:
-        posts_repo = PostRepository(session)
-        post = await posts_repo.create_post(
+    db_service = get_database_service()
+    async with db_service.session_context() as session:
+        factory = RepositoryFactory(session)
+        post = await factory.posts().create_post(
             channel_id=channel_id,
             text=text,
             category=category,
@@ -93,13 +93,10 @@ async def update_channel_trust_rating(channel_id: int) -> bool:
     Returns:
         True если обновлён, False если не найден
     """
-    async with async_session() as session:
-        channels_repo = ChannelRepository(session)
-        channel = await channels_repo.get_by_telegram_id(channel_id)
-        if channel:
-            await channel.update_trust_rating()
-            return True
-        return False
+    db_service = get_database_service()
+    async with db_service.session_context() as session:
+        factory = RepositoryFactory(session)
+        return await factory.channels().update_trust_rating(channel_id)
 
 
 async def calculate_news_rate(channel, urgency: int) -> int:
@@ -145,9 +142,10 @@ async def add_event_context(
     Returns:
         ID созданного события
     """
-    async with async_session() as session:
-        events_repo = EventRepository(session)
-        event = await events_repo.create_event(
+    db_service = get_database_service()
+    async with db_service.session_context() as session:
+        factory = RepositoryFactory(session)
+        event = await factory.events().create_event(
             post_id=post_id,
             context_data=context_data,
             event_category=event_category,
@@ -179,9 +177,10 @@ async def add_generated_news(
     Returns:
         ID созданной новости
     """
-    async with async_session() as session:
-        news_repo = NewsRepository(session)
-        news = await news_repo.create_news(
+    db_service = get_database_service()
+    async with db_service.session_context() as session:
+        factory = RepositoryFactory(session)
+        news = await factory.news().create_news(
             text=text,
             category=category,
             source_post_ids=source_post_ids,
@@ -269,9 +268,10 @@ async def update_post_category_confidence(post_id: int, confidence: float) -> bo
     Returns:
         True если обновлена, False если не найден
     """
-    async with async_session() as session:
-        posts_repo = PostRepository(session)
-        return await posts_repo.update_category_confidence(post_id, confidence)
+    db_service = get_database_service()
+    async with db_service.session_context() as session:
+        factory = RepositoryFactory(session)
+        return await factory.posts().update_category_confidence(post_id, confidence)
 
 
 async def add_channel_tag(channel_id: int, tag: str) -> bool:
@@ -285,9 +285,10 @@ async def add_channel_tag(channel_id: int, tag: str) -> bool:
     Returns:
         True если добавлен, False если не найден
     """
-    async with async_session() as session:
-        channels_repo = ChannelRepository(session)
-        return await channels_repo.add_tag(channel_id, tag)
+    db_service = get_database_service()
+    async with db_service.session_context() as session:
+        factory = RepositoryFactory(session)
+        return await factory.channels().add_tag(channel_id, tag)
 
 
 async def mark_post_analyzed(post_id: int, generated_news_id: Optional[int] = None) -> bool:
@@ -301,9 +302,10 @@ async def mark_post_analyzed(post_id: int, generated_news_id: Optional[int] = No
     Returns:
         True если обновлён, False если не найден
     """
-    async with async_session() as session:
-        posts_repo = PostRepository(session)
-        return await posts_repo.mark_analyzed(post_id, generated_news_id)
+    db_service = get_database_service()
+    async with db_service.session_context() as session:
+        factory = RepositoryFactory(session)
+        return await factory.posts().mark_analyzed(post_id, generated_news_id)
 
 
 async def add_event_to_vector_index(
