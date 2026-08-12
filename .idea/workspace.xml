@@ -5,98 +5,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="f50a90aa-42af-4089-8f79-0b118ce41214" name="Changes" comment="0.1">
-      <change afterPath="$PROJECT_DIR$/.github/workflows/ci.yml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/dataSources.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/sqlDataSources.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/config/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/config/settings.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/database/factory.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/database/migrate_add_analyzed_fields.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/database/migrate_add_moderation_fields.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/database/migrate_add_news_tables.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/database/migrate_add_publishers.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/database/migrate_add_trust_fields.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/database/migrate_add_users_table.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/database/migrate_update_news_schema.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/database/repositories/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/database/repositories/base.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/database/repositories/channels.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/database/repositories/events.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/database/repositories/news.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/database/repositories/posts.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/database/repositories/publishers.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/database/repositories/users.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/docs/PROJECT_HISTORY.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/docs/USERS_TABLE.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/mypy.ini" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/prompts/analyst.txt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/prompts/archivist.txt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/prompts/category_validator.txt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/prompts/direct_news_generator.txt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/prompts/editor.txt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/prompts/event_context_extractor.txt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/prompts/news_generator.txt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/pyproject.toml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/ai_agent/agents/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/ai_agent/agents/analyst.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/ai_agent/agents/archivist.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/ai_agent/agents/base.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/ai_agent/agents/categorizer.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/ai_agent/agents/editor.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/ai_agent/vector_routers.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/bot/bot.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/bot/handlers/commands.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/bot/handlers/direct_news.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/bot/handlers/filters.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/bot/handlers/keyboards.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/bot/handlers/messages.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/bot/handlers/publishers.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/bot/handlers/router.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/bot/handlers/states.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/bot/utils.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/listener/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/listener/bot.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/listener/config.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/listener/helpers.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/logging_config.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/monitoring/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/scheduler/scheduler.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/util.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/vector_search/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/vector_search/chroma_client.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/vector_search/embeddings.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/vector_search/search_engine.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/tests/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/tests/conftest.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/tests/services/vector_search/test_vector_search.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/tests/test_agents/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/tests/test_agents/test_base_agent.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/tests/test_repositories/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/tests/test_repositories/test_channels.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/tests/test_repositories/test_posts.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/tests/test_scheduler/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/vector_store/chroma.sqlite3" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/aggregator/__init__.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/aggregator/filters.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/aggregator/formatter.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/aggregator/parser.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/ai_agent/config.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/bot/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/ai_agent/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/bot/bot.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/bot/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/bot/config.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/bot/handlers/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/ai_agent/events.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/bot/handlers/callbacks.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/ai_agent/routers.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/bot/handlers/commands.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/bot/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/bot/handlers/messages.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/bot/handlers/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/bot/handlers/router.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/database/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/database/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/database/models.py" beforeDir="false" afterPath="$PROJECT_DIR$/database/models.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/states.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/bot/handlers/callbacks.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/standalone/test_auth.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/standalone/test_auth.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -147,7 +57,7 @@
     "Python.main.executor": "Run",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "SHARE_PROJECT_CONFIGURATION_FILES": "true",
-    "git-widget-placeholder": "refactor/deep-refactor-dec-2025",
+    "git-widget-placeholder": "master",
     "last_opened_file_path": "C:/Yandex.Disk/news_aggregator",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
@@ -159,15 +69,6 @@
     "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
-  <component name="QodanaHighlightedReportService">
-    <option name="localRunNotPublishedPersistedInfo">
-      <LocalReportPersistedInfo>
-        <option name="path" value="C:\Users\admin\AppData\Local\Temp\qodana_output\qodana.sarif.json" />
-        <option name="reportGuid" value="c6a2627c-8806-4c13-8e47-6810c0479434" />
-        <option name="reportName" value="news_aggregator/qodana/2026-08-12" />
-      </LocalReportPersistedInfo>
-    </option>
-  </component>
   <component name="QodanaIsSelectedPersistenceService">
     <option name="selectedOrLoading" value="true" />
   </component>
@@ -296,6 +197,6 @@
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/news_aggregator$config.coverage" NAME="config Coverage Results" MODIFIED="1782746628139" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/bot" />
-    <SUITE FILE_PATH="coverage/news_aggregator$main.coverage" NAME="main Coverage Results" MODIFIED="1786557214455" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/news_aggregator$main.coverage" NAME="main Coverage Results" MODIFIED="1786560356685" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
   </component>
 </project>
