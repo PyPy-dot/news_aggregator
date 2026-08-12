@@ -7,10 +7,12 @@ Analyst Agent — анализ новостей и извлечение мета
 - Извлечение тэгов (5-10 штук)
 """
 
+import json
 import logging
 from typing import Optional
 
-from services.ai_agent.agents.base import BaseAgent
+from services.ai_agent.agents.base import BaseAgent, queued
+from services.ai_agent.agent_queue import TaskPriority
 from services.util import load_prompt
 
 logger = logging.getLogger(__name__)
@@ -38,6 +40,7 @@ class AnalystAgent(BaseAgent):
             system_prompt=system_prompt
         )
 
+    @queued(priority=TaskPriority.NORMAL)
     async def analyze(
         self,
         post_text: str,

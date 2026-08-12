@@ -9,8 +9,8 @@ from typing import Union
 
 from aiogram.types import Message, CallbackQuery
 
-from database import async_session
 from database.repositories.users import UserRepository
+from services.database import get_database_service
 
 logger = logging.getLogger(__name__)
 
@@ -26,29 +26,33 @@ async def check_admin_access(user: Union[Message, CallbackQuery]) -> bool:
         True если пользователь администратор, False иначе
     """
     telegram_id = user.from_user.id
+    username = user.from_user.username or 'N/A'
 
-    async with async_session() as session:
+    logger.debug(f"🔍 Проверка прав для пользователя: ID={telegram_id}, @{username}")
+
+    db_service = get_database_service()
+    async with db_service.session_context() as session:
         user_repo = UserRepository(session)
         db_user = await user_repo.get_by_telegram_id(telegram_id)
 
-        if not db_user or db_user.role != 'admin':
-            await _send_no_access_response(user)
+        if not db_user:
+            logger.warning(f"⚠️ Пользователь не найден в БД: ID={telegram_id}, @{username}")
+            # Отправляем ответ только для Message, не для CallbackQuery
+            if isinstance(user, Message):
+                await user.answer('❌ У вас нет прав для выполнения этого действия')
             return False
 
+        if db_user.role != 'admin':
+            logger.warning(
+                f"⚠️ Пользователь не администратор: ID={telegram_id}, @{username}, "
+                f"role={db_user.role}"
+            )
+            if isinstance(user, Message):
+                await user.answer('❌ У вас нет прав для выполнения этого действия')
+            return False
+
+        logger.debug(f"✅ Пользователь имеет права администратора: ID={telegram_id}, @{username}")
         return True
-
-
-async def _send_no_access_response(user: Union[Message, CallbackQuery]) -> None:
-    """
-    Отправить ответ об отсутствии прав.
-
-    Args:
-        user: Message или CallbackQuery для ответа
-    """
-    if isinstance(user, Message):
-        await user.answer('❌ У вас нет прав для выполнения этого действия')
-    elif isinstance(user, CallbackQuery):
-        await user.answer('❌ У вас нет прав для этого действия', show_alert=True)
 
 
 async def is_admin(telegram_id: int) -> bool:
@@ -61,7 +65,7 @@ async def is_admin(telegram_id: int) -> bool:
     Returns:
         True если администратор, False иначе
     """
-    async with async_session() as session:
+    async with get_database_service().session_context() as session:
         user_repo = UserRepository(session)
         db_user = await user_repo.get_by_telegram_id(telegram_id)
         return db_user is not None and db_user.role == 'admin'

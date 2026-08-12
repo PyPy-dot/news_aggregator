@@ -1,17 +1,27 @@
 """
 Event Bus — шина событий для AI агентов.
 
-Корректное управление жизненным циклом с возможностью остановки.
+Поддерживает приоритеты обработчиков и корректное управление жизненным циклом.
 """
 
 import asyncio
 import logging
+import heapq
 from collections import defaultdict
-from typing import Callable, Coroutine, Optional
+from dataclasses import dataclass, field
+from typing import Callable, Coroutine, Optional, List, Tuple
 
 from services.ai_agent.events import EventType, Event
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(order=True)
+class PrioritizedEvent:
+    """Событие с приоритетом для очереди."""
+    priority: int
+    sequence: int  # Для стабильной сортировки при одинаковом приоритете
+    event: Event = field(compare=False)
 
 
 class EventBus:
@@ -20,7 +30,7 @@ class EventBus:
 
     Поддерживает:
     - Регистрацию обработчиков событий
-    - Очередь событий
+    - Приоритетную очередь событий
     - Ограничение параллелизма
     - Корректную остановку
     """
@@ -32,24 +42,36 @@ class EventBus:
         Args:
             max_concurrency: Максимальное количество параллельных обработчиков
         """
-        self._handlers: dict[EventType, list[Callable]] = defaultdict(list)
-        self._queue: asyncio.Queue[Event] = asyncio.Queue()
+        self._handlers: dict[EventType, List[Callable]] = defaultdict(list)
+        self._queue: asyncio.PriorityQueue[PrioritizedEvent] = asyncio.PriorityQueue()
         self._sem = asyncio.Semaphore(max_concurrency)
         self._running = False
+        self._sequence = 0  # Счётчик для стабильной сортировки
         self._task: Optional[asyncio.Task] = None
 
-    def on(self, event_type: EventType):
+    def on(self, event_type: EventType, priority: int = 0):
         """
         Декоратор для регистрации обработчика событий.
 
         Args:
             event_type: Тип события для подписки
+            priority: Приоритет обработчика (0=обычный, <0=высокий, >0=низкий)
 
         Returns:
             Декоратор для функции-обработчика
         """
         def decorator(func: Callable[[Event], Coroutine]):
-            self._handlers[event_type].append(func)
+            # Вставляем обработчик с приоритетом
+            handlers = self._handlers[event_type]
+            # Находим позицию для вставки согласно приоритету
+            insert_pos = 0
+            for i, h in enumerate(handlers):
+                if getattr(h, '_handler_priority', 0) > priority:
+                    insert_pos = i
+                    break
+                insert_pos = i + 1
+            func._handler_priority = priority  # type: ignore
+            handlers.insert(insert_pos, func)
             return func
 
         return decorator
@@ -64,7 +86,14 @@ class EventBus:
         if not self._running:
             logger.warning("⚠️ Попытка отправки события в остановленную шину: %s", event.type)
             return
-        await self._queue.put(event)
+        
+        prioritized = PrioritizedEvent(
+            priority=event.priority,
+            sequence=self._sequence,
+            event=event
+        )
+        self._sequence += 1
+        await self._queue.put(prioritized)
 
     async def _run_handler(self, handler: Callable, event: Event) -> None:
         """
@@ -95,10 +124,10 @@ class EventBus:
         if not handlers:
             logger.warning("Нет хендлеров для события %s", event.type)
             return
-        await asyncio.gather(
-            *(self._run_handler(h, event) for h in handlers),
-            return_exceptions=True
-        )
+        
+        # Запускаем обработчики последовательно согласно приоритету
+        for handler in handlers:
+            await self._run_handler(handler, event)
 
     async def run(self) -> None:
         """
@@ -113,10 +142,11 @@ class EventBus:
             while self._running:
                 try:
                     # Ждём событие с таймаутом для проверки флага остановки
-                    event = await asyncio.wait_for(
+                    prioritized = await asyncio.wait_for(
                         self._queue.get(),
                         timeout=1.0
                     )
+                    event = prioritized.event
                     await asyncio.create_task(self._dispatch(event))
                     self._queue.task_done()
                 except asyncio.TimeoutError:
@@ -163,3 +193,8 @@ class EventBus:
     def pending_events(self) -> int:
         """Количество событий в очереди."""
         return self._queue.qsize()
+
+    @property
+    def handler_count(self) -> int:
+        """Общее количество зарегистрированных обработчиков."""
+        return sum(len(handlers) for handlers in self._handlers.values())

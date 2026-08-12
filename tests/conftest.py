@@ -76,8 +76,7 @@ def mock_event_data() -> dict:
             'consequences': []
         },
         'event_category': 'Политика',
-        'tags': '["тест"]',
-        'summary': 'Test summary'
+        'tags': '["тест"]'
     }
 
 
@@ -87,8 +86,25 @@ def mock_news_data() -> dict:
     return {
         'text': 'Generated news text',
         'category': 'Политика',
-        'source_post_ids': [1, 2],
         'source_event_ids': [1],
         'tags': '["тест", "новость"]',
         'moderation_status': 'pending'
     }
+
+
+@pytest.fixture
+def test_user_id() -> int:
+    """Test user ID."""
+    return 123456789
+
+
+@pytest.fixture
+def test_channel_id() -> int:
+    """Test channel ID."""
+    return -1001234567890
+
+
+@pytest.fixture
+def test_post_id() -> int:
+    """Test post ID."""
+    return 1

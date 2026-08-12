@@ -3,9 +3,9 @@ Post repository для работы с постами.
 """
 
 import json
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Optional
-from sqlalchemy import select, update, desc, or_
+from sqlalchemy import select, update, desc, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import TelegramPost
@@ -25,21 +25,14 @@ class PostRepository(BaseRepository[TelegramPost]):
         Получить посты, которые ещё не были обработаны Аналитиком.
 
         Args:
-            hours: За сколько часов искать посты
+            hours: За сколько часов искать посты (не используется, оставлен для совместимости)
 
         Returns:
             Список необработанных постов
         """
-        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
-
         result = await self.session.execute(
             select(TelegramPost)
-            .where(
-                or_(
-                    TelegramPost.analyzed_at.is_(None),
-                    TelegramPost.analyzed_at < cutoff_time
-                )
-            )
+            .where(TelegramPost.checked_at == False)
             .order_by(desc(TelegramPost.created_at))
         )
         return result.scalars().all()
@@ -61,7 +54,7 @@ class PostRepository(BaseRepository[TelegramPost]):
         """
         post = await self.get(post_id)
         if post:
-            post.analyzed_at = datetime.now(timezone.utc)
+            post.checked_at = True
             if generated_news_id:
                 post.generated_news_id = generated_news_id
             await self.session.commit()
@@ -101,7 +94,7 @@ class PostRepository(BaseRepository[TelegramPost]):
         tags: str = '',
     ) -> TelegramPost:
         """
-        Создать новый пост.
+        Создать новый пост (case-insensitive tags).
 
         Args:
             channel_id: ID канала в Telegram
@@ -110,11 +103,21 @@ class PostRepository(BaseRepository[TelegramPost]):
             urgency: Срочность (1-5)
             rate: Рейтинг новости
             source_trust_rating: Рейтинг доверия источника
-            tags: Теги
+            tags: Теги (JSON строка)
 
         Returns:
             Созданный пост
         """
+        # Нормализация тэгов к нижнему регистру
+        if tags:
+            try:
+                tags_list = json.loads(tags)
+                tags = json.dumps([tag.lower() for tag in tags_list], ensure_ascii=False)
+            except json.JSONDecodeError:
+                tags = '[]'
+        else:
+            tags = '[]'
+
         post = TelegramPost(
             channel_id=channel_id,
             text=text,
@@ -160,10 +163,8 @@ class PostRepository(BaseRepository[TelegramPost]):
             True если обработан, False иначе
         """
         post = await self.get(post_id)
-        if post and post.analyzed_at:
-            # Проверяем, что анализ был не слишком давно (меньше 48 часов)
-            if post.analyzed_at > datetime.now(timezone.utc) - timedelta(hours=48):
-                return True
+        if post:
+            return post.checked_at == True
         return False
 
     async def mark_direct_publish(
@@ -188,3 +189,65 @@ class PostRepository(BaseRepository[TelegramPost]):
             await self.session.commit()
             return True
         return False
+
+    async def add_tag(self, post_id: int, tag: str) -> bool:
+        """
+        Добавить тег посту (case-insensitive).
+
+        Args:
+            post_id: ID поста
+            tag: Тег для добавления
+
+        Returns:
+            True если добавлен, False если не найден
+        """
+        post = await self.get(post_id)
+        if post:
+            tag_normalized = tag.lower()
+            tags = [t.lower() for t in json.loads(post.tags or '[]')]
+            if tag_normalized not in tags:
+                tags.append(tag_normalized)
+                post.tags = json.dumps(tags, ensure_ascii=False)
+                await self.session.commit()
+            return True
+        return False
+
+    async def update_post_tags(self, post_id: int, tags: list[str]) -> bool:
+        """
+        Обновить теги поста (case-insensitive).
+
+        Args:
+            post_id: ID поста
+            tags: Новый список тегов
+
+        Returns:
+            True если обновлены, False если не найден
+        """
+        post = await self.get(post_id)
+        if post:
+            # Нормализация тэгов к нижнему регистру
+            post.tags = json.dumps(
+                [tag.lower() for tag in tags], ensure_ascii=False
+            )
+            await self.session.commit()
+            return True
+        return False
+
+    async def delete_all(self) -> int:
+        """
+        Удалить все посты из базы данных.
+
+        Returns:
+            Количество удалённых записей
+        """
+        result = await self.session.execute(
+            select(func.count()).select_from(TelegramPost)
+        )
+        count = result.scalar() or 0
+
+        await self.session.execute(
+            delete(TelegramPost)
+        )
+        await self.session.commit()
+
+        return count

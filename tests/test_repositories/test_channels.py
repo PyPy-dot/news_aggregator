@@ -83,7 +83,7 @@ class TestChannelRepository:
 
     @pytest.mark.asyncio
     async def test_add_tag(self, db_session: AsyncSession, mock_channel_data: dict):
-        """Тест добавления тега каналу."""
+        """Тест добавления тега каналу (case-insensitive)."""
         repo = ChannelRepository(db_session)
 
         # Создаём канал
@@ -97,9 +97,9 @@ class TestChannelRepository:
 
         assert result is True
 
-        # Проверяем
+        # Проверяем (теги нормализуются к lowercase)
         tags = await repo.get_tags(mock_channel_data['channel_id'])
-        assert 'Политика' in tags
+        assert 'политика' in tags
 
     @pytest.mark.asyncio
     async def test_get_all_channels(self, db_session: AsyncSession, mock_channel_data: dict):

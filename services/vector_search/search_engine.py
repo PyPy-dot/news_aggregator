@@ -1,10 +1,17 @@
 """
 Vector Search Engine — высокоуровневый API для поиска похожих событий и новостей.
+
+Оптимизации:
+- Кэширование результатов поиска (LRU cache)
+- Батчинг для добавления векторов
+- Оптимизированные параметры HNSW для ChromaDB
 """
 
 import json
 import logging
+import hashlib
 from typing import Optional, Any
+from collections import OrderedDict
 
 from services.logging_config import get_logger
 from services.vector_search.embeddings import EmbeddingService
@@ -16,6 +23,61 @@ from services.vector_search.chroma_client import (
 )
 
 logger = get_logger(__name__)
+
+
+class LRUCache:
+    """
+    LRU кэш для результатов поиска.
+
+    Attributes:
+        capacity: Максимальный размер кэша
+    """
+
+    def __init__(self, capacity: int = 1000) -> None:
+        """
+        Инициализация LRU кэша.
+
+        Args:
+            capacity: Максимальное количество записей
+        """
+        self.capacity = capacity
+        self._cache: OrderedDict[str, Any] = OrderedDict()
+
+    def get(self, key: str) -> Optional[Any]:
+        """
+        Получить значение из кэша.
+
+        Args:
+            key: Ключ
+
+        Returns:
+            Значение или None
+        """
+        if key in self._cache:
+            # Перемещаем в конец (свежий)
+            self._cache.move_to_end(key)
+            return self._cache[key]
+        return None
+
+    def put(self, key: str, value: Any) -> None:
+        """
+        Добавить значение в кэш.
+
+        Args:
+            key: Ключ
+            value: Значение
+        """
+        if key in self._cache:
+            self._cache.move_to_end(key)
+        self._cache[key] = value
+
+        # Удаляем старые записи при переполнении
+        if len(self._cache) > self.capacity:
+            self._cache.popitem(last=False)
+
+    def clear(self) -> None:
+        """Очистить кэш."""
+        self._cache.clear()
 
 
 class VectorSearchEngine:
@@ -46,6 +108,7 @@ class VectorSearchEngine:
         self,
         embedding_model: str = 'paraphrase-multilingual-MiniLM-L12-v2',
         persist_directory: Optional[str] = None,
+        cache_size: int = 500,
     ) -> None:
         """
         Инициализация поискового движка.
@@ -53,13 +116,16 @@ class VectorSearchEngine:
         Args:
             embedding_model: Название модели для эмбеддингов
             persist_directory: Путь к хранилищу ChromaDB
+            cache_size: Размер LRU кэша для результатов поиска
         """
         self.embeddings = EmbeddingService(model_name=embedding_model)
         self.vector_store = ChromaVectorStore(
             persist_directory=None if persist_directory is None else None  # Используется по умолчанию
         )
+        # LRU кэш для результатов поиска (ключ: hash(query+params), значение: результаты)
+        self._search_cache = LRUCache(capacity=cache_size)
 
-        logger.info("🔍 VectorSearchEngine инициализирован")
+        logger.info(f"🔍 VectorSearchEngine инициализирован (cache_size={cache_size})")
 
     # === Добавление данных ===
 
@@ -69,7 +135,6 @@ class VectorSearchEngine:
         text: str,
         event_category: str,
         post_id: int,
-        summary: str = '',
         tags: Optional[list[str]] = None,
     ) -> None:
         """
@@ -80,18 +145,14 @@ class VectorSearchEngine:
             text: Текст события (контекст)
             event_category: Категория события
             post_id: ID оригинального поста
-            summary: Краткая выжимка
             tags: Теги события
         """
-        # Создаём объединённый текст для лучшего поиска
-        search_text = f"{summary} {text}".strip()
-
-        embedding = await self.embeddings.embed(search_text)
+        embedding = await self.embeddings.embed(text)
 
         self.vector_store.add(
             collection_name=COLLECTION_EVENTS,
             id=id,
-            text=search_text,
+            text=text,
             embedding=embedding,
             metadata={
                 'event_category': event_category,
@@ -105,7 +166,6 @@ class VectorSearchEngine:
         id: str,
         text: str,
         category: str,
-        source_post_ids: list[int],
         tags: Optional[list[str]] = None,
     ) -> None:
         """
@@ -115,7 +175,6 @@ class VectorSearchEngine:
             id: Уникальный ID новости
             text: Текст новости
             category: Категория
-            source_post_ids: ID исходных постов
             tags: Теги новости
         """
         embedding = await self.embeddings.embed(text)
@@ -127,7 +186,6 @@ class VectorSearchEngine:
             embedding=embedding,
             metadata={
                 'category': category,
-                'source_post_ids': json.dumps(source_post_ids),
                 'tags': json.dumps(tags) if tags else '[]',
             },
         )
@@ -185,6 +243,18 @@ class VectorSearchEngine:
         Returns:
             Список похожих событий с score
         """
+        # Создаём ключ кэша
+        cache_key = self._make_cache_key(
+            'events', query_text, limit, category_filter, min_score
+        )
+
+        # Проверяем кэш
+        cached_result = self._search_cache.get(cache_key)
+        if cached_result is not None:
+            logger.debug(f"✅ Кэш hit для поиска событий: {len(cached_result)} результатов")
+            return cached_result
+
+        # Выполняем поиск
         query_embedding = await self.embeddings.embed(query_text)
 
         filter_metadata = None
@@ -201,11 +271,38 @@ class VectorSearchEngine:
         # Фильтруем по порогу сходства
         filtered = [r for r in results if r['score'] >= min_score]
 
+        # Сохраняем в кэш
+        self._search_cache.put(cache_key, filtered)
+
         logger.debug(
             f"🔍 Найдено {len(filtered)} похожих событий (порог: {min_score})"
         )
 
         return filtered
+
+    def _make_cache_key(
+        self,
+        collection: str,
+        query_text: str,
+        limit: int,
+        category_filter: Optional[str],
+        min_score: float,
+    ) -> str:
+        """
+        Создать ключ кэша для запроса.
+
+        Args:
+            collection: Имя коллекции
+            query_text: Текст запроса
+            limit: Лимит результатов
+            category_filter: Фильтр по категории
+            min_score: Минимальный порог
+
+        Returns:
+            Хэш ключа
+        """
+        key_data = f"{collection}:{query_text}:{limit}:{category_filter}:{min_score}"
+        return hashlib.md5(key_data.encode('utf-8')).hexdigest()
 
     async def find_similar_posts(
         self,
@@ -226,6 +323,18 @@ class VectorSearchEngine:
         Returns:
             Список похожих постов с score
         """
+        # Создаём ключ кэша
+        cache_key = self._make_cache_key(
+            'posts', query_text, limit, category_filter, min_score
+        )
+
+        # Проверяем кэш
+        cached_result = self._search_cache.get(cache_key)
+        if cached_result is not None:
+            logger.debug(f"✅ Кэш hit для поиска постов: {len(cached_result)} результатов")
+            return cached_result
+
+        # Выполняем поиск
         query_embedding = await self.embeddings.embed(query_text)
 
         filter_metadata = None
@@ -240,6 +349,9 @@ class VectorSearchEngine:
         )
 
         filtered = [r for r in results if r['score'] >= min_score]
+
+        # Сохраняем в кэш
+        self._search_cache.put(cache_key, filtered)
 
         logger.debug(f"🔍 Найдено {len(filtered)} похожих постов")
 
@@ -264,6 +376,18 @@ class VectorSearchEngine:
         Returns:
             Список связанных новостей с score
         """
+        # Создаём ключ кэша
+        cache_key = self._make_cache_key(
+            'news', query_text, limit, category_filter, min_score
+        )
+
+        # Проверяем кэш
+        cached_result = self._search_cache.get(cache_key)
+        if cached_result is not None:
+            logger.debug(f"✅ Кэш hit для поиска новостей: {len(cached_result)} результатов")
+            return cached_result
+
+        # Выполняем поиск
         query_embedding = await self.embeddings.embed(query_text)
 
         filter_metadata = None
@@ -279,9 +403,29 @@ class VectorSearchEngine:
 
         filtered = [r for r in results if r['score'] >= min_score]
 
+        # Сохраняем в кэш
+        self._search_cache.put(cache_key, filtered)
+
         logger.debug(f"🔍 Найдено {len(filtered)} связанных новостей")
 
         return filtered
+
+    def clear_cache(self) -> None:
+        """Очистить кэш результатов поиска."""
+        self._search_cache.clear()
+        logger.debug("🗑️ Кэш векторного поиска очищен")
+
+    def get_cache_stats(self) -> dict[str, int]:
+        """
+        Получить статистику кэша.
+
+        Returns:
+            dict со статистикой кэша
+        """
+        return {
+            'size': len(self._search_cache._cache),
+            'capacity': self._search_cache.capacity,
+        }
 
     async def group_posts_to_events(
         self,

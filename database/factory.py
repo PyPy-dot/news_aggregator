@@ -10,6 +10,10 @@ from database.repositories.events import EventRepository
 from database.repositories.news import NewsRepository
 from database.repositories.publishers import PublisherRepository
 from database.repositories.users import UserRepository
+from database.repositories.categories import CategoryRepository
+from database.repositories.tasks import TaskRepository
+from database.repositories.rss_sources import RSSSourceRepository
+from database.repositories.rss_news import RSSNewsRepository
 
 
 class RepositoryFactory:
@@ -54,6 +58,22 @@ class RepositoryFactory:
     def users(self) -> UserRepository:
         """Создать UserRepository."""
         return UserRepository(self.session)
+
+    def categories(self) -> CategoryRepository:
+        """Создать CategoryRepository."""
+        return CategoryRepository(self.session)
+
+    def tasks(self) -> TaskRepository:
+        """Создать TaskRepository."""
+        return TaskRepository(self.session)
+
+    def rss_sources(self) -> RSSSourceRepository:
+        """Создать RSSSourceRepository."""
+        return RSSSourceRepository(self.session)
+
+    def rss_news(self) -> RSSNewsRepository:
+        """Создать RSSNewsRepository."""
+        return RSSNewsRepository(self.session)
 
     def all(self):
         """

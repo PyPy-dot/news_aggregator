@@ -8,13 +8,105 @@ Editor Agent — генерация новостей в журналистско
 - Тэги новости (3-5 штук)
 """
 
+import json
 import logging
 from typing import Optional
 
-from services.ai_agent.agents.base import BaseAgent
+from services.ai_agent.agents.base import BaseAgent, queued
+from services.ai_agent.agent_queue import TaskPriority
 from services.util import load_prompt
 
 logger = logging.getLogger(__name__)
+
+
+class DirectNewsEditorAgent(BaseAgent):
+    """
+    Агент-редактор для прямой генерации SMM-постов по описанию админа.
+
+    Использует промпт direct_news_generator.txt для создания ярких,
+    цепляющих постов в стиле Telegram-каналов.
+    """
+
+    def __init__(self, model: str = 'qwen2.5:7b') -> None:
+        """
+        Инициализация редактора для прямой генерации.
+
+        Args:
+            model: Название модели
+        """
+        system_prompt = load_prompt('direct_news_generator')
+        super().__init__(
+            model=model,
+            message_history_limit=2,
+            system_prompt=system_prompt
+        )
+
+    @queued(priority=TaskPriority.HIGH)
+    async def generate_from_description(
+        self,
+        description: str,
+    ) -> dict:
+        """
+        Генерирует SMM-пост из описания админа.
+
+        Args:
+            description: Описание от админа (тема, детали, призыв к действию)
+
+        Returns:
+            dict: {
+                'title': str (с эмодзи),
+                'text': str (с форматированием и эмодзи),
+                'summary': str,
+                'news_tags': list[str]
+            }
+        """
+        prompt = f"""Ты — SMM-редактор Telegram-канала. Создай яркий пост на основе описания:
+
+{description}
+
+⚠️ КРИТИЧНО: Верни ТОЛЬКО JSON без какого-либо текста до или после.
+
+Формат JSON (строго следуй):
+{{
+    "title": "🔥 Цепляющий заголовок с эмодзи (до 60 символов)",
+    "text": "Текст поста с **жирным текстом** и эмодзи\\n\\nРаздели на абзацы",
+    "summary": "Одно предложение — суть предложения или анонса",
+    "news_tags": ["акция", "скидки", "промокод"]
+}}
+
+Требования к контенту:
+- Эмодзи: 2-4 штуки (🔥💰🎁⚡📅✅)
+- **Жирный текст** для важных цифр, сроков, выгод
+- Заголовок: цепляющий, с эмодзи, до 60 символов
+- Текст: 100-300 слов, разбит на абзацы
+- Тэги: 3-5 ключевых слов
+
+Начни ответ сразу с {{ и закончи }}"""
+
+        response = await self.send_question(prompt)
+
+        try:
+            parsed = self.parse_json_response(
+                response,
+                required_fields=['title', 'text', 'summary']
+            )
+
+            return {
+                'title': parsed.get('title', '')[:60],
+                'text': parsed.get('text', ''),
+                'summary': parsed.get('summary', ''),
+                'news_tags': parsed.get('news_tags', [])[:5]
+            }
+        except (ValueError, json.JSONDecodeError) as e:
+            logger.error(f"Ошибка парсинга ответа редактора (прямая генерация): {e}")
+            logger.warning(f"Raw response: {response[:200]}")
+            # Fallback — возвращаем описание как есть
+            return {
+                'title': '📢 Анонс',
+                'text': description[:500],
+                'summary': description[:100],
+                'news_tags': ['анонс', 'новость']
+            }
 
 
 class EditorAgent(BaseAgent):
@@ -39,6 +131,7 @@ class EditorAgent(BaseAgent):
             system_prompt=system_prompt
         )
 
+    @queued(priority=TaskPriority.NORMAL)
     async def generate_news(
         self,
         post_text: str,

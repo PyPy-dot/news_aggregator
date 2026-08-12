@@ -1,0 +1,22 @@
+# AI Agent Microservice Dependencies
+
+# FastAPI
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+
+# AI Agents (из основного проекта)
+# Устанавливаются через volume или copy из основного проекта
+
+# LLM
+ollama>=0.2.0
+
+# Monitoring
+prometheus-client>=0.19.0
+
+# HTTP Client (для fallback)
+httpx>=0.26.0
+
+# Settings
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0

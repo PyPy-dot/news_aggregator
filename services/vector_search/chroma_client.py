@@ -1,11 +1,21 @@
 """
 ChromaDB Vector Store — хранение и поиск векторов.
+
+Оптимизация HNSW:
+- Автоматическая настройка параметров на основе размера коллекции
+- Поддержка различных метрик (cosine, l2, ip)
+- Батчинг для эффективного добавления векторов
 """
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Optional, Any
+
+# Отключаем телеметрию ChromaDB ДО импорта chromadb
+os.environ['ANONYMIZED_TELEMETRY'] = 'false'
+os.environ['CHROMA_TELEMETRY_ENABLED'] = 'false'
 
 import chromadb
 from chromadb.config import Settings as ChromaSettings
@@ -13,6 +23,11 @@ from chromadb.config import Settings as ChromaSettings
 from services.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+# Отключаем логирование телеметрии на уровне logging
+logging.getLogger('chromadb.telemetry').setLevel(logging.CRITICAL)
+logging.getLogger('chromadb.telemetry.product').setLevel(logging.CRITICAL)
+logging.getLogger('chromadb.telemetry.product.posthog').setLevel(logging.CRITICAL)
 
 # Типы коллекций
 COLLECTION_EVENTS = 'events'
@@ -53,6 +68,7 @@ class ChromaVectorStore:
         logger.info(f"📁 ChromaDB хранилище: {self.persist_directory}")
 
         # Инициализация клиента с постоянным хранением
+        # Телеметрия отключена через переменные окружения (в начале файла)
         self._client = chromadb.PersistentClient(
             path=str(self.persist_directory),
             settings=ChromaSettings(
@@ -68,7 +84,7 @@ class ChromaVectorStore:
 
     def get_collection(self, name: str) -> chromadb.Collection:
         """
-        Получает или создаёт коллекцию.
+        Получает или создаёт коллекцию с оптимизированными параметрами HNSW.
 
         Args:
             name: Имя коллекции (events, news, posts)
@@ -77,13 +93,33 @@ class ChromaVectorStore:
             ChromaDB коллекция
         """
         if name not in self._collections:
-            # Получаем или создаём коллекцию
-            # distance_function=cosine по умолчанию для нормализованных векторов
+            # Определяем оптимальные параметры HNSW на основе предполагаемого размера
+            # Для разных типов коллекций разные ожидания по размеру
+            size_estimates = {
+                COLLECTION_EVENTS: 50_000,    # Средняя коллекция событий
+                COLLECTION_NEWS: 10_000,      # Меньше сгенерированных новостей
+                COLLECTION_POSTS: 100_000,    # Большая коллекция постов
+            }
+            estimated_size = size_estimates.get(name, 50_000)
+
+            # Получаем оптимальную конфигурацию
+            from services.vector_search.hnsw_config import get_hnsw_config
+            config = get_hnsw_config(
+                num_vectors=estimated_size,
+                space='cosine',
+                optimize_for='balance',
+            )
+
+            # Получаем или создаём коллекцию с параметрами HNSW
             self._collections[name] = self._client.get_or_create_collection(
                 name=name,
-                metadata={'hnsw:space': 'cosine'},
+                metadata=config.to_metadata(),
             )
-            logger.debug(f"📦 Коллекция '{name}' инициализирована")
+            logger.info(
+                f"📦 Коллекция '{name}' инициализирована с HNSW: "
+                f"M={config.M}, construction_ef={config.construction_ef}, "
+                f"search_ef={config.search_ef}"
+            )
 
         return self._collections[name]
 
@@ -171,31 +207,88 @@ class ChromaVectorStore:
         """
         collection = self.get_collection(collection_name)
 
-        results = collection.query(
-            query_embeddings=[query_embedding],
-            n_results=limit,
-            where=filter_metadata,
-            include=['metadatas', 'distances'],
-        )
+        # Конвертируем простой фильтр в формат ChromaDB с операторами
+        where_filter = None
+        if filter_metadata:
+            where_filter = {
+                key: {'$eq': value} for key, value in filter_metadata.items()
+            }
+
+        try:
+            results = collection.query(
+                query_embeddings=[query_embedding],
+                n_results=limit,
+                where=where_filter,
+                include=['metadatas', 'distances'],
+            )
+            # Не логируем keys() — это может вызвать ошибку для именованных кортежей
+            logger.debug(f"ChromaDB query результат тип: {type(results)}")
+        except Exception as e:
+            logger.error(f"Ошибка query к ChromaDB: {e}", exc_info=True)
+            return []
 
         # Форматируем результаты с защитой от отсутствующих ключей
         formatted = []
-        if results['ids'] and results['ids'][0]:
-            for i, id in enumerate(results['ids'][0]):
-                metadata = results['metadatas'][0][i] if results['metadatas'] else {}
-                distance = results['distances'][0][i] if results['distances'] else 0
+
+        try:
+            # Проверяем, что результаты не пустые
+            # ChromaDB может возвращать dict или именованный кортеж
+            if isinstance(results, dict):
+                ids_list = results.get('ids')
+                metadatas_list = results.get('metadatas', [{}])
+                distances_list = results.get('distances', [{}])
+            elif hasattr(results, 'ids'):
+                # Именованный кортеж/объект (ChromaDB 0.5.x)
+                ids_list = results.ids
+                metadatas_list = results.metadatas if hasattr(results, 'metadatas') else [{}]
+                distances_list = results.distances if hasattr(results, 'distances') else [{}]
+            else:
+                logger.warning(f"Неизвестный формат результатов ChromaDB: {type(results)}")
+                return formatted
+
+            # ids_list[0] может быть пустым списком
+            if not ids_list or len(ids_list) == 0:
+                logger.debug("ChromaDB вернул пустой ids_list")
+                return formatted
+
+            if not ids_list[0] or len(ids_list[0]) == 0:
+                logger.debug("ChromaDB вернул пустой ids_list[0]")
+                return formatted
+
+            for i, id in enumerate(ids_list[0]):
+                # Извлекаем metadata с защитой от разных форматов
+                metadata_raw = None
+                if metadatas_list and len(metadatas_list) > 0 and i < len(metadatas_list[0]):
+                    metadata_raw = metadatas_list[0][i]
+
+                # Конвертируем именованный кортеж/объект в dict если нужно
+                if metadata_raw and hasattr(metadata_raw, '_asdict'):
+                    metadata = metadata_raw._asdict()
+                elif isinstance(metadata_raw, dict):
+                    metadata = metadata_raw
+                else:
+                    metadata = {}
+
+                # Извлекаем distance
+                distance = 0
+                if distances_list and len(distances_list) > 0 and i < len(distances_list[0]):
+                    distance = distances_list[0][i]
 
                 formatted.append({
                     'id': id,
-                    'text': metadata.get('text', ''),
-                    'metadata': metadata,
+                    'text': metadata.get('text', '') if metadata else '',
+                    'metadata': metadata if metadata else {},
                     'distance': distance,
                     'score': 1 - distance,  # Косинусное сходство (distance ∈ [0, 1])
                 })
 
-        logger.debug(
-            f"🔍 Найдено {len(formatted)} результатов в '{collection_name}'"
-        )
+            logger.debug(
+                f"🔍 Найдено {len(formatted)} результатов в '{collection_name}'"
+            )
+
+        except Exception as e:
+            logger.error(f"Ошибка форматирования результатов ChromaDB: {e}", exc_info=True)
+            return []
 
         return formatted
 
@@ -229,3 +322,55 @@ class ChromaVectorStore:
         self._collections.clear()
         # ChromaDB не поддерживает reset для PersistentClient без пересоздания
         logger.warning("⚠️ Сброс хранилища требует пересоздания клиента")
+
+    def get_hnsw_config(self, collection_name: str) -> Optional[dict[str, Any]]:
+        """
+        Получить текущую конфигурацию HNSW коллекции.
+
+        Args:
+            collection_name: Имя коллекции
+
+        Returns:
+            Dict с параметрами HNSW или None
+        """
+        collection = self.get_collection(collection_name)
+        metadata = collection.metadata or {}
+
+        if not any(k.startswith('hnsw:') for k in metadata.keys()):
+            logger.warning(f"⚠️ Коллекция '{collection_name}' не имеет параметров HNSW")
+            return None
+
+        return {
+            'space': metadata.get('hnsw:space', 'cosine'),
+            'M': metadata.get('hnsw:M', 32),
+            'construction_ef': metadata.get('hnsw:construction_ef', 200),
+            'search_ef': metadata.get('hnsw:search_ef', 100),
+        }
+
+    def get_collection_stats(self, collection_name: str) -> dict[str, Any]:
+        """
+        Получить расширенную статистику коллекции.
+
+        Args:
+            collection_name: Имя коллекции
+
+        Returns:
+            Dict со статистикой
+        """
+        from services.vector_search.hnsw_config import estimate_memory_usage
+
+        collection = self.get_collection(collection_name)
+        count = collection.count()
+
+        # Получаем конфигурацию HNSW
+        hnsw_config = self.get_hnsw_config(collection_name)
+
+        # Оцениваем потребление памяти (предполагаем 384 измерения для multilingual-MiniLM)
+        memory_estimate = estimate_memory_usage(count, dimensions=384)
+
+        return {
+            'name': collection_name,
+            'count': count,
+            'hnsw_config': hnsw_config,
+            'memory_estimate': memory_estimate,
+        }

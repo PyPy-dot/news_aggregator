@@ -11,14 +11,18 @@ Dependency Injection Container.
 """
 
 import logging
-from typing import Any, Callable, Dict, Optional, Type, TypeVar, AsyncGenerator
+from typing import Any, Callable, Dict, Optional, Type, TypeVar, AsyncGenerator, TYPE_CHECKING
 from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.core.database import DatabaseService, get_database_service
+from services.database import IDatabaseService, get_database_service
 from database import RepositoryFactory
 from config.settings import settings
+
+if TYPE_CHECKING:
+    from aiogram import Bot
+    from services.telegram.notification import NotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +76,16 @@ class Container:
         """
         self._services[service_type] = instance
 
+    def register_instance_by_name(self, name: str, instance: Any) -> None:
+        """
+        Зарегистрировать экземпляр по строковому имени (для сервисов с циклической зависимостью).
+
+        Args:
+            name: Имя сервиса
+            instance: Экземпляр сервиса
+        """
+        self._services[name] = instance
+
     def register_factory(self, service_type: Type[T], factory: Callable[[], T]) -> None:
         """
         Зарегистрировать factory сервис (создаётся каждый раз).
@@ -120,6 +134,33 @@ class Container:
 
         raise ValueError(f"Сервис {service_type} не зарегистрирован")
 
+    def get_bot(self) -> Optional['Bot']:
+        """
+        Получить экземпляр бота из контейнера.
+
+        Returns:
+            Bot экземпляр или None
+        """
+        return self._services.get('Bot')
+
+    def get_notification_service(self) -> Optional['NotificationService']:
+        """
+        Получить NotificationService из контейнера.
+
+        Returns:
+            NotificationService экземпляр или None
+        """
+        return self._services.get('NotificationService')
+
+    def get_vector_search_service(self) -> Optional['VectorSearchService']:
+        """
+        Получить VectorSearchService из контейнера.
+
+        Returns:
+            VectorSearchService экземпляр или None
+        """
+        return self.get('VectorSearchService')
+
     async def create_orchestrator(self, session: AsyncSession):
         """
         Создать NewsOrchestrator с зависимостями.
@@ -137,17 +178,67 @@ class Container:
         # Получаем NotificationService через строковый ключ (lazy import)
         notification_service = self.get('NotificationService')
 
+        # Получаем VectorSearchService через строковый ключ
+        vector_search_service = self.get('VectorSearchService')
+
         return NewsOrchestrator(
             repo_factory=repo_factory,
-            model=settings.agent_model,
+            notification_service=notification_service,
+            vector_search_service=vector_search_service,
+        )
+
+    async def create_categorization_components(self, session: AsyncSession):
+        """
+        Создать компоненты категоризации.
+
+        Args:
+            session: Сессия БД
+
+        Returns:
+            Dict с компонентами {queue, processor, saver, classifier}
+        """
+        from services.categorization import (
+            CategorizationQueue,
+            CategorizationProcessor,
+            NewsSaver,
+            NewsClassifier,
+        )
+        from services.ai_agent.agents import CategorizerAgent
+        from config.settings import settings
+
+        repo_factory = RepositoryFactory(session)
+
+        # Создаём компоненты
+        queue = CategorizationQueue()
+        classifier = NewsClassifier()
+        saver = NewsSaver(
+            posts_repo=repo_factory.posts(),
+            channels_repo=repo_factory.channels(),
+            events_repo=repo_factory.events(),
+        )
+        categorizer = CategorizerAgent(model=settings.agent_model)
+        notification_service = self.get('NotificationService')
+
+        processor = CategorizationProcessor(
+            categorizer=categorizer,
+            saver=saver,
+            channel_provider=repo_factory.channels(),
             notification_service=notification_service,
         )
+
+        return {
+            'queue': queue,
+            'processor': processor,
+            'saver': saver,
+            'classifier': classifier,
+            'categorizer': categorizer,
+        }
 
     def _register_defaults(self) -> None:
         """Зарегистрировать базовые зависимости."""
 
-        # DatabaseService — singleton
-        self.register_singleton(DatabaseService, lambda: DatabaseService())
+        # IDatabaseService — singleton (используем новый слой абстракции)
+        self.register_singleton(IDatabaseService, lambda: get_database_service())
 
         # NotificationService — singleton (lazy import для избежания циклической зависимости)
         def _create_notification_service():
@@ -158,7 +249,15 @@ class Container:
         self._services['NotificationService'] = None
         self._factories['NotificationService'] = _create_notification_service
 
-        # CategorizationService регистрируется отдельно для избежания циклической зависимости
+        # VectorSearchService — singleton (lazy import)
+        def _create_vector_search_service():
+            from services.vector_search import VectorSearchService
+            return VectorSearchService()
+
+        self._services['VectorSearchService'] = None
+        self._factories['VectorSearchService'] = _create_vector_search_service
+
+        # CategorizationService компоненты регистрируются отдельно для избежания циклической зависимости
 
     async def init(self) -> None:
         """Инициализировать контейнер."""
@@ -166,14 +265,15 @@ class Container:
             logger.debug("DI контейнер уже инициализирован")
             return
 
-        logger.info("🔧 Инициализация DI контейнера...")
+        logger.debug("🔧 Инициализация DI контейнера...")
 
-        # Инициализируем DatabaseService
-        db_service = self.get(DatabaseService)
-        logger.info(f"✅ DatabaseService готов: {db_service.database_url}")
+        # Инициализируем IDatabaseService (новый слой абстракции)
+        db_service = self.get(IDatabaseService)
+        await db_service.connect()  # Явное подключение
+        logger.info(f"✅ БД подключена: {db_service.db_type.name}")
 
         self._initialized = True
-        logger.info("✅ DI контейнер инициализирован")
+        logger.debug("✅ DI контейнер инициализирован")
 
     async def dispose(self) -> None:
         """Освободить ресурсы контейнера."""
@@ -183,13 +283,13 @@ class Container:
 
         logger.info("👋 Освобождение ресурсов DI контейнера...")
 
-        # Освобождаем DatabaseService
-        if DatabaseService in self._services and self._services[DatabaseService]:
+        # Освобождаем IDatabaseService
+        if IDatabaseService in self._services and self._services[IDatabaseService]:
             try:
-                await self._services[DatabaseService].dispose()
-                logger.info("✅ DatabaseService остановлен")
+                await self._services[IDatabaseService].disconnect()
+                logger.info("✅ БД отключена")
             except Exception as e:
-                logger.error(f"❌ Ошибка остановки DatabaseService: {e}")
+                logger.error(f"❌ Ошибка отключения БД: {e}")
 
         # Очищаем сервисы
         self._services.clear()
@@ -208,47 +308,8 @@ class Container:
             async with container.session() as session:
                 factory = RepositoryFactory(session)
         """
-        db_service = self.get(DatabaseService)
+        db_service = self.get(IDatabaseService)
         async with db_service.session_context() as session:
             yield session
 
 
-# Глобальный контейнер (singleton)
-_container: Optional[Container] = None
-
-
-def get_container() -> Container:
-    """
-    Получить глобальный контейнер (singleton).
-
-    Returns:
-        Container экземпляр
-    """
-    global _container
-    if _container is None:
-        _container = Container()
-    return _container
-
-
-async def init_container() -> Container:
-    """
-    Инициализировать глобальный контейнер.
-
-    Returns:
-        Инициализированный Container
-    """
-    container = get_container()
-    await container.init()
-    return container
-
-
-async def dispose_container() -> None:
-    """
-    Утилизировать глобальный контейнер.
-
-    Вызывается при завершении приложения.
-    """
-    global _container
-    if _container is not None:
-        await _container.dispose()
-        _container = None

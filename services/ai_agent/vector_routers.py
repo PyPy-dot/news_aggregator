@@ -10,7 +10,8 @@ from typing import Any
 
 from services.ai_agent.events import EventType, Event
 from services.ai_agent.routers import EventBus
-from services.listener.helpers import (
+from services.news.helpers import (
+    add_event_context,
     add_event_to_vector_index,
     add_news_to_vector_index,
     find_similar_events,
@@ -34,14 +35,11 @@ def register_vector_search_handlers(event_bus: EventBus) -> None:
         Обработчик создания контекста события.
         После создания контекста добавляет событие в векторный индекс.
         """
-        from services.listener.helpers import add_event_context
-
         payload = event.payload
         post_id = payload.get('post_id')
         context_data = payload.get('context_data', {})
         event_category = payload.get('category', 'other')
         tags = payload.get('tags', [])
-        summary = payload.get('summary', '')
 
         # Создаём контекст в БД
         event_id = await add_event_context(
@@ -49,7 +47,6 @@ def register_vector_search_handlers(event_bus: EventBus) -> None:
             context_data=context_data,
             event_category=event_category,
             tags=tags,
-            summary=summary,
         )
 
         # Добавляем в векторный индекс
@@ -59,7 +56,6 @@ def register_vector_search_handlers(event_bus: EventBus) -> None:
                 post_id=post_id,
                 context_data=context_data,
                 event_category=event_category,
-                summary=summary,
                 tags=tags,
             )
             logger.info(f"✅ Событие ID={event_id} создано и добавлено в векторный индекс")
@@ -70,12 +66,12 @@ def register_vector_search_handlers(event_bus: EventBus) -> None:
         Обработчик генерации новости.
         После генерации добавляет новость в векторный индекс и отправляет уведомление админам.
         """
-        from services.listener.helpers import add_generated_news
+        from services.news.helpers import add_generated_news
         from services.ai_agent.agents import EditorAgent
         from services.telegram.notification import NotificationService
         from database.repositories.posts import PostRepository
         from database.repositories.channels import ChannelRepository
-        from services.core.database import get_database_service
+        from services.database import get_database_service
 
         payload = event.payload
         post_id = payload.get('post_id')
@@ -91,11 +87,9 @@ def register_vector_search_handlers(event_bus: EventBus) -> None:
         )
 
         # Сохраняем новость в БД
-        source_post_ids = [post_id] if post_id else []
         source_event_ids = [payload.get('event_id')] if payload.get('event_id') else []
 
         news_id = await add_generated_news(
-            source_post_ids=source_post_ids,
             text=news_result.get('text', ''),
             category=category,
             tags=news_result.get('tags', []),
@@ -109,7 +103,6 @@ def register_vector_search_handlers(event_bus: EventBus) -> None:
                 news_id=news_id,
                 text=news_result.get('text', ''),
                 category=category,
-                source_post_ids=source_post_ids,
                 tags=news_result.get('tags', []),
             )
             logger.info(f"✅ Новость ID={news_id} сгенерирована и добавлена в векторный индекс")

@@ -1,93 +1,230 @@
 """
 News Orchestrator — единый координатор для обработки новостей.
 
-Централизует логику обработки новостей, устраняя дублирование между:
-- ListenerBot (срочные новости)
-- Scheduler (плановые новости)
-
-Поддерживает стратегии:
-- UrgentNewsStrategy — срочная обработка (4-5)
-- ScheduledNewsStrategy — плановая обработка (1-3)
-- TrustedSourceStrategy — доверенные источники (без модерации)
+Использует паттерн Strategy для делегирования обработки:
+- UrgentNewsStrategy — срочные новости (4-5)
+- ScheduledNewsStrategy — плановые новости (1-3)
+- TrustedSourceStrategy — доверенные источники
 
 Корректное управление жизненным циклом шины событий.
 """
 
+import asyncio
+import json
 import logging
 from typing import Optional, Dict, Any
-from enum import Enum
 
 from database import RepositoryFactory
-from database.repositories.posts import PostRepository
-from database.repositories.events import EventRepository
-from database.repositories.news import NewsRepository
-from database.repositories.publishers import PublisherRepository
-from services.ai_agent.agents import (
-    AnalystAgent,
-    EditorAgent,
-    ArchivistAgent,
-)
 from services.ai_agent.routers import EventBus
-from services.ai_agent.events import Event, EventType
+from services.ai_agent.events import EventType, Event
 from services.ai_agent.vector_routers import register_vector_search_handlers
+from services.ai_agent.agents import EditorAgent, DirectNewsEditorAgent, ArchivistAgent
 from services.telegram.notification import NotificationService
+from services.news.strategies.base import NewsProcessingStrategy
+from services.news.strategies.urgent import UrgentNewsStrategy
+from services.news.strategies.scheduled import ScheduledNewsStrategy
+from services.news.strategies.trusted import TrustedSourceStrategy
+from services.news.generation import NewsGenerationService
+from services.news.context import EventContextService
+from services.news.helpers import add_generated_news
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
-
-
-class NewsPriority(Enum):
-    """Приоритет обработки новости."""
-    URGENT = 'urgent'           # Срочность 4-5
-    SCHEDULED = 'scheduled'     # Срочность 1-3
-    TRUSTED = 'trusted'         # Доверенный источник
 
 
 class NewsOrchestrator:
     """
     Координатор обработки новостей.
 
+    Делегирует обработку стратегиям на основе приоритета новости.
+
     Attributes:
         repo_factory: Фабрика репозиториев
-        analyst: Агент-аналитик
-        editor: Агент-редактор
-        archivist: Агент-архивариус
         event_bus: Шина событий
         notification_service: Сервис уведомлений
+        vector_search_service: Сервис векторного поиска
+        strategies: Стратегии обработки
     """
 
     def __init__(
         self,
         repo_factory: RepositoryFactory,
-        model: Optional[str] = None,
         notification_service: Optional[NotificationService] = None,
+        vector_search_service: Optional[Any] = None,
     ) -> None:
         """
         Инициализация координатора.
 
         Args:
             repo_factory: Фабрика репозиториев
-            model: Модель для агентов (по умолчанию из конфига)
             notification_service: Сервис уведомлений
+            vector_search_service: Сервис векторного поиска (опционально)
         """
         self.repo_factory = repo_factory
-        self.model = model or settings.agent_model
+        # Получаем NotificationService из аргумента
+        if notification_service is None:
+            self.notification_service = None
+            logger.debug("⚠️ NotificationService не передан, будет установлен позже")
+        else:
+            self.notification_service = notification_service
 
-        # Инициализация агентов
-        self.analyst = AnalystAgent(model=self.model)
-        self.editor = EditorAgent(model=self.model)
-        self.archivist = ArchivistAgent(model=self.model)
+        # Получаем VectorSearchService из аргумента
+        self.vector_search_service = vector_search_service
 
         # Инициализация шины событий
         self.event_bus = EventBus(max_concurrency=3)
         register_vector_search_handlers(self.event_bus)
 
-        # Сервис уведомлений
-        self.notification_service = notification_service or NotificationService()
+        # Инициализация стратегий
+        self._strategies: Dict[str, NewsProcessingStrategy] = {}
+        self._init_strategies()
+
+        # Сервисы (ленивая инициализация)
+        self._generation_service: Optional[NewsGenerationService] = None
+        self._context_service: Optional[EventContextService] = None
+
+        # Задачи
+        self._event_bus_task: Optional[asyncio.Task] = None
 
         # Флаги
-        self._event_handlers_registered = False
         self._running = False
+
+    def _init_strategies(self) -> None:
+        """Инициализировать стратегии обработки."""
+        posts_repo = self.repo_factory.posts()
+        events_repo = self.repo_factory.events()
+        news_repo = self.repo_factory.news()
+        publishers_repo = self.repo_factory.publishers()
+
+        self._strategies = {
+            'urgent': UrgentNewsStrategy(
+                posts_repo=posts_repo,
+                events_repo=events_repo,
+                news_repo=news_repo,
+                publishers_repo=publishers_repo,
+                event_bus=self.event_bus,
+            ),
+            'scheduled': ScheduledNewsStrategy(
+                posts_repo=posts_repo,
+                events_repo=events_repo,
+                news_repo=news_repo,
+                publishers_repo=publishers_repo,
+                event_bus=self.event_bus,
+            ),
+            'trusted': TrustedSourceStrategy(
+                posts_repo=posts_repo,
+                events_repo=events_repo,
+                news_repo=news_repo,
+                publishers_repo=publishers_repo,
+                event_bus=self.event_bus,
+            ),
+        }
+        logger.debug(f"✅ Инициализировано стратегий: {len(self._strategies)}")
+
+    def _get_generation_service(self) -> NewsGenerationService:
+        """Получить сервис генерации новостей (ленивая инициализация)."""
+        if self._generation_service is None:
+            posts_repo = self.repo_factory.posts()
+            events_repo = self.repo_factory.events()
+            news_repo = self.repo_factory.news()
+            channels_repo = self.repo_factory.channels()
+
+            self._generation_service = NewsGenerationService(
+                posts_repo=posts_repo,
+                events_repo=events_repo,
+                news_repo=news_repo,
+                channels_repo=channels_repo,
+                notification_service=self.notification_service,
+            )
+        return self._generation_service
+
+    def _get_context_service(self) -> EventContextService:
+        """Получить сервис управления контекстом (ленивая инициализация)."""
+        if self._context_service is None:
+            events_repo = self.repo_factory.events()
+            posts_repo = self.repo_factory.posts()
+
+            self._context_service = EventContextService(
+                events_repo=events_repo,
+                posts_repo=posts_repo,
+                vector_search_service=self.vector_search_service,
+            )
+        return self._context_service
+
+    def parse_json_response(self, response: str, required_fields: list[str] = None) -> dict:
+        """
+        Распарсить JSON ответ от AI агента.
+
+        Args:
+            response: Строка с ответом (возможно с markdown)
+            required_fields: Список обязательных полей для проверки
+
+        Returns:
+            Распарсенный dict
+
+        Raises:
+            ValueError: Если JSON не распарсился или нет обязательных полей
+        """
+        import re
+        # Извлекаем JSON из markdown блока ```json ... ``` или ``` ... ```
+        json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(1)
+        else:
+            # Пробуем найти JSON без markdown обёртки
+            json_match = re.search(r'\{.*?\}', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(0)
+            else:
+                json_str = response
+
+        try:
+            data = json.loads(json_str)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Не удалось распарсить JSON: {e}")
+
+        # Проверяем обязательные поля
+        if required_fields:
+            missing = [f for f in required_fields if f not in data]
+            if missing:
+                raise ValueError(f"Отсутствуют обязательные поля: {missing}")
+
+        return data
+
+    def _get_strategy(self, priority: str) -> NewsProcessingStrategy:
+        """
+        Получить стратегию по приоритету.
+
+        Args:
+            priority: Приоритет ('urgent', 'scheduled', 'trusted')
+
+        Returns:
+            Стратегия обработки
+
+        Raises:
+            ValueError: Если стратегия не найдена
+        """
+        if priority not in self._strategies:
+            raise ValueError(f"Неизвестный приоритет: {priority}")
+        return self._strategies[priority]
+
+    def _determine_priority(self, urgency: int, is_trusted_source: bool) -> str:
+        """
+        Определить приоритет обработки.
+
+        Args:
+            urgency: Уровень срочности (1-5)
+            is_trusted_source: Флаг доверенного источника
+
+        Returns:
+            Приоритет ('urgent', 'scheduled', 'trusted')
+        """
+        if is_trusted_source and urgency >= 4:
+            return 'trusted'
+        elif urgency >= 4:
+            return 'urgent'
+        else:
+            return 'scheduled'
 
     async def process_news(
         self,
@@ -99,7 +236,7 @@ class NewsOrchestrator:
         is_trusted_source: bool = False,
     ) -> None:
         """
-        Обработать новость.
+        Обработать новость через стратегию.
 
         Args:
             post_id: ID поста
@@ -113,150 +250,39 @@ class NewsOrchestrator:
             logger.warning("⚠️ NewsOrchestrator не запущен, новость не обработана")
             return
 
-        # Определяем приоритет
-        if is_trusted_source and urgency >= 4:
-            priority = NewsPriority.TRUSTED
-        elif urgency >= 4:
-            priority = NewsPriority.URGENT
-        else:
-            priority = NewsPriority.SCHEDULED
+        # Определяем приоритет и выбираем стратегию
+        priority = self._determine_priority(urgency, is_trusted_source)
+        strategy = self._get_strategy(priority)
 
         logger.info(
-            f"📰 Обработка новости ID={post_id}, приоритет={priority.value}, "
+            f"📰 Обработка новости ID={post_id}, стратегия={priority}, "
             f"срочность={urgency}, доверенный={is_trusted_source}"
         )
 
-        # Обработка в зависимости от приоритета
-        if priority == NewsPriority.TRUSTED:
-            await self._handle_trusted_news(post_id, channel_id)
-        elif priority == NewsPriority.URGENT:
-            await self._handle_urgent_news(post_id, text, category, urgency)
-        else:
-            await self._handle_scheduled_news(post_id, text, category, urgency)
-
-    async def _handle_trusted_news(self, post_id: int, channel_id: int) -> None:
-        """
-        Обработать новость от доверенного источника.
-
-        Публикует напрямую без модерации и АРА.
-
-        Args:
-            post_id: ID поста
-            channel_id: ID канала
-        """
-        logger.info(f"✅ ДОВЕРЕННЫЙ ИСТОЧНИК! Публикация без модерации (пост ID={post_id})")
-
-        posts_repo = self.repo_factory.posts()
-        publishers_repo = self.repo_factory.publishers()
-
-        # Получаем publisher по умолчанию (первый активный)
-        publishers = await publishers_repo.get_all(active_only=True)
-        publisher_id = publishers[0].id if publishers else None
-
-        # Помечаем пост как опубликованный напрямую
-        await posts_repo.mark_direct_publish(
+        # Делегируем обработку стратегии
+        await strategy.process(
             post_id=post_id,
-            publisher_channel_id=publisher_id
+            text=text,
+            category=category,
+            urgency=urgency,
+            channel_id=channel_id,
         )
-
-        logger.info(f"🚀 Пост ID={post_id} помечен как опубликованный напрямую")
-
-    async def _handle_urgent_news(
-        self,
-        post_id: int,
-        text: str,
-        category: str,
-        urgency: int
-    ) -> None:
-        """
-        Обработать срочную новость.
-
-        Запускает АРА немедленно, затем уведомляет админа.
-
-        Args:
-            post_id: ID поста
-            text: Текст новости
-            category: Категория
-            urgency: Срочность
-        """
-        logger.info(f"⚡ Срочная новость! Срочность {urgency}, категория {category}")
-
-        # Emit событие создания контекста (срочно)
-        await self.event_bus.emit(Event(
-            type=EventType.CREATE_CONTEXT,
-            payload={
-                'post_id': post_id,
-                'text': text,
-                'category': category,
-                'urgency': urgency,
-                'urgent': True
-            }
-        ))
-
-        # Emit событие генерации новости
-        await self.event_bus.emit(Event(
-            type=EventType.GENERATE_NEWS,
-            payload={
-                'post_id': post_id,
-                'text': text,
-                'category': category,
-                'urgency': urgency,
-                'urgent': True,
-                'already_approved': False  # Требует модерации
-            }
-        ))
-
-        logger.info(f"✅ Срочная новость ID={post_id} отправлена на обработку")
-
-    async def _handle_scheduled_news(
-        self,
-        post_id: int,
-        text: str,
-        category: str,
-        urgency: int
-    ) -> None:
-        """
-        Обработать плановую новость.
-
-        Сохраняет событие для обработки планировщиком.
-
-        Args:
-            post_id: ID поста
-            text: Текст новости
-            category: Категория
-            urgency: Срочность
-        """
-        logger.info(f"📝 Плановая новость: срочность {urgency}, категория {category}")
-
-        events_repo = self.repo_factory.events()
-
-        # Создаём контекст события для планировщика
-        context_data = {
-            'event_description': text[:200],
-            'participants': [],
-            'location': None,
-            'timestamp': None,
-            'cause': None,
-            'consequences': [],
-            'related_topics': [category],
-            'key_facts': []
-        }
-
-        event_id = await events_repo.create_event(
-            post_id=post_id,
-            context_data=context_data,
-            event_category=category,
-            tags=[],
-            summary=text[:100]
-        )
-
-        logger.info(f"📝 Событие ID={event_id} создано (ожидает планировщика)")
 
     async def process_pending_news_batch(self, hours: int = 48) -> int:
         """
         Обработать пакет новостей, ожидающих обработки.
 
         Используется планировщиком для плановой обработки.
+        Analyst НЕ запускается — посты уже проанализированы CategorizationProcessor.
+
+        НОВЫЙ АЛГОРИТМ (группировка по категориям):
+        1. Взять первую запись с checked_at=False
+        2. Найти ВСЕ записи с той же категорией
+        3. Векторный поиск в events для контекста
+        4. Передать Editor группу постов + контекст
+        5. Editor генерирует новость
+        6. Передать Archivist (новое/продолжение)
+        7. Отправить на модерацию
 
         Args:
             hours: За сколько часов искать новости
@@ -269,60 +295,711 @@ class NewsOrchestrator:
             return 0
 
         posts_repo = self.repo_factory.posts()
-        events_repo = self.repo_factory.events()
 
-        # Получаем посты, которые ещё не были обработаны
-        unanalyzed_posts = await posts_repo.get_unanalyzed(hours=hours)
-
-        # Фильтруем посты, которые уже были проанализированы
-        posts_to_process = []
-        for post in unanalyzed_posts:
-            if not await posts_repo.is_analyzed(post.id):
-                posts_to_process.append(post)
+        # Получаем посты для обработки (с checked_at=false)
+        posts_to_process = await posts_repo.get_unanalyzed(hours=hours)
 
         if not posts_to_process:
-            logger.info("📭 Нет новостей для обработки (все уже проанализированы)")
+            logger.info("📭 Нет новостей для обработки (все уже обработаны)")
             return 0
 
         logger.info(f"📊 Найдено {len(posts_to_process)} новостей для обработки")
 
-        processed_count = 0
+        # ГРУППИРОВКА ПО КАТЕГОРИЯМ
+        categories = {}
         for post in posts_to_process:
+            cat = post.category or 'Общее'
+            if cat not in categories:
+                categories[cat] = []
+            categories[cat].append(post)
+
+        logger.info(f"📁 Категории: {', '.join(f'{k}({len(v)})' for k, v in categories.items())}")
+
+        processed_count = 0
+        for category, posts in categories.items():
             try:
-                # Получаем контекст события для этого поста
-                contexts = await events_repo.get_by_post(post.id)
-                context = contexts[0] if contexts else {}
-
-                # Emit событие генерации новости
-                await self.event_bus.emit(Event(
-                    type=EventType.GENERATE_NEWS,
-                    payload={
-                        'post_id': post.id,
-                        'event_id': contexts[0].id if contexts else None,
-                        'event_context': context,
-                        'category': post.category,
-                        'urgency': int(post.urgency) if post.urgency else 1,
-                        'scheduled': True,
-                        'from_scheduler': True
-                    }
-                ))
-
-                logger.info(
-                    f"✅ Пост ID={post.id} отправлен на генерацию "
-                    f"(категория: {post.category})"
-                )
-                processed_count += 1
-
+                # Обрабатываем группу постов одной категории
+                await self._process_analyzed_posts_batch(posts, posts_repo, category)
+                processed_count += len(posts)
             except Exception as e:
-                logger.error(f"Ошибка обработки поста ID={post.id}: {e}")
+                logger.error(f"Ошибка обработки группы постов категории {category}: {e}", exc_info=True)
 
         return processed_count
 
+    async def _process_analyzed_posts_batch(
+        self,
+        posts: list,
+        posts_repo,
+        category: str
+    ) -> None:
+        """
+        Обработать группу проанализированных постов одной категории.
+
+        АЛГОРИТМ:
+        1. Собрать тексты всех постов группы
+        2. Векторный поиск в events для контекста (по категории и тэгам)
+        3. Передать Editor группу постов + контекст
+        4. Editor генерирует новость
+        5. Передать Archivist (новое событие или продолжение)
+        6. Отметить все посты как обработанные
+
+        Args:
+            posts: Список постов одной категории
+            posts_repo: Репозиторий постов
+            category: Категория постов
+        """
+        from services.ai_agent.agents import EditorAgent, ArchivistAgent
+
+        if not posts:
+            return
+
+        # 1. Собираем тексты всех постов
+        post_texts = [post.text for post in posts if post.text]
+        if not post_texts:
+            logger.warning(f"⚠️ Нет текстов для обработки в категории {category}")
+            return
+
+        # Объединяем тексты для контекста
+        combined_text = '\n\n'.join(post_texts[:5])  # Берём первые 5 постов для контекста
+
+        # 2. Векторный поиск для контекста через VectorSearchService
+        logger.info(f"🔍 Векторный поиск для категории {category}...")
+
+        if self.vector_search_service:
+            similar_events = await self.vector_search_service.find_similar_events(
+                text=combined_text,
+                category=category,
+                limit=5,
+                min_score=0.7
+            )
+            similar_posts_list = await self.vector_search_service.find_similar_posts(
+                text=combined_text,
+                category=category,
+                limit=10,
+                min_score=0.6
+            )
+        else:
+            # Fallback на глобальные функции (для обратной совместимости)
+            from services.news.helpers import find_similar_events, find_similar_posts
+            similar_events = await find_similar_events(
+                text=combined_text,
+                category=category,
+                limit=5,
+                min_score=0.7
+            )
+            similar_posts_list = await find_similar_posts(
+                text=combined_text,
+                category=category,
+                limit=10,
+                min_score=0.6
+            )
+
+        # 3. Передаём Editor группу постов + контекст
+        logger.info(f"🤖 Генерация новости для {len(posts)} постов категории {category}...")
+        editor = EditorAgent()
+
+        # Формируем промпт с группой постов
+        posts_context = '\n---\n'.join([
+            f"Пост #{i+1} (ID={p.id}, срочность={p.urgency}):\n{p.text[:300]}"
+            for i, p in enumerate(posts[:5])  # Берём первые 5 для промпта
+        ])
+
+        # Контекст из похожих событий
+        events_context = ''
+        if similar_events:
+            events_context = '\n\nПохожие события:\n' + '\n'.join([
+                f"- {e.get('event_description', '')[:200]}"
+                for e in similar_events[:3]
+            ])
+
+        editor_prompt = (
+            f"Сгенерируй новость на основе следующих постов одной категории ({category}):\n\n"
+            f"{posts_context}\n"
+            f"{events_context}\n\n"
+            f"Важно: объедини информацию из всех постов в единую связную новость."
+        )
+
+        # Генерируем новость
+        editor_response = await editor.send_question(editor_prompt)
+
+        # Парсим ответ
+        try:
+            news_data = self.parse_json_response(editor_response, required_fields=['text', 'news_tags'])
+        except ValueError as e:
+            logger.error(f"❌ Ошибка парсинга ответа Editor: {e}")
+            # Отмечаем посты как обработанные без новости
+            for post in posts:
+                await posts_repo.mark_analyzed(post.id)
+            return
+
+        news_text = news_data.get('text', '')
+        news_tags = news_data.get('news_tags', [])
+
+        if not news_text or len(news_text) < 50:
+            logger.warning(f"⚠️ Пустая или слишком короткая новость для категории {category}")
+            for post in posts:
+                await posts_repo.mark_analyzed(post.id)
+            return
+
+        # 4. Сохраняем новость
+        from services.news.helpers import add_generated_news
+        news_id = await add_generated_news(
+            text=news_text,
+            category=category,
+            tags=news_tags,
+            source_event_ids=[e['id'] for e in similar_events[:3]] if similar_events else [],
+            moderation_status='pending',
+        )
+
+        logger.info(f"✅ Новость ID={news_id} сгенерирована для {len(posts)} постов")
+
+        # 5. Передаём Archivist для определения "новое/продолжение"
+        if similar_events:
+            archivist = ArchivistAgent()
+            archivist_prompt = (
+                f"Определи, является ли эта новость новым событием или продолжением существующего.\n\n"
+                f"Новость: {news_text[:300]}...\n\n"
+                f"Похожие события: {events_context}\n\n"
+                f"Ответь в формате JSON: {{\"is_new_event\": true/false, \"event_description\": \"...\"}}"
+            )
+
+            try:
+                archivist_response = await archivist.send_question(archivist_prompt)
+                archivist_data = self.parse_json_response(archivist_response, required_fields=['is_new_event'])
+
+                if archivist_data.get('is_new_event', False):
+                    # Новое событие — создаём новый контекст
+                    logger.info(f"🆕 Новость ID={news_id} — новое событие")
+                    # Контекст будет создан при публикации
+                else:
+                    # Продолжение — обновляем существующий контекст
+                    logger.info(f"🔗 Новость ID={news_id} — продолжение существующего события")
+            except Exception as e:
+                logger.error(f"⚠️ Ошибка Archivist: {e}")
+
+        # 6. Отмечаем все посты как обработанные
+        for post in posts:
+            await posts_repo.mark_analyzed(post.id, generated_news_id=news_id)
+
+        logger.info(f"✅ Обработано {len(posts)} постов категории {category}")
+
+    async def _process_analyzed_post(self, post, posts_repo) -> None:
+        """
+        Обработать проанализированный пост (генерация новости).
+
+        Analyst уже сработал на этапе категоризации, поэтому:
+        - category уже установлена
+        - category_confidence уже установлен
+        - tags уже установлены
+
+        Args:
+            post: Объект поста
+            posts_repo: Репозиторий постов
+        """
+        # Векторный поиск для контекста через VectorSearchService
+        if self.vector_search_service:
+            similar_events = await self.vector_search_service.find_similar_events(
+                text=post.text,
+                category=post.category,
+                limit=5,
+                min_score=0.7
+            )
+            similar_posts = await self.vector_search_service.find_similar_posts(
+                text=post.text,
+                category=post.category,
+                limit=10,
+                min_score=0.6
+            )
+        else:
+            # Fallback на глобальные функции
+            from services.news.helpers import find_similar_events, find_similar_posts
+            similar_events, similar_posts = await find_similar_events(
+                text=post.text,
+                category=post.category,
+                limit=5,
+                min_score=0.7
+            ), await find_similar_posts(
+                text=post.text,
+                category=post.category,
+                limit=10,
+                min_score=0.6
+            )
+
+        # Генерация новости через сервис
+        generation_service = self._get_generation_service()
+        news_id = await generation_service.generate_news(
+            post_id=post.id,
+            post_text=post.text,
+            post_category=post.category,
+            post_tags=[],  # Уже установлены в БД
+            post_category_confidence=post.category_confidence,
+            similar_events=similar_events,
+            similar_posts=similar_posts,
+        )
+
+        if news_id:
+            # Отмечаем пост как обработанный
+            await posts_repo.mark_analyzed(post.id, generated_news_id=news_id)
+            logger.info(f"✅ Новость ID={post.id} сгенерирована (news_id={news_id})")
+        else:
+            # Ошибка генерации — всё равно отмечаем как обработанную
+            await posts_repo.mark_analyzed(post.id)
+            logger.warning(f"⚠️ Новость ID={post.id} не сгенерирована")
+
+    async def _find_context(self, text: str, category: str):
+        """Найти похожие события и посты для контекста."""
+        if self.vector_search_service:
+            similar_events = await self.vector_search_service.find_similar_events(
+                text=text,
+                category=category,
+                limit=5,
+                min_score=0.7
+            )
+            similar_posts = await self.vector_search_service.find_similar_posts(
+                text=text,
+                category=category,
+                limit=10,
+                min_score=0.6
+            )
+            return similar_events, similar_posts
+        else:
+            # Fallback на глобальные функции
+            from services.news.helpers import find_similar_events, find_similar_posts
+            similar_events = await find_similar_events(
+                text=text,
+                category=category,
+                limit=5,
+                min_score=0.7
+            )
+            similar_posts = await find_similar_posts(
+                text=text,
+                category=category,
+                limit=10,
+                min_score=0.6
+            )
+            return similar_events, similar_posts
+
+    async def _update_post_with_analysis(self, posts_repo, post_id: int, analysis: dict):
+        """Обновить пост результатами анализа."""
+        await posts_repo.update_category_confidence(post_id, analysis['confidence'])
+
+        if analysis['post_tags']:
+            await posts_repo.update_post_tags(post_id, analysis['post_tags'])
+
+    async def _emit_generate_event(
+        self,
+        post_id: int,
+        urgency,
+        contexts,
+        context: dict,
+        analysis: dict
+    ):
+        """Отправить событие генерации новости."""
+        await self.event_bus.emit(Event(
+            type=EventType.GENERATE_NEWS,
+            payload={
+                'post_id': post_id,
+                'event_id': contexts[0].id if contexts else None,
+                'event_context': context,
+                'category': analysis['category'],
+                'urgency': int(urgency) if urgency else 1,
+                'analysis': analysis,
+                'scheduled': True,
+                'from_scheduler': True
+            }
+        ))
+
+    async def process_news_cycle(self) -> int:
+        """
+        Цикл обработки новостей с векторным поиском и генерацией.
+
+        Алгоритм:
+        1. Берём одну новость с checked_at = false
+        2. Передаём AnalystAgent для анализа (если ещё не проанализирован)
+        3. Векторный поиск похожих постов и событий
+        4. Генерация новости через NewsGenerationService
+        5. Отмечаем пост как обработанный (checked_at = true)
+
+        Цикл выполняется пока есть новости с checked_at = false.
+
+        Returns:
+            Количество обработанных новостей
+        """
+        if not self._running:
+            logger.warning("⚠️ NewsOrchestrator не запущен, цикл обработки отменён")
+            return 0
+
+        posts_repo = self.repo_factory.posts()
+        processed_count = 0
+
+        while self._running:
+            # 1. Берём одну новость с checked_at = false
+            unanalyzed_posts = await posts_repo.get_unanalyzed(hours=48)
+
+            if not unanalyzed_posts:
+                logger.info("📭 Все новости обработаны (checked_at = true)")
+                break
+
+            post = unanalyzed_posts[0]
+            logger.info(f"🔄 Обработка новости ID={post.id} (цикл {processed_count + 1})")
+
+            try:
+                # 2. Передаём AnalystAgent если пост ещё не проанализирован
+                if not post.checked_at:
+                    # Проверяем, есть ли уже результаты анализа (тэги)
+                    post_tags = json.loads(post.tags or '[]')
+                    if not post_tags or post.category_confidence is None:
+                        # Передаём аналитику
+                        analysis = await self._analyze_post(post)
+                        if analysis:
+                            # Обновляем пост результатами анализа
+                            await self._update_post_with_analysis(post.id, analysis)
+                            # Перечитываем пост с обновлёнными данными
+                            post = await posts_repo.get(post.id)
+
+                # 3. Векторный поиск похожих постов и событий
+                generation_service = self._get_generation_service()
+                context_service = self._get_context_service()
+
+                similar = await context_service.find_similar(
+                    text=post.text,
+                    category=post.category,
+                )
+
+                # 4. Генерация новости через сервис
+                news_id = await generation_service.generate_news(
+                    post_id=post.id,
+                    post_text=post.text,
+                    post_category=post.category,
+                    post_tags=json.loads(post.tags or '[]'),
+                    post_category_confidence=post.category_confidence,
+                    similar_events=similar['events'],
+                    similar_posts=similar['posts'],
+                )
+
+                if news_id:
+                    # 5. Отмечаем пост как обработанный
+                    await posts_repo.mark_analyzed(post.id, generated_news_id=news_id)
+                    processed_count += 1
+                    logger.info(f"✅ Новость ID={post.id} обработана (всего: {processed_count})")
+                else:
+                    # Ошибка генерации — всё равно отмечаем как обработанную
+                    await posts_repo.mark_analyzed(post.id)
+                    logger.warning(f"⚠️ Новость ID={post.id} не сгенерирована")
+
+            except Exception as e:
+                logger.error(f"Ошибка обработки новости ID={post.id}: {e}", exc_info=True)
+
+                # Всё равно отмечаем как обработанную, чтобы не застрять в цикле
+                await posts_repo.mark_analyzed(post.id)
+
+        logger.info(f"🏁 Цикл обработки завершён. Обработано новостей: {processed_count}")
+        return processed_count
+
+    async def _analyze_post(self, post) -> dict | None:
+        """
+        Передать пост аналитику для анализа.
+
+        Args:
+            post: Объект поста
+
+        Returns:
+            dict с результатами анализа или None при ошибке
+        """
+        try:
+            from services.ai_agent.agents import AnalystAgent
+
+            analyst = AnalystAgent()
+
+            # Векторный поиск для контекста через VectorSearchService
+            if self.vector_search_service:
+                similar_events = await self.vector_search_service.find_similar_events(
+                    text=post.text,
+                    category=post.category,
+                    limit=5,
+                    min_score=0.7
+                )
+                similar_posts = await self.vector_search_service.find_similar_posts(
+                    text=post.text,
+                    category=post.category,
+                    limit=10,
+                    min_score=0.6
+                )
+            else:
+                # Fallback на глобальные функции
+                from services.news.helpers import find_similar_events, find_similar_posts
+                similar_events, similar_posts = await find_similar_events(
+                    text=post.text,
+                    category=post.category,
+                    limit=5,
+                    min_score=0.7
+                ), await find_similar_posts(
+                    text=post.text,
+                    category=post.category,
+                    limit=10,
+                    min_score=0.6
+                )
+
+            # Анализ новости
+            analysis = await analyst.analyze(
+                post_text=post.text,
+                similar_events=similar_events,
+                similar_posts=similar_posts,
+                preliminary_category=post.category,
+            )
+
+            logger.info(
+                f"🔍 Analyst для поста ID={post.id}: "
+                f"категория={analysis['category']}, "
+                f"уверенность={analysis['confidence']:.2f}, "
+                f"тэгов={len(analysis['post_tags'])}"
+            )
+
+            return analysis
+
+        except Exception as e:
+            logger.error(f"❌ Ошибка анализа поста ID={post.id}: {e}", exc_info=True)
+            return None
+
+    async def generate_direct_news(
+        self,
+        description: str,
+        publisher_channel_id: Optional[int] = None,
+    ) -> Optional[int]:
+        """
+        Сгенерировать новость по прямому описанию админа.
+
+        Алгоритм:
+        1. Использовать DirectNewsEditorAgent для генерации SMM-поста
+        2. Запустить ArchivistAgent для создания контекста
+        3. Сохранить новость в БД
+        4. Если publisher_channel_id=None (бот) — отправить всем пользователям сразу
+           Если publisher_channel_id=-1 (все каналы) — опубликовать во все каналы
+           Если publisher_channel_id=<конкретный> — опубликовать в конкретный канал
+           Иначе — отправить на модерацию
+
+        Args:
+            description: Описание новости от админа
+            publisher_channel_id: ID канала публикации (опционально)
+                None = публикация через бота всем пользователям
+                -1 = публикация во все каналы
+                int > 0 = публикация в конкретный канал
+
+        Returns:
+            ID сгенерированной новости или None при ошибке
+        """
+        try:
+            logger.info(f"📝 Прямая генерация новости: {description[:50]}...")
+
+            # 1. Генерация через DirectNewsEditorAgent (SMM-пост)
+            editor = DirectNewsEditorAgent()
+            news_result = await editor.generate_from_description(
+                description=description,
+            )
+
+            logger.info(
+                f"📝 Новость сгенерирована: {len(news_result.get('text', ''))} символов"
+            )
+
+            # 2. Определяем статус модерации и канал публикации
+            # None (бот) или -1 (все каналы) = мгновенная публикация без модерации
+            if publisher_channel_id is None or publisher_channel_id == -1:
+                moderation_status = 'approved'
+                publish_immediately = True
+                logger.info(f"🚀 Прямая генерация с мгновенной публикацией (publisher_channel_id={publisher_channel_id})")
+            else:
+                moderation_status = 'approved'  # Всё равно одобряем, но публикуем в конкретный канал
+                publish_immediately = True
+                logger.info(f"📢 Прямая генерация с публикацией в канал ID={publisher_channel_id}")
+
+            # 3. Сохранение в БД
+            news_id = await add_generated_news(
+                text=news_result.get('text', ''),
+                category='Общее',
+                tags=news_result.get('news_tags', []),
+                source_event_ids=[],
+                moderation_status=moderation_status,
+                publisher_channel_id=publisher_channel_id if publisher_channel_id and publisher_channel_id > 0 else None,
+            )
+
+            logger.info(f"✅ Новость ID={news_id} сохранена в БД (status={moderation_status})")
+
+            # 4. Создание контекста через ArchivistAgent
+            archivist = ArchivistAgent()
+            context_result = await archivist.create_context(
+                post_text=description,
+                generated_news=news_result,
+                analysis={
+                    'category': 'Общее',
+                    'post_tags': [],
+                }
+            )
+
+            # Сохраняем контекст (создаём фиктивный пост ID=0 для описания)
+            events_repo = self.repo_factory.events()
+            await events_repo.create_event(
+                post_id=0,  # Нет оригинального поста
+                context_data=context_result['context_data'],
+                event_category='Общее',
+                tags=context_result['tags'],
+            )
+
+            # 5. Мгновенная публикация
+            if publish_immediately:
+                if publisher_channel_id is None:
+                    # Публикация через бота всем пользователям (игнорируя предпочтения)
+                    await self._publish_direct_to_bot(news_id, news_result.get('text', ''))
+                elif publisher_channel_id == -1:
+                    # Публикация во все активные каналы
+                    await self._publish_direct_to_all_channels(news_id, news_result.get('text', ''))
+                else:
+                    # Публикация в конкретный канал
+                    await self._publish_direct_to_channel(news_id, news_result.get('text', ''), publisher_channel_id)
+
+            return news_id
+
+        except Exception as e:
+            logger.error(f"Ошибка прямой генерации новости: {e}", exc_info=True)
+            return None
+
+    async def _publish_direct_to_bot(self, news_id: int, text: str) -> None:
+        """
+        Опубликовать новость через бота всем пользователям (игнорируя предпочтения).
+
+        Args:
+            news_id: ID новости
+            text: Текст новости
+        """
+        if not self.notification_service:
+            logger.warning("⚠️ NotificationService не инициализирован, публикация в бот пропущена")
+            return
+
+        try:
+            # Отправляем всем пользователям с активной подпиской, игнорируя предпочтения
+            sent_count = await self.notification_service.notify_all_subscribers(
+                news_text=text,
+                news_id=news_id,
+                ignore_preferences=True,  # Игнорируем категории и тэги
+            )
+            logger.info(f"✅ Опубликована новость ID={news_id} через бот: отправлено {sent_count} уведомлений")
+        except Exception as e:
+            logger.error(f"Ошибка публикации новости через бот ID={news_id}: {e}")
+
+    async def _publish_direct_to_all_channels(self, news_id: int, text: str) -> None:
+        """
+        Опубликовать новость во все активные каналы.
+
+        Args:
+            news_id: ID новости
+            text: Текст новости
+        """
+        try:
+            publishers_repo = self.repo_factory.publishers()
+            publishers = await publishers_repo.get_all(active_only=True)
+
+            for publisher in publishers:
+                try:
+                    await self._publish_to_telegram_channel(publisher.channel_id, text)
+                    logger.info(f"✅ Опубликована новость ID={news_id} в канал {publisher.title} (ID={publisher.channel_id})")
+                except Exception as e:
+                    logger.error(f"Ошибка публикации в канал {publisher.channel_id}: {e}")
+
+            # Обновляем статус новости на опубликованный
+            news_repo = self.repo_factory.news()
+            await news_repo.mark_published(news_id)
+
+        except Exception as e:
+            logger.error(f"Ошибка публикации новости во все каналы ID={news_id}: {e}")
+
+    async def _publish_direct_to_channel(self, news_id: int, text: str, publisher_id: int) -> None:
+        """
+        Опубликовать новость в конкретный канал.
+
+        Args:
+            news_id: ID новости
+            text: Текст новости
+            publisher_id: ID записи в таблице publishers
+        """
+        try:
+            # Получаем Telegram channel ID из таблицы publishers
+            publishers_repo = self.repo_factory.publishers()
+            publisher = await publishers_repo.get_by_id(publisher_id)
+
+            if not publisher:
+                logger.error(f"❌ Канал публикации ID={publisher_id} не найден в БД")
+                return
+
+            if not publisher.channel_id:
+                logger.error(f"❌ У канала публикации ID={publisher_id} не указан Telegram channel_id")
+                return
+
+            # Отправляем в Telegram канал
+            await self._publish_to_telegram_channel(publisher.channel_id, text)
+            logger.info(f"✅ Опубликована новость ID={news_id} в канал '{publisher.title}' (Telegram ID={publisher.channel_id})")
+
+            # Обновляем статус новости на опубликованный
+            news_repo = self.repo_factory.news()
+            await news_repo.mark_published(news_id)
+
+        except Exception as e:
+            logger.error(f"Ошибка публикации новости в канал ID={publisher_id}: {e}")
+            raise
+
+    async def _publish_to_telegram_channel(self, channel_id: int, text: str) -> None:
+        """
+        Отправить сообщение в Telegram канал.
+
+        Args:
+            channel_id: ID канала в Telegram
+            text: Текст сообщения
+        """
+        try:
+            from aiogram import Bot
+            from services.bot.bot import get_bot_instance_async
+
+            bot = await get_bot_instance_async(wait=False, timeout=10.0)
+            if bot:
+                await bot.send_message(
+                    chat_id=channel_id,
+                    text=text,
+                    parse_mode='HTML',
+                )
+        except Exception as e:
+            logger.error(f"Ошибка отправки в Telegram канал ID={channel_id}: {e}")
+            raise
+
+    async def _update_post_with_analysis(
+        self,
+        post_id: int,
+        analysis: dict,
+    ) -> None:
+        """
+        Обновить пост результатами анализа.
+
+        Args:
+            post_id: ID поста
+            analysis: Результаты анализа
+        """
+        posts_repo = self.repo_factory.posts()
+
+        # Обновляем уверенность категории
+        await posts_repo.update_category_confidence(post_id, analysis['confidence'])
+
+        # Обновляем тэги
+        if analysis['post_tags']:
+            await posts_repo.update_post_tags(post_id, analysis['post_tags'])
+
     async def start_event_bus(self) -> None:
-        """Запустить шину событий."""
+        """
+        Запустить шину событий.
+
+        Запускает event_bus.run() как фоновую задачу.
+        """
         logger.info("🚀 Запуск шины событий...")
         self._running = True
-        await self.event_bus.run()
+        # Запускаем шину событий как задачу, чтобы не блокировать вызывающий код
+        self._event_bus_task = asyncio.create_task(self.event_bus.run())
+        logger.debug("✅ Шина событий запущена как фоновая задача")
 
     async def stop(self) -> None:
         """
@@ -339,4 +1016,13 @@ class NewsOrchestrator:
         logger.info("🛑 Остановка NewsOrchestrator...")
         self._running = False
 
-        # Шина событий будет остановлена отдельно в Scheduler/ListenerBot
+        # Останавливаем шину событий
+        if self._event_bus_task and not self._event_bus_task.done():
+            logger.info("⏳ Остановка шины событий...")
+            self._event_bus_task.cancel()
+            try:
+                await asyncio.wait_for(self._event_bus_task, timeout=3.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+
+        logger.info("✅ NewsOrchestrator остановлен")

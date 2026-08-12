@@ -71,7 +71,7 @@ class TestPostRepository:
 
         # Проверяем
         updated_post = await repo.get(post.id)
-        assert updated_post.analyzed_at is not None
+        assert updated_post.checked_at is True
         assert updated_post.generated_news_id == 1
 
     @pytest.mark.asyncio

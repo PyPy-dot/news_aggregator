@@ -5,7 +5,7 @@ Publisher Repository — работа с каналами для публика�
 import logging
 from typing import Optional
 
-from sqlalchemy import select, update
+from sqlalchemy import select, update, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.repositories.base import BaseRepository
@@ -136,3 +136,22 @@ class PublisherRepository(BaseRepository):
         await self.session.commit()
         logger.info(f"🗑️ Удалён publisher ID={publisher_id}")
         return True
+
+    async def delete_all(self) -> int:
+        """
+        Удалить все каналы публикации из базы данных.
+
+        Returns:
+            Количество удалённых записей
+        """
+        result = await self.session.execute(
+            select(func.count()).select_from(Publisher)
+        )
+        count = result.scalar() or 0
+
+        await self.session.execute(
+            delete(Publisher)
+        )
+        await self.session.commit()
+
+        return count

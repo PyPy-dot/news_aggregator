@@ -11,6 +11,11 @@ from services.ai_agent.agents import (
     EditorAgent,
     ArchivistAgent,
 )
+from services.ai_agent.cache import (
+    LLMResponseCache,
+    get_llm_cache,
+    reset_llm_cache,
+)
 
 __all__ = [
     'BaseAgent',
@@ -18,4 +23,7 @@ __all__ = [
     'AnalystAgent',
     'EditorAgent',
     'ArchivistAgent',
+    'LLMResponseCache',
+    'get_llm_cache',
+    'reset_llm_cache',
 ]

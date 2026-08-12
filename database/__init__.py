@@ -5,6 +5,8 @@ Database package
 - models: SQLAlchemy модели
 - repositories: Repository pattern
 - factory: Фабрика репозиториев
+
+Примечание: engine создаётся в DatabaseService (services/core/database.py)
 """
 
 from database.models import (
@@ -13,8 +15,6 @@ from database.models import (
     TelegramPost,
     GeneratedNews,
     EventContext,
-    engine,
-    async_session,
 )
 
 from database.factory import RepositoryFactory
@@ -25,7 +25,5 @@ __all__ = [
     'TelegramPost',
     'GeneratedNews',
     'EventContext',
-    'engine',
-    'async_session',
     'RepositoryFactory',
 ]

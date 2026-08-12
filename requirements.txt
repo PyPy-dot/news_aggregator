@@ -1,4 +1,52 @@
+# =============================================================================
+# Основные зависимости News Aggregator
+# =============================================================================
+
+# Telegram
+aiogram>=3.0.0
+telethon>=1.30.0
+PySocks>=1.7.1  # SOCKS прокси для Telethon
+aiohttp_socks>=0.8.4  # SOCKS/HTTP прокси для aiogram
+
+# Database
+SQLAlchemy==2.0.51
 aiosqlite==0.22.1
+alembic==1.13.1
+asyncpg==0.29.0  # PostgreSQL async driver
+
+# AI/LLM
+ollama>=0.2.0
+openai>=1.0.0  # OpenAI API (fallback провайдер)
+anthropic>=0.18.0  # Anthropic API (fallback провайдер)
+
+# Vector Search
+chromadb==0.5.23
+sentence-transformers==3.0.1
+
+# Settings & Validation
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+python-dotenv==1.2.2
+
+# Cryptography (для шифрования user_id)
+cryptography==42.0.5
+pycryptodome==3.20.0
+
+# RSS Parsing
+feedparser==6.0.10
+aiohttp>=3.9.0  # Async HTTP запросы для RSS
+
+# Web Parsing
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+lxml>=5.0.0  # Fast parser
+# Selenium — опционально, для JavaScript сайтов
+# selenium>=4.15.0
+# webdriver-manager>=4.0.0
+
+# =============================================================================
+# Транзитивные зависимости (для фиксации версий)
+# =============================================================================
 anyio==4.14.1
 certifi==2026.6.17
 greenlet==3.5.3
@@ -6,27 +54,42 @@ h11==0.16.0
 httpcore==1.0.9
 httpx==0.28.1
 idna==3.18
-python-dotenv==1.2.2
-python-telegram-bot==22.8
-SQLAlchemy==2.0.51
 typing_extensions==4.15.0
 
-# Vector search
-sentence-transformers==3.0.1
-chromadb==0.5.23
+# =============================================================================
+# 2FA Authentication
+# =============================================================================
+pyotp==2.9.0
+qrcode==7.4.2
+pillow==10.4.0  # Для генерации QR-кодов
 
-# Monitoring
-prometheus-client==0.20.0
-
-# Linting & typing
-ruff==0.5.0
-mypy==1.10.0
+# =============================================================================
+# Development
+# =============================================================================
 
 # Testing
 pytest==8.2.2
 pytest-cov==5.0.0
 pytest-asyncio==0.23.7
 
-# Encryption
-cryptography==42.0.5
-pycryptodome==3.20.0
+# Linting & typing
+ruff==0.5.0
+mypy==1.10.0
+
+# Monitoring
+prometheus-client==0.20.0
+
+# =============================================================================
+# Web Admin
+# =============================================================================
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-jose[cryptography]>=3.3.0  # JWT
+python-multipart>=0.0.6  # Form data
+aiofiles>=23.0.0  # Async files
+
+# =============================================================================
+# Distributed Queue (Redis + Celery)
+# =============================================================================
+redis>=5.0.0  # Redis client
+celery>=5.3.0  # Distributed task queue

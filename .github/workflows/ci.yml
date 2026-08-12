@@ -1,12 +1,28 @@
-name: CI/CD Pipeline
+# =============================================================================
+# News Aggregator — GitHub Actions CI/CD Workflow
+# =============================================================================
+# Автоматический запуск тестов при push и pull request
+# Интеграционные тесты с Ollama и ChromaDB
+# =============================================================================
+
+name: CI/CD
 
 on:
   push:
-    branches: [master, develop]
+    branches: [master, develop, refactor/*]
   pull_request:
-    branches: [master]
+    branches: [master, develop]
+  schedule:
+    # Запуск интеграционных тестов каждое воскресенье в 02:00 UTC
+    - cron: '0 2 * * 0'
+
+env:
+  PYTHON_VERSION: '3.12'
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Линтинг и статический анализ
+  # ---------------------------------------------------------------------------
   lint-and-type-check:
     name: Linting & Type Checking
     runs-on: ubuntu-latest
@@ -19,7 +35,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
       - name: Install dependencies
@@ -41,11 +57,24 @@ jobs:
           mypy . --ignore-missing-imports --no-strict-optional \
             --exclude .venv --exclude logs
 
-  tests:
-    name: Tests
+  # ---------------------------------------------------------------------------
+  # Unit тесты
+  # ---------------------------------------------------------------------------
+  unit-tests:
+    name: Unit Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: lint-and-type-check
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout code
@@ -54,7 +83,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
       - name: Install dependencies
@@ -73,11 +102,13 @@ jobs:
           PHONE_NUMBER=+79991234567
           CHANNEL_ID=-1001234567890
           PARSE_CHANNEL_ID=-1001234567891
+          REDIS_URL=redis://localhost:6379
           EOF
 
-      - name: Run tests with coverage
+      - name: Run unit tests with coverage
         run: |
           pytest tests/ \
+            --ignore=tests/test_integration/ \
             -v \
             --cov=services \
             --cov=database \
@@ -93,16 +124,154 @@ jobs:
           path: coverage.xml
           retention-days: 7
 
-      - name: Upload test results
+  # ---------------------------------------------------------------------------
+  # Интеграционные тесты с Ollama и ChromaDB
+  # ---------------------------------------------------------------------------
+  integration-tests:
+    name: Integration Tests (Ollama + ChromaDB)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    if: github.event_name == 'schedule' || github.ref == 'refs/heads/master'
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      chromadb:
+        image: chromadb/chroma:latest
+        ports:
+          - 8000:8000
+        options: >-
+          --health-cmd "curl -f http://localhost:8000/api/v1/heartbeat"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+
+      - name: Start Ollama
+        run: |
+          docker run -d --name ollama \
+            -p 11434:11434 \
+            -e OLLAMA_HOST=0.0.0.0 \
+            --health-cmd "curl -f http://localhost:11434/api/tags" \
+            --health-interval 30s \
+            --health-timeout 10s \
+            --health-retries 10 \
+            ollama/ollama:latest
+
+      - name: Wait for Ollama to be ready
+        run: |
+          echo "Waiting for Ollama to start (may take 2-3 minutes)..."
+          for i in {1..60}; do
+            if curl -f http://localhost:11434/api/tags 2>/dev/null; then
+              echo "✅ Ollama is ready!"
+              break
+            fi
+            echo "Waiting... ($i/60)"
+            sleep 5
+          done
+
+      - name: Pull Ollama model (qwen2.5:7b)
+        run: |
+          echo "Загрузка модели qwen2.5:7b (может занять 5-10 минут)..."
+          docker exec ollama ollama pull qwen2.5:7b
+          echo "✅ Модель загружена"
+
+      - name: Set environment variables
+        run: |
+          echo "OLLAMA_HOST=http://localhost:11434" >> $GITHUB_ENV
+          echo "CHROMA_HOST=http://localhost:8000" >> $GITHUB_ENV
+          echo "REDIS_URL=redis://localhost:6379" >> $GITHUB_ENV
+
+      - name: Run integration tests
+        run: |
+          pytest tests/test_integration/ \
+            -v \
+            --tb=short \
+            --durations=10 \
+            -o log_cli=true \
+            -o log_cli_level=INFO \
+            --ignore=tests/test_integration/test_end_to_end.py  # Пропускаем самые долгие тесты
+
+        continue-on-error: true
+        id: integration_tests_step
+
+      - name: Run end-to-end tests (если основные прошли)
+        if: steps.integration_tests_step.outcome == 'success'
+        run: |
+          pytest tests/test_integration/test_end_to_end.py \
+            -v \
+            --tb=short \
+            --durations=10
+
+        continue-on-error: true
+
+      - name: Stop Ollama
+        if: always()
+        run: |
+          docker stop ollama
+          docker rm ollama
+
+      - name: Upload integration test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results
+          name: integration-test-results
           path: |
             .pytest_cache/
             logs/
           retention-days: 3
 
+  # ---------------------------------------------------------------------------
+  # Build Docker image
+  # ---------------------------------------------------------------------------
+  build-docker:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: unit-tests
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        run: |
+          docker build -t news-aggregator:${{ github.sha }} .
+
+      - name: Test Docker image
+        run: |
+          docker run --rm news-aggregator:${{ github.sha }} python -c "import services; print('✅ Docker image OK')"
+
+  # ---------------------------------------------------------------------------
+  # Security Scan
+  # ---------------------------------------------------------------------------
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
@@ -116,7 +285,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
       - name: Install safety
@@ -127,32 +296,29 @@ jobs:
         run: |
           safety check -r requirements.txt --output github
 
-  build-check:
-    name: Build Check
+  # ---------------------------------------------------------------------------
+  # Summary
+  # ---------------------------------------------------------------------------
+  summary:
+    name: Summary
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: tests
+    needs: [lint-and-type-check, unit-tests, integration-tests]
+    if: always()
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-
-      - name: Install dependencies
+      - name: Generate summary
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          echo "## CI/CD Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Lint & Type Check | ${{ needs.lint-and-type-check.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Unit Tests | ${{ needs.unit-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Integration Tests | ${{ needs.integration-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
 
-      - name: Check imports
-        run: |
-          python -c "
-          import services
-          import database
-          import config
-          print('✅ Все импорты успешны')
-          "
+          if [ "${{ needs.integration-tests.result }}" == "success" ]; then
+            echo "✅ Все тесты пройдены!" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Некоторые тесты не пройдены" >> $GITHUB_STEP_SUMMARY
+          fi

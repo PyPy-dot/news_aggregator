@@ -14,9 +14,8 @@ import aiohttp
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
 
-import services.bot.config as conf
-import services.bot.handlers.router as r
 from services.core.database import get_database_service
+import services.bot.handlers.router as r
 
 logger = logging.getLogger(__name__)
 
@@ -49,20 +48,28 @@ dp.shutdown.register(on_shutdown_db)
 
 # Глобальный обработчик ошибок для всех хендлеров
 @dp.errors()
-async def errors_handler(event, data):
-    """Глобальный обработчик ошибок."""
+async def errors_handler(event: Exception, **kwargs):
+    """
+    Глобальный обработчик ошибок.
+
+    Args:
+        event: Исключение (обёрнуто в UpdateEvent)
+        **kwargs: Дополнительные данные от middleware
+    """
     from aiogram.exceptions import TelegramNetworkError, TelegramAPIError
 
-    error = event.exception
+    # Извлекаем исключение из события
+    error = event.exception if hasattr(event, 'exception') else event
+
     if isinstance(error, TelegramNetworkError):
         logger.warning(f"⚠️ Ошибка сети Telegram: {error}")
-        return True
+        return True  # Поглощаем ошибку
     elif isinstance(error, TelegramAPIError):
         logger.error(f"❌ Ошибка Telegram API: {error}")
-        return True
+        return True  # Поглощаем ошибку
     else:
-        logger.error(f"❌ Неожиданная ошибка: {error}", exc_info=True)
-        return True
+        logger.error(f"❌ Неожиданная ошибка: {type(error).__name__}: {error}", exc_info=True)
+        return True  # Поглощаем ошибку
 
 
 class BotService:
@@ -75,6 +82,7 @@ class BotService:
     def __init__(self) -> None:
         self.bot: Optional[Bot] = None
         self._session: Optional[aiohttp.ClientSession] = None
+        self._notification_service = None
         self._running = False
 
     async def initialize(self) -> Bot:
@@ -83,7 +91,13 @@ class BotService:
 
         Returns:
             Инициализированный Bot экземпляр
+
+        Raises:
+            RuntimeError: Если не удалось подключиться после нескольких попыток
         """
+        import asyncio
+        from aiogram.exceptions import TelegramNetworkError
+
         # Увеличиваем таймауты для Telegram API
         timeout = aiohttp.ClientTimeout(
             total=300,
@@ -113,17 +127,50 @@ class BotService:
         session._session = self._session
 
         # Создаём бота
-        self.bot = Bot(token=conf.BOT_TOKEN, session=session)
+        from config.settings import settings
+        self.bot = Bot(token=settings.bot_token, session=session)
 
-        # Устанавливаем бота в NotificationService
-        from services.telegram.notification import set_global_bot
-        set_global_bot(self.bot)
+        # Попытки удалить webhook с retry логикой
+        max_retries = 5
+        retry_delay = 2.0  # секунды
 
-        # Удаляем webhook и сбрасываем pending updates
-        await self.bot.delete_webhook(drop_pending_updates=True)
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.info(f"🔌 Попытка {attempt}/{max_retries}: удаление webhook...")
+                await self.bot.delete_webhook(drop_pending_updates=True)
+                logger.info("✅ Webhook удалён, pending updates сброшены")
+                break  # Успех
+            except TelegramNetworkError as e:
+                if attempt < max_retries:
+                    wait_time = retry_delay * attempt  # Экспоненциальная задержка
+                    logger.warning(
+                        f"⚠️ Попытка {attempt} не удалась: {type(e).__name__}: {e}. "
+                        f"Ждём {wait_time}с перед следующей попыткой..."
+                    )
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error(
+                        f"❌ Не удалось удалить webhook после {max_retries} попыток. "
+                        f"Проверьте соединение с Telegram и токен бота."
+                    )
+                    # Закрываем сессию перед выбросом исключения
+                    await self._session.close()
+                    raise RuntimeError(
+                        f"Не удалось инициализировать бота: {e}. "
+                        f"Возможные причины: нет интернета, Telegram заблокирован, неверный токен"
+                    ) from e
+            except Exception as e:
+                logger.error(f"❌ Ошибка при удалении webhook: {type(e).__name__}: {e}")
+                await self._session.close()
+                raise
+
+        # Создаём NotificationService
+        from services.telegram.notification import NotificationService
+        self._notification_service = NotificationService(bot=self.bot)
 
         logger.info("✅ Admin Bot инициализирован с увеличенными таймаутами")
         logger.info("✅ Webhook удалён, pending updates сброшены")
+        logger.info("✅ NotificationService создан")
 
         return self.bot
 
@@ -161,6 +208,26 @@ class BotService:
             self._running = False
             logger.info("🛑 Admin Bot polling остановлен")
 
+    async def force_close(self) -> None:
+        """
+        Принудительно закрыть соединения бота.
+
+        Используется при аварийном завершении для немедленного
+        освобождения long polling соединения.
+        """
+        if not self.bot:
+            logger.debug("Bot не инициализирован, force_close пропускается")
+            return
+
+        logger.debug("🔒 Принудительное закрытие соединений бота...")
+
+        # Закрываем сессию бота (принудительно)
+        try:
+            await self.bot.session.close()
+            logger.debug("✅ Сессия бота закрыта (force)")
+        except Exception as e:
+            logger.debug(f"⚠️ Ошибка закрытия сессии бота (force): {e}")
+
     async def shutdown(self) -> None:
         """
         Корректно завершить работу бота и освободить ресурсы.
@@ -177,11 +244,7 @@ class BotService:
 
         logger.info("🛑 Shutdown Admin Bot...")
 
-        # 1. Снимаем с глобального контекста
-        from services.telegram.notification import set_global_bot
-        set_global_bot(None)
-
-        # 2. Закрываем сессию бота (критично для освобождения long polling)
+        # 1. Закрываем сессию бота (критично для освобождения long polling)
         try:
             await self.bot.session.close()
             logger.debug("✅ Сессия бота закрыта")
@@ -206,6 +269,92 @@ class BotService:
 
         self.bot = None
         logger.info("✅ Admin Bot полностью остановлен")
+
+
+# =============================================================================
+# Helper функции для получения бота handler'ами
+# =============================================================================
+
+# Глобальное событие готовности бота
+_bot_ready_event: Optional[asyncio.Event] = None
+# Глобальная ссылка на BotService
+_bot_service_ref: Optional[BotService] = None
+
+
+def set_bot_ready_event(event: asyncio.Event) -> None:
+    """Установить событие готовности бота."""
+    global _bot_ready_event
+    _bot_ready_event = event
+    logger.info("✅ Событие готовности бота установлено")
+
+
+def set_bot_service_ref(bot_service: BotService) -> None:
+    """Установить глобальную ссылку на BotService."""
+    global _bot_service_ref
+    _bot_service_ref = bot_service
+    logger.info(f"✅ BotService зарегистрирован (ссылка: {id(bot_service)})")
+
+
+async def get_bot_instance_async(wait: bool = True, timeout: float = 10.0) -> Optional[Bot]:
+    """
+    Асинхронно получить экземпляр бота для handler'ов.
+
+    Args:
+        wait: Если True, ждать готовности бота
+        timeout: Максимальное время ожидания (секунды)
+
+    Returns:
+        Bot экземпляр или None
+    """
+    logger.debug(f"🔍 get_bot_instance_async вызван (wait={wait}, timeout={timeout})")
+    logger.debug(f"   _bot_service_ref: {_bot_service_ref}")
+    logger.debug(f"   _bot_service_ref.bot: {_bot_service_ref.bot if _bot_service_ref else None}")
+
+    # Если BotService не зарегистрирован — ждём
+    if _bot_service_ref is None:
+        if wait:
+            logger.warning("⏳ BotService не зарегистрирован, ожидаем...")
+            await asyncio.sleep(min(timeout, 1.0))
+        if _bot_service_ref is None:
+            logger.error("❌ BotService не зарегистрирован после ожидания")
+            return None
+
+    # Проверяем, есть ли бот
+    if _bot_service_ref.bot:
+        logger.info("✅ Bot найден в _bot_service_ref")
+        return _bot_service_ref.bot
+
+    # Бота нет, но BotService есть — ждём инициализации
+    if wait:
+        logger.warning("⏳ Bot не инициализирован, ожидаем...")
+        max_attempts = int(timeout * 2)
+        for attempt in range(max_attempts):
+            if _bot_service_ref.bot:
+                logger.info(f"✅ Bot инициализирован после {attempt + 1} попыток")
+                return _bot_service_ref.bot
+            await asyncio.sleep(0.5)
+
+    logger.error("❌ Bot не инициализирован после ожидания")
+    return None
+
+
+def get_bot_instance(wait: bool = True, timeout: float = 10.0) -> Optional[Bot]:
+    """
+    Синхронная обёртка для get_bot_instance_async.
+    """
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            task = loop.create_task(get_bot_instance_async(wait, timeout))
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = asyncio.run_coroutine_threadsafe(task, loop)
+                return future.result(timeout=timeout + 2)
+        else:
+            return loop.run_until_complete(get_bot_instance_async(wait, timeout))
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения бота: {type(e).__name__}: {e}")
+        return None
 
 
 # Глобальный сервис бота (singleton)

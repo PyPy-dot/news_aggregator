@@ -1,0 +1,294 @@
+# =============================================================================
+# Prometheus Alert Rules for News Aggregator
+# =============================================================================
+# Правила для генерации алертов при критических событиях
+# =============================================================================
+
+groups:
+  # ---------------------------------------------------------------------------
+  # Алерты приложения
+  # ---------------------------------------------------------------------------
+  - name: application_alerts
+    interval: 30s
+    rules:
+      # Приложение недоступно
+      - alert: NewsAggregatorDown
+        expr: up{service="app"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "News Aggregator приложение недоступно"
+          description: "Приложение {{ $labels.instance }} не отвечает более 2 минут"
+
+      # Высокая ошибка LLM
+      - alert: HighLLMErrorRate
+        expr: |
+          rate(agent_tasks_total{status="failed"}[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Высокий уровень ошибок LLM"
+          description: "Уровень ошибок LLM: {{ $value }} ошибок/сек на {{ $labels.agent_name }}"
+
+      # Переполнение очереди задач
+      - alert: AgentQueueFull
+        expr: agent_queue_size > 80
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Очередь задач заполнена более чем на 80%"
+          description: "Размер очереди: {{ $value }} задач"
+
+      # Критическое заполнение очереди
+      - alert: AgentQueueCritical
+        expr: agent_queue_size > 95
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Критическое заполнение очереди задач"
+          description: "Размер очереди: {{ $value }} задач (требуется немедленное вмешательство)"
+
+      # Высокая задержка обработки задач
+      - alert: HighTaskDuration
+        expr: |
+          histogram_quantile(0.95, rate(agent_task_duration_bucket[5m])) > 30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Высокая задержка обработки задач"
+          description: "95-й перцентиль длительности задач: {{ $value }}с"
+
+  # ---------------------------------------------------------------------------
+  # Алерты базы данных
+  # ---------------------------------------------------------------------------
+  - name: database_alerts
+    interval: 30s
+    rules:
+      # PostgreSQL недоступен
+      - alert: PostgreSQLDown
+        expr: up{service="postgresql"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL недоступен"
+          description: "PostgreSQL {{ $labels.instance }} не отвечает более 1 минуты"
+
+      # Много активных подключений
+      - alert: PostgreSQLHighConnections
+        expr: |
+          pg_stat_activity_count > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Высокое количество подключений к PostgreSQL"
+          description: "Активных подключений: {{ $value }}"
+
+      # Долгие запросы
+      - alert: PostgreSQLSlowQueries
+        expr: |
+          rate(pg_stat_statements_seconds_total[5m]) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Медленные запросы к PostgreSQL"
+          description: "Среднее время запроса: {{ $value }}с"
+
+      # Мало места на диске
+      - alert: PostgreSQLLowDiskSpace
+        expr: |
+          pg_database_size_bytes / 1024 / 1024 / 1024 > 50
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Мало места в PostgreSQL"
+          description: "Размер БД: {{ $value }}GB"
+
+  # ---------------------------------------------------------------------------
+  # Алерты Redis
+  # ---------------------------------------------------------------------------
+  - name: redis_alerts
+    interval: 30s
+    rules:
+      # Redis недоступен
+      - alert: RedisDown
+        expr: up{service="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis недоступен"
+          description: "Redis {{ $labels.instance }} не отвечает более 1 минуты"
+
+      # Высокое использование памяти Redis
+      - alert: RedisHighMemoryUsage
+        expr: |
+          redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Высокое использование памяти Redis"
+          description: "Использование памяти: {{ $value | humanizePercentage }}"
+
+      # Redis отклоняет подключения
+      - alert: RedisRejectedConnections
+        expr: |
+          rate(redis_rejected_connections_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis отклоняет подключения"
+          description: "Отклонено подключений: {{ $value }}"
+
+  # ---------------------------------------------------------------------------
+  # Алерты Circuit Breaker
+  # ---------------------------------------------------------------------------
+  - name: circuit_breaker_alerts
+    interval: 30s
+    rules:
+      # Circuit Breaker открыт
+      - alert: CircuitBreakerOpen
+        expr: circuit_breaker_state{state="OPEN"} == 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Circuit Breaker открыт для {{ $labels.service }}"
+          description: "Circuit Breaker для сервиса {{ $labels.service }} открыт более 1 минуты"
+
+      # Частые срабатывания Circuit Breaker
+      - alert: CircuitBreakerFrequentTrips
+        expr: |
+          rate(circuit_breaker_trips_total[15m]) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Частые срабатывания Circuit Breaker"
+          description: "Circuit Breaker {{ $labels.service }} срабатывает {{ $value }} раз/мин"
+
+      # Circuit Breaker в полуоткрытом состоянии
+      - alert: CircuitBreakerHalfOpen
+        expr: circuit_breaker_state{state="HALF_OPEN"} == 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Circuit Breaker в полуоткрытом состоянии"
+          description: "Circuit Breaker {{ $labels.service }} пытается восстановиться"
+
+  # ---------------------------------------------------------------------------
+  # Алерты Ollama / LLM
+  # ---------------------------------------------------------------------------
+  - name: llm_alerts
+    interval: 30s
+    rules:
+      # Ollama недоступен
+      - alert: OllamaDown
+        expr: up{service="ollama"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Ollama недоступен"
+          description: "Ollama {{ $labels.instance }} не отвечает более 2 минут"
+
+      # Высокая задержка LLM ответов
+      - alert: HighLLMLatency
+        expr: |
+          histogram_quantile(0.95, rate(llm_request_duration_bucket[5m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Высокая задержка LLM ответов"
+          description: "95-й перцентиль задержки: {{ $value }}с"
+
+      # Низкая доступность LLM провайдера
+      - alert: LLMProviderLowAvailability
+        expr: |
+          rate(llm_requests_total{status="success"}[5m])
+          / rate(llm_requests_total[5m]) < 0.95
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Низкая доступность LLM провайдера"
+          description: "Доступность: {{ $value | humanizePercentage }}"
+
+  # ---------------------------------------------------------------------------
+  # Алерты ChromaDB
+  # ---------------------------------------------------------------------------
+  - name: chromadb_alerts
+    interval: 30s
+    rules:
+      # ChromaDB недоступен
+      - alert: ChromaDBDown
+        expr: up{service="chromadb"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ChromaDB недоступен"
+          description: "ChromaDB {{ $labels.instance }} не отвечает более 2 минут"
+
+      # Высокая задержка векторного поиска
+      - alert: HighVectorSearchLatency
+        expr: |
+          histogram_quantile(0.95, rate(vector_search_duration_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Высокая задержка векторного поиска"
+          description: "95-й перцентиль задержки: {{ $value }}с"
+
+  # ---------------------------------------------------------------------------
+  # Системные алерты
+  # ---------------------------------------------------------------------------
+  - name: system_alerts
+    interval: 30s
+    rules:
+      # Высокое использование CPU
+      - alert: HighCPUUsage
+        expr: |
+          100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Высокое использование CPU"
+          description: "Использование CPU на {{ $labels.instance }}: {{ $value }}%"
+
+      # Высокое использование памяти
+      - alert: HighMemoryUsage
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Высокое использование памяти"
+          description: "Использование памяти на {{ $labels.instance }}: {{ $value }}%"
+
+      # Мало места на диске
+      - alert: LowDiskSpace
+        expr: |
+          (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"}
+           / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) * 100 < 15
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Мало места на диске"
+          description: "Свободно: {{ $value | humanizePercentage }} на {{ $labels.instance }}"

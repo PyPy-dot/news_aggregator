@@ -1,10 +1,10 @@
 """
 Database Service — управление сессиями базы данных.
 
-Изолирует логику создания и управления сессиями БД,
-устраняя необходимость в глобальном async_session.
+Использует новый слой абстракции (services.database) для поддержки
+SQLite, PostgreSQL и MySQL с единым API.
 
-Корректное управление жизненным циклом подключений.
+Корректное управление жизненным циклом подключений с подробным логированием.
 """
 
 import logging
@@ -14,10 +14,16 @@ from contextlib import asynccontextmanager
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
-    create_async_engine,
     AsyncEngine,
 )
 from config.settings import settings
+
+# Импортируем новый слой абстракции
+from services.database import (
+    get_database_service as get_new_db_service,
+    IDatabaseService,
+    DatabaseType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +32,13 @@ class DatabaseService:
     """
     Сервис для управления подключением к базе данных.
 
+    Обёртка над новым слоем абстракции (services.database) для
+    обратной совместимости со старым API.
+
     Attributes:
         engine: SQLAlchemy async engine
         session_factory: Фабрика сессий
+        database_url: URL базы данных
     """
 
     def __init__(self, database_url: str | None = None) -> None:
@@ -38,7 +48,8 @@ class DatabaseService:
         Args:
             database_url: URL базы данных (по умолчанию из конфига)
         """
-        self.database_url = database_url or settings.database_url
+        self.database_url = database_url or settings.database_url_resolved
+        self._service: Optional[IDatabaseService] = None
         self._engine: Optional[AsyncEngine] = None
         self._session_factory: Optional[async_sessionmaker] = None
         self._initialized = False
@@ -47,39 +58,68 @@ class DatabaseService:
         # Создаём engine лениво при первом использовании
         self._init_engine()
 
-        logger.info(f"📁 DatabaseService инициализирован: {self.database_url}")
-
     def _init_engine(self) -> None:
-        """Инициализировать engine и фабрику сессий."""
-        # Создаём engine
-        self._engine = create_async_engine(
+        """Инициализировать engine через новый слой абстракции."""
+        from services.database import DatabaseServiceFactory, DatabaseConfig
+
+        # Определяем тип БД по URL
+        db_type = DatabaseType.from_url(self.database_url)
+
+        # Создаём конфигурацию
+        config = DatabaseConfig(
             url=self.database_url,
-            echo=False,  # Отключаем вывод SQL-запросов
-            pool_pre_ping=True,  # Проверка подключения перед использованием
+            db_type=db_type,
+            pool_size=settings.db_pool_size,
+            max_overflow=settings.db_max_overflow,
+            pool_timeout=settings.db_pool_timeout,
+            pool_recycle=settings.db_pool_recycle,
+            echo=settings.db_echo,
+            pool_pre_ping=True,
         )
 
-        # Создаём фабрику сессий
-        self._session_factory = async_sessionmaker(
-            self._engine,
-            expire_on_commit=False,
-            class_=AsyncSession
-        )
+        # Создаём сервис через фабрику
+        self._service = DatabaseServiceFactory.create(config)
+
+        # Логирование типа СУБД и параметров
+        logger.info(f"📊 СУБД: {db_type.name}")
+        logger.info(f"📊 URL: {self._mask_password(self.database_url)}")
+        logger.info(f"📊 Параметры пула: size={config.pool_size}, overflow={config.max_overflow}, timeout={config.pool_timeout}s")
 
         self._initialized = True
-        logger.debug("✅ DatabaseService engine инициализирован")
+        logger.debug("✅ DatabaseService инициализирован")
+
+    def _mask_password(self, url: str) -> str:
+        """Замаскировать пароль в URL для логирования."""
+        if '://' not in url:
+            return url
+
+        prefix, rest = url.split('://', 1)
+        if '@' not in rest:
+            return url
+
+        host_part = rest.split('@', 1)[1]
+        return f"{prefix}://***:***@{host_part}"
 
     @property
     def engine(self) -> AsyncEngine:
         """Получить engine."""
-        if self._engine is None:
+        if self._service is None:
             raise RuntimeError("DatabaseService not initialized")
-        return self._engine
+        return self._service.engine
 
     @property
     def session_factory(self) -> async_sessionmaker:
         """Получить фабрику сессий."""
         if self._session_factory is None:
-            raise RuntimeError("DatabaseService not initialized")
+            if self._service is None:
+                raise RuntimeError("DatabaseService not initialized")
+
+            from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+            self._session_factory = async_sessionmaker(
+                self._service.engine,
+                expire_on_commit=False,
+                class_=AsyncSession
+            )
         return self._session_factory
 
     async def create_session(self) -> AsyncSession:
@@ -95,7 +135,10 @@ class DatabaseService:
         if not self._initialized:
             self._init_engine()
 
-        return self.session_factory()
+        if self._service is None:
+            raise RuntimeError("DatabaseService not initialized")
+
+        return await self._service.create_session()
 
     @asynccontextmanager
     async def session_context(self) -> AsyncGenerator[AsyncSession, None]:
@@ -106,15 +149,16 @@ class DatabaseService:
             async with db_service.session_context() as session:
                 # работа с сессией
         """
-        session = await self.create_session()
-        try:
+        import gc
+
+        if self._service is None:
+            raise RuntimeError("DatabaseService not initialized")
+
+        async with self._service.session_context() as session:
             yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
+
+        gc.collect()
+        logger.debug("Сессия БД закрыта")
 
     async def init_db(self) -> None:
         """
@@ -140,13 +184,14 @@ class DatabaseService:
             logger.debug("DatabaseService уже утилизирован")
             return
 
-        if self._engine:
+        if self._service:
             try:
-                await self._engine.dispose()
-                logger.info("👋 Подключение к базе данных закрыто")
+                await self._service.disconnect()
+                logger.info(f"👋 Подключение к {self._service.db_type.name} закрыто")
             except Exception as e:
                 logger.error(f"❌ Ошибка закрытия подключения к БД: {e}")
 
+        self._service = None
         self._engine = None
         self._session_factory = None
         self._initialized = False

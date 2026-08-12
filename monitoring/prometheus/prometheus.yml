@@ -1,0 +1,127 @@
+# =============================================================================
+# Prometheus Configuration for News Aggregator
+# =============================================================================
+# Сбор метрик со всех сервисов системы
+# =============================================================================
+
+global:
+  scrape_interval: 15s      # Интервал сбора метрик
+  evaluation_interval: 15s  # Интервал вычисления правил
+  external_labels:
+    cluster: 'news-aggregator'
+    environment: 'production'
+
+# Правила алертов
+rule_files:
+  - 'alerts.yml'
+
+# Конфигурация Alertmanager
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+# Цели для сбора метрик
+scrape_configs:
+  # ---------------------------------------------------------------------------
+  # Prometheus (само-мониторинг)
+  # ---------------------------------------------------------------------------
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+
+  # ---------------------------------------------------------------------------
+  # Основное приложение (News Aggregator)
+  # ---------------------------------------------------------------------------
+  - job_name: 'news-aggregator-app'
+    static_configs:
+      - targets: ['app:8000']
+        labels:
+          service: 'app'
+          component: 'main'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # ---------------------------------------------------------------------------
+  # Web Admin
+  # ---------------------------------------------------------------------------
+  - job_name: 'news-aggregator-web'
+    static_configs:
+      - targets: ['web-admin:8001']
+        labels:
+          service: 'web-admin'
+          component: 'admin'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL Exporter
+  # ---------------------------------------------------------------------------
+  - job_name: 'postgresql'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+        labels:
+          service: 'postgresql'
+          component: 'database'
+    scrape_interval: 30s
+
+  # ---------------------------------------------------------------------------
+  # Redis Exporter
+  # ---------------------------------------------------------------------------
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+        labels:
+          service: 'redis'
+          component: 'cache'
+    scrape_interval: 15s
+
+  # ---------------------------------------------------------------------------
+  # Ollama Exporter (если доступен)
+  # ---------------------------------------------------------------------------
+  - job_name: 'ollama'
+    static_configs:
+      - targets: ['ollama-exporter:9820']
+        labels:
+          service: 'ollama'
+          component: 'llm'
+    scrape_interval: 30s
+    scrape_timeout: 25s
+
+  # ---------------------------------------------------------------------------
+  # ChromaDB (через HTTP endpoint)
+  # ---------------------------------------------------------------------------
+  - job_name: 'chromadb'
+    static_configs:
+      - targets: ['chromadb:8000']
+        labels:
+          service: 'chromadb'
+          component: 'vector-search'
+    metrics_path: '/api/v1/heartbeat'
+    scrape_interval: 30s
+
+  # ---------------------------------------------------------------------------
+  # Node Exporter (системные метрики)
+  # ---------------------------------------------------------------------------
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          service: 'node'
+          component: 'system'
+    scrape_interval: 30s
+
+  # ---------------------------------------------------------------------------
+  # Celery Flower (если используется)
+  # ---------------------------------------------------------------------------
+  - job_name: 'celery-flower'
+    static_configs:
+      - targets: ['flower:5555']
+        labels:
+          service: 'celery'
+          component: 'tasks'
+    metrics_path: '/metrics'
+    scrape_interval: 15s

@@ -182,7 +182,21 @@ def get_encryption_key() -> bytes:
     Raises:
         ValueError: Если ключ шифрования не задан в окружении
     """
+    # Сначала пробуем из окружения
     key = os.getenv('ENCRYPTION_KEY')
+
+    # Если нет, пробуем загрузить из .env файла
+    if not key:
+        try:
+            from dotenv import load_dotenv
+            from pathlib import Path
+            # Загружаем из .env в корне проекта
+            env_path = Path(__file__).parent.parent / '.env'
+            if env_path.exists():
+                load_dotenv(env_path)
+                key = os.getenv('ENCRYPTION_KEY')
+        except ImportError:
+            pass  # python-dotenv не установлен
     if not key:
         raise ValueError(
             "Ключ шифрования не задан! Установите переменную окружения ENCRYPTION_KEY. "

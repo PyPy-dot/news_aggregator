@@ -1,0 +1,2098 @@
+"""
+Хендлеры для управления задачами (админка).
+
+Прямая генерация новостей, плановая обработка, CRUD задач.
+
+Изменения v3.1.8:
+- Два типа задач: Прямая генерация и Плановая обработка
+- Обе задачи могут быть разовыми или периодическими
+- Плановая обработка НЕ использует Analyst (уже выполнил работу на этапе категоризации)
+- Выбор времени запуска задачи (не только утро/вечер)
+- Кнопка "Назад" на всех этапах вместо /cancel
+- Исправлена ошибка с правами для "Назад к задачам"
+- Унифицирована терминология: "Внеплановая обработка" → "Плановая обработка"
+"""
+
+import logging
+from datetime import datetime, timedelta
+from aiogram import F, Router
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.filters import Command, StateFilter
+from aiogram.fsm.context import FSMContext
+
+from services.bot.handlers.router import admin
+from services.bot.handlers.access import check_admin_access
+
+from database import RepositoryFactory
+from services.database import get_database_service
+
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Главное меню задач
+# =============================================================================
+
+@admin.message(Command('tasks'))
+@admin.message(F.text == '📝 Задачи')
+async def tasks_menu(message: Message):
+    """
+    Главное меню управления задачами.
+    """
+    if not await check_admin_access(message):
+        return
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text='➕ Добавить задачу', callback_data='task_add'),
+            ],
+            [
+                InlineKeyboardButton(text='✏️ Изменить задачу', callback_data='task_edit_list'),
+            ],
+            [
+                InlineKeyboardButton(text='🗑️ Удалить задачу', callback_data='task_delete_list'),
+            ],
+            [
+                InlineKeyboardButton(text='📋 Список задач', callback_data='task_list'),
+            ],
+            [
+                InlineKeyboardButton(text='🔙 Назад', callback_data='back_to_admin_menu'),
+            ],
+        ]
+    )
+
+    await message.answer(
+        "📝 <b>Управление задачами</b>\n\n"
+        "Выберите действие:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+
+# =============================================================================
+# Добавление задачи
+# =============================================================================
+
+@admin.callback_query(F.data == 'task_add')
+async def task_add_menu(callback: CallbackQuery):
+    """
+    Меню выбора типа добавляемой задачи.
+    """
+    # Проверяем права администратора
+    if not await check_admin_access(callback):
+        await callback.answer('❌ У вас нет прав для этой команды', show_alert=True)
+        return
+
+    await callback.answer()
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text='✍️ Прямая генерация', callback_data='task_add_direct'),
+            ],
+            [
+                InlineKeyboardButton(text='🔄 Плановая обработка', callback_data='task_add_scheduled'),
+            ],
+            [
+                InlineKeyboardButton(text='🔙 Назад к задачам', callback_data='task_back_to_menu'),
+            ],
+        ]
+    )
+
+    # Редактируем сообщение вместо создания нового
+    try:
+        await callback.message.edit_text(
+            "➕ <b>Добавление задачи</b>\n\n"
+            "Выберите тип задачи:\n\n"
+            "✍️ <b>Прямая генерация</b> — создание новости по описанию\n"
+            "🔄 <b>Плановая обработка</b> — обработка ожидающих новостей",
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+            "➕ <b>Добавление задачи</b>\n\n"
+            "Выберите тип задачи:\n\n"
+            "✍️ <b>Прямая генерация</b> — создание новости по описанию\n"
+            "🔄 <b>Плановая обработка</b> — обработка ожидающих новостей",
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+
+
+@admin.callback_query(F.data == 'task_back_to_menu')
+async def task_back_to_menu_callback(callback: CallbackQuery):
+    """
+    Вернуться в меню задач из добавления задачи.
+
+    Проверка прав не требуется — кнопка доступна только из меню задач,
+    где пользователь уже прошёл проверку прав.
+    """
+    await callback.answer()
+
+    # Показываем меню задач напрямую (без вызова tasks_menu, который проверяет права)
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text='➕ Добавить задачу', callback_data='task_add'),
+            ],
+            [
+                InlineKeyboardButton(text='✏️ Изменить задачу', callback_data='task_edit_list'),
+            ],
+            [
+                InlineKeyboardButton(text='🗑️ Удалить задачу', callback_data='task_delete_list'),
+            ],
+            [
+                InlineKeyboardButton(text='📋 Список задач', callback_data='task_list'),
+            ],
+            [
+                InlineKeyboardButton(text='🔙 Назад', callback_data='back_to_admin_menu'),
+            ],
+        ]
+    )
+
+    # Удаляем текущее сообщение вместо редактирования
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    try:
+
+        await callback.message.edit_text(
+
+        "📝 <b>Управление задачами</b>\n\n"
+        "Выберите действие:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+    except Exception:
+
+        await callback.message.answer(
+
+        "📝 <b>Управление задачами</b>\n\n"
+        "Выберите действие:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+        "📝 <b>Управление задачами</b>\n\n"
+        "Выберите действие:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+
+@admin.callback_query(F.data == 'task_add_direct')
+async def task_add_direct_callback(callback: CallbackQuery, state: FSMContext):
+    """Начало создания задачи прямой генерации."""
+    # Проверка прав не требуется — кнопка доступна только из меню задач
+    await callback.answer()
+    await state.set_state('TaskStates.waiting_for_description')
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text='🔙 Назад', callback_data='task_add'),
+            ],
+        ]
+    )
+
+    try:
+        await callback.message.edit_text(
+            "✍️ <b>Прямая генерация новости</b>\n\n"
+            "Отправьте описание новости (текст).\n"
+            "📎 Можно прикрепить фото или видео.\n\n"
+            "Для отмены нажмите кнопку ниже:",
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+            "✍️ <b>Прямая генерация новости</b>\n\n"
+            "Отправьте описание новости (текст).\n"
+            "📎 Можно прикрепить фото или видео.\n\n"
+            "Для отмены нажмите кнопку ниже:",
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+
+
+@admin.message(StateFilter('TaskStates.waiting_for_description'), F.text)
+async def handle_task_description(message: Message, state: FSMContext):
+    """Обработка описания для прямой генерации."""
+    if not await check_admin_access(message):
+        return
+
+    description = message.text.strip()
+
+    # Сохраняем описание и проверяем медиа
+    media_info = None
+    if message.photo:
+        media_info = {'type': 'photo', 'file_id': message.photo[-1].file_id}
+    elif message.video:
+        media_info = {'type': 'video', 'file_id': message.video.file_id}
+
+    await state.update_data(description=description, media=media_info)
+
+    # Получаем список каналов публикации
+    async with get_database_service().session_context() as session:
+        factory = RepositoryFactory(session)
+        publishers_repo = factory.publishers()
+        publishers = await publishers_repo.get_all(active_only=True)
+
+    if not publishers:
+        # Если нет каналов, пропускаем выбор и идём к типу выполнения
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(text='⏰ Запустить сейчас', callback_data='direct_now'),
+                ],
+                [
+                    InlineKeyboardButton(text='🔁 Периодическая', callback_data='direct_recurring'),
+                ],
+                [
+                    InlineKeyboardButton(text='🔙 Назад', callback_data='task_add_direct'),
+                ],
+            ]
+        )
+        await message.answer(
+            "🕐 <b>Выберите тип выполнения</b>\n\n"
+            "Описание: " + description[:100] + ('...' if len(description) > 100 else '') + "\n\n"
+            "Запустить сейчас или сделать периодической?",
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+        return
+
+    # Сохраняем описание и переходим к выбору канала
+    await state.set_state('TaskStates.waiting_for_channel')
+
+    # Формируем клавиатуру с каналами
+    keyboard_buttons = []
+    for pub in publishers[:10]:  # Максимум 10 каналов
+        keyboard_buttons.append([
+            InlineKeyboardButton(text=f'📢 {pub.title}', callback_data=f'pub_channel_{pub.id}'),
+        ])
+
+    # Добавляем специальные опции
+    keyboard_buttons.append([
+        InlineKeyboardButton(text='📤 Отправить через бота', callback_data='pub_via_bot'),
+        InlineKeyboardButton(text='📢 Во все каналы', callback_data='pub_all_channels'),
+    ])
+    keyboard_buttons.append([
+        InlineKeyboardButton(text='🔙 Назад', callback_data='task_add_direct'),
+    ])
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+
+    await message.answer(
+        "📢 <b>Выберите канал публикации</b>\n\n"
+        "Описание: " + description[:100] + ('...' if len(description) > 100 else '') + "\n\n"
+        "Выберите канал или способ публикации:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+
+@admin.callback_query(F.data == 'pub_via_bot')
+async def handle_pub_via_bot(callback: CallbackQuery, state: FSMContext):
+    """Отправить через бота (публикация от имени бота)."""
+    await callback.answer()
+
+    # publisher_channel_id = None означает публикацию через бота
+    await state.update_data(publisher_channel_id=None)
+    data = await state.get_data()
+    description = data.get('description', '')
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text='⏰ Запустить сейчас', callback_data='direct_now'),
+            ],
+            [
+                InlineKeyboardButton(text='🕐 К выбору времени', callback_data='direct_scheduled'),
+            ],
+            [
+                InlineKeyboardButton(text='🔁 Периодическая', callback_data='direct_recurring'),
+            ],
+            [
+                InlineKeyboardButton(text='🔙 Назад', callback_data='task_add_direct'),
+            ],
+        ]
+    )
+
+    try:
+
+        await callback.message.edit_text(
+
+        "🕐 <b>Выберите тип выполнения</b>\n\n"
+        "Описание: " + description[:100] + ('...' if len(description) > 100 else '') + "\n\n"
+        "Публикация: <b>Через бота</b>\n\n"
+        "Запустить сейчас, в указанное время или сделать периодической?",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+    except Exception:
+
+        await callback.message.answer(
+
+        "🕐 <b>Выберите тип выполнения</b>\n\n"
+        "Описание: " + description[:100] + ('...' if len(description) > 100 else '') + "\n\n"
+        "Публикация: <b>Через бота</b>\n\n"
+        "Запустить сейчас, в указанное время или сделать периодической?",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+        "🕐 <b>Выберите тип выполнения</b>\n\n"
+        "Описание: " + description[:100] + ('...' if len(description) > 100 else '') + "\n\n"
+        "Публикация: <b>Через бота</b>\n\n"
+        "Запустить сейчас, в указанное время или сделать периодической?",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+
+@admin.callback_query(F.data == 'pub_all_channels')
+async def handle_pub_all_channels(callback: CallbackQuery, state: FSMContext):
+    """Опубликовать во все каналы."""
+    await callback.answer()
+
+    # publisher_channel_id = -1 означает все каналы (специальное значение)
+    await state.update_data(publisher_channel_id=-1)
+    data = await state.get_data()
+    description = data.get('description', '')
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text='⏰ Запустить сейчас', callback_data='direct_now'),
+            ],
+            [
+                InlineKeyboardButton(text='🕐 К выбору времени', callback_data='direct_scheduled'),
+            ],
+            [
+                InlineKeyboardButton(text='🔁 Периодическая', callback_data='direct_recurring'),
+            ],
+            [
+                InlineKeyboardButton(text='🔙 Назад', callback_data='task_add_direct'),
+            ],
+        ]
+    )
+
+    try:
+
+        await callback.message.edit_text(
+
+        "🕐 <b>Выберите тип выполнения</b>\n\n"
+        "Описание: " + description[:100] + ('...' if len(description) > 100 else '') + "\n\n"
+        "Публикация: <b>Во все каналы</b>\n\n"
+        "Запустить сейчас, в указанное время или сделать периодической?",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+    except Exception:
+
+        await callback.message.answer(
+
+        "🕐 <b>Выберите тип выполнения</b>\n\n"
+        "Описание: " + description[:100] + ('...' if len(description) > 100 else '') + "\n\n"
+        "Публикация: <b>Во все каналы</b>\n\n"
+        "Запустить сейчас, в указанное время или сделать периодической?",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+        "🕐 <b>Выберите тип выполнения</b>\n\n"
+        "Описание: " + description[:100] + ('...' if len(description) > 100 else '') + "\n\n"
+        "Публикация: <b>Во все каналы</b>\n\n"
+        "Запустить сейчас, в указанное время или сделать периодической?",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+
+@admin.callback_query(F.data.startswith('pub_channel_'))
+async def handle_pub_channel_select(callback: CallbackQuery, state: FSMContext):
+    """Выбор канала публикации."""
+    try:
+        publisher_id = int(callback.data.replace('pub_channel_', ''))
+    except ValueError:
+        await callback.answer('❌ Ошибка выбора', show_alert=True)
+        return
+
+    await callback.answer()
+    await state.update_data(publisher_channel_id=publisher_id)
+
+    # Получаем название канала для подтверждения
+    async with get_database_service().session_context() as session:
+        factory = RepositoryFactory(session)
+        publishers_repo = factory.publishers()
+        publisher = await publishers_repo.get_by_id(publisher_id)
+
+    data = await state.get_data()
+    description = data.get('description', '')
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text='⏰ Запустить сейчас', callback_data='direct_now'),
+            ],
+            [
+                InlineKeyboardButton(text='🕐 К выбору времени', callback_data='direct_scheduled'),
+            ],
+            [
+                InlineKeyboardButton(text='🔁 Периодическая', callback_data='direct_recurring'),
+            ],
+            [
+                InlineKeyboardButton(text='🔙 Изменить канал', callback_data='pub_change_channel'),
+            ],
+        ]
+    )
+
+    try:
+
+        await callback.message.edit_text(
+
+        "✅ <b>Канал выбран</b>\n\n"
+        f"Канал: {publisher.title if publisher else 'Неизвестно'}\n"
+        "Описание: " + description[:100] + ('...' if len(description) > 100 else '') + "\n\n"
+        "Выберите тип выполнения:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+    except Exception:
+
+        await callback.message.answer(
+
+        "✅ <b>Канал выбран</b>\n\n"
+        f"Канал: {publisher.title if publisher else 'Неизвестно'}\n"
+        "Описание: " + description[:100] + ('...' if len(description) > 100 else '') + "\n\n"
+        "Выберите тип выполнения:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+        "✅ <b>Канал выбран</b>\n\n"
+        f"Канал: {publisher.title if publisher else 'Неизвестно'}\n"
+        "Описание: " + description[:100] + ('...' if len(description) > 100 else '') + "\n\n"
+        "Выберите тип выполнения:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+
+@admin.callback_query(F.data == 'pub_change_channel')
+async def handle_pub_change_channel(callback: CallbackQuery, state: FSMContext):
+    """Вернуться к выбору канала."""
+    # Получаем список каналов
+    async with get_database_service().session_context() as session:
+        factory = RepositoryFactory(session)
+        publishers_repo = factory.publishers()
+        publishers = await publishers_repo.get_all(active_only=True)
+
+    if not publishers:
+        await callback.answer('Нет доступных каналов', show_alert=True)
+        return
+
+    # Формируем клавиатуру с каналами
+    keyboard_buttons = []
+    for pub in publishers[:10]:
+        keyboard_buttons.append([
+            InlineKeyboardButton(text=f'📢 {pub.title}', callback_data=f'pub_channel_{pub.id}'),
+        ])
+    keyboard_buttons.append([
+        InlineKeyboardButton(text='⏭️ Пропустить (без канала)', callback_data='pub_skip'),
+    ])
+    keyboard_buttons.append([
+        InlineKeyboardButton(text='🔙 Назад', callback_data='task_add_direct'),
+    ])
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+
+    await callback.answer()
+    try:
+        await callback.message.edit_text(
+
+        "📢 <b>Выберите канал публикации</b>\n\n"
+        "Канал будет указан в задаче (опционально):",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+    except Exception:
+        await callback.message.answer(
+
+        "📢 <b>Выберите канал публикации</b>\n\n"
+        "Канал будет указан в задаче (опционально):",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+        "📢 <b>Выберите канал публикации</b>\n\n"
+        "Канал будет указан в задаче (опционально):",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+
+@admin.callback_query(F.data == 'direct_type_selection')
+async def handle_direct_type_selection(callback: CallbackQuery, state: FSMContext):
+    """Показать выбор типа выполнения (сейчас/время/периодическая)."""
+    data = await state.get_data()
+    description = data.get('description', '')
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text='⏰ Запустить сейчас', callback_data='direct_now'),
+            ],
+            [
+                InlineKeyboardButton(text='🕐 К выбору времени', callback_data='direct_scheduled'),
+            ],
+            [
+                InlineKeyboardButton(text='🔁 Периодическая', callback_data='direct_recurring'),
+            ],
+            [
+                InlineKeyboardButton(text='🔙 Назад', callback_data='task_add_direct'),
+            ],
+        ]
+    )
+
+    await callback.answer()
+    try:
+        await callback.message.edit_text(
+
+        "🕐 <b>Выберите тип выполнения</b>\n\n"
+        "Описание: " + description[:100] + ('...' if len(description) > 100 else '') + "\n\n"
+        "Запустить сейчас, в указанное время или сделать периодической?",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+    except Exception:
+        await callback.message.answer(
+
+        "🕐 <b>Выберите тип выполнения</b>\n\n"
+        "Описание: " + description[:100] + ('...' if len(description) > 100 else '') + "\n\n"
+        "Запустить сейчас, в указанное время или сделать периодической?",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+        "🕐 <b>Выберите тип выполнения</b>\n\n"
+        "Описание: " + description[:100] + ('...' if len(description) > 100 else '') + "\n\n"
+        "Запустить сейчас, в указанное время или сделать периодической?",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+
+@admin.callback_query(F.data == 'direct_scheduled')
+async def handle_direct_scheduled(callback: CallbackQuery, state: FSMContext):
+    """Выбор времени для разовой генерации."""
+    await callback.answer()
+    await state.set_state('TaskStates.waiting_for_direct_scheduled_time')
+
+    # Вычисляем завтрашнюю дату для примера
+    tomorrow = datetime.now().replace(hour=12, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    tomorrow_str = tomorrow.strftime('%Y-%m-%d %H:%M')
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text='🔙 Назад', callback_data='direct_type_selection'),
+            ],
+        ]
+    )
+
+    try:
+
+        await callback.message.edit_text(
+
+        "🕐 <b>Время запуска</b>\n\n"
+        f"Отправьте дату и время в формате:\n"
+        f"<b>YYYY-MM-DD HH:MM</b> (например, {tomorrow_str})\n\n"
+        "Для отмены нажмите кнопку ниже:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+    except Exception:
+
+        await callback.message.answer(
+
+        "🕐 <b>Время запуска</b>\n\n"
+        f"Отправьте дату и время в формате:\n"
+        f"<b>YYYY-MM-DD HH:MM</b> (например, {tomorrow_str})\n\n"
+        "Для отмены нажмите кнопку ниже:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+        "🕐 <b>Время запуска</b>\n\n"
+        f"Отправьте дату и время в формате:\n"
+        f"<b>YYYY-MM-DD HH:MM</b> (например, {tomorrow_str})\n\n"
+        "Для отмены нажмите кнопку ниже:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+
+@admin.message(StateFilter('TaskStates.waiting_for_direct_scheduled_time'), F.text)
+async def handle_direct_scheduled_time(message: Message, state: FSMContext):
+    """Обработка времени для разовой генерации."""
+    if not await check_admin_access(message):
+        return
+
+    time_text = message.text.strip()
+
+    # Парсим дату и время
+    try:
+        scheduled_at = datetime.strptime(time_text, '%Y-%m-%d %H:%M')
+        # Проверяем, чтобы время не было в прошлом
+        if scheduled_at <= datetime.now():
+            await message.answer('❌ Время не может быть в прошлом. Пожалуйста, укажите будущее время.')
+            return
+    except ValueError:
+        await message.answer('❌ Неверный формат. Используйте YYYY-MM-DD HH:MM (например, 2026-08-10 14:30)')
+        return
+
+    data = await state.get_data()
+    description = data.get('description', '')
+    publisher_channel_id = data.get('publisher_channel_id')
+
+    async with get_database_service().session_context() as session:
+        factory = RepositoryFactory(session)
+        task_repo = factory.tasks()
+
+        task = await task_repo.create_task(
+            task_type='direct_generation',
+            description=description[:200],
+            post_id=None,
+            scheduled_at=scheduled_at,
+            publisher_channel_id=publisher_channel_id,
+        )
+
+    channel_info = f"\nКанал: ID={publisher_channel_id}" if publisher_channel_id else ""
+
+    await message.answer(
+        f"✅ <b>Задача создана!</b>\n\n"
+        f"ID задачи: {task.id}\n"
+        f"Тип: Прямая генерация{channel_info}\n"
+        f"Описание: {description[:100]}{'...' if len(description) > 100 else ''}\n"
+        f"Запуск: {scheduled_at.strftime('%Y-%m-%d %H:%M')}\n"
+        f"Статус: {task.status}",
+        parse_mode='HTML'
+    )
+
+    await state.clear()
+    logger.info(f"📋 Создана задача прямой генерации на {scheduled_at}: task_id={task.id}")
+
+
+@admin.callback_query(F.data == 'direct_now')
+async def handle_direct_now(callback: CallbackQuery, state: FSMContext):
+    """Запуск прямой генерации сейчас."""
+    # Проверка прав не требуется — кнопка доступна только из меню задач
+    data = await state.get_data()
+    description = data.get('description', '')
+    publisher_channel_id = data.get('publisher_channel_id')
+
+    async with get_database_service().session_context() as session:
+        factory = RepositoryFactory(session)
+        task_repo = factory.tasks()
+
+        # Добавляем 2 минуты запаса, чтобы задача не ушла в expired из-за очереди обработки
+        scheduled_at = datetime.now() + timedelta(minutes=2)
+
+        task = await task_repo.create_task(
+            task_type='direct_generation',
+            description=description[:200],  # Сохраняем оригинальное описание
+            post_id=None,
+            scheduled_at=scheduled_at,
+            publisher_channel_id=publisher_channel_id,
+        )
+
+    channel_info = f"\nКанал: ID={publisher_channel_id}" if publisher_channel_id else ""
+
+    await callback.answer('✅ Задача создана!', show_alert=True)
+    try:
+        await callback.message.edit_text(
+
+        f"✅ <b>Задача создана!</b>\n\n"
+        f"ID задачи: {task.id}\n"
+        f"Тип: Прямая генерация{channel_info}\n"
+        f"Описание: {description[:100]}{'...' if len(description) > 100 else ''}\n"
+        f"Запуск: Немедленно\n"
+        f"Статус: {task.status}",
+        parse_mode='HTML'
+    )
+    except Exception:
+        await callback.message.answer(
+
+        f"✅ <b>Задача создана!</b>\n\n"
+        f"ID задачи: {task.id}\n"
+        f"Тип: Прямая генерация{channel_info}\n"
+        f"Описание: {description[:100]}{'...' if len(description) > 100 else ''}\n"
+        f"Запуск: Немедленно\n"
+        f"Статус: {task.status}",
+        parse_mode='HTML'
+    )
+        f"✅ <b>Задача создана!</b>\n\n"
+        f"ID задачи: {task.id}\n"
+        f"Тип: Прямая генерация{channel_info}\n"
+        f"Описание: {description[:100]}{'...' if len(description) > 100 else ''}\n"
+        f"Запуск: Немедленно\n"
+        f"Статус: {task.status}",
+        parse_mode='HTML'
+    )
+
+    await state.clear()
+    logger.info(f"📋 Создана задача прямой генерации: task_id={task.id}, publisher_id={publisher_channel_id}")
+
+
+@admin.callback_query(F.data == 'direct_recurring')
+async def handle_direct_recurring(callback: CallbackQuery, state: FSMContext):
+    """Настройка периодичности для прямой генерации."""
+    # Проверка прав не требуется — кнопка доступна только из меню задач
+    await callback.answer()
+    await state.set_state('TaskStates.waiting_for_direct_recurrence')
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text='1 день (ежедневно)', callback_data='direct_rec_1'),
+            ],
+            [
+                InlineKeyboardButton(text='2 дня', callback_data='direct_rec_2'),
+            ],
+            [
+                InlineKeyboardButton(text='3 дня', callback_data='direct_rec_3'),
+            ],
+            [
+                InlineKeyboardButton(text='7 дней (еженедельно)', callback_data='direct_rec_7'),
+            ],
+            [
+                InlineKeyboardButton(text='🔙 Назад', callback_data='direct_type_selection'),
+            ],
+        ]
+    )
+
+    try:
+
+        await callback.message.edit_text(
+
+        "🔁 <b>Периодичность выполнения</b>\n\n"
+        "Выберите интервал между выполнениями:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+    except Exception:
+
+        await callback.message.answer(
+
+        "🔁 <b>Периодичность выполнения</b>\n\n"
+        "Выберите интервал между выполнениями:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+        "🔁 <b>Периодичность выполнения</b>\n\n"
+        "Выберите интервал между выполнениями:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+
+@admin.callback_query(F.data.startswith('direct_rec_'))
+async def handle_direct_recurrence_pattern(callback: CallbackQuery, state: FSMContext):
+    """Обработка выбора периодичности для прямой генерации."""
+    # Проверка прав не требуется — кнопка доступна только из меню задач
+    try:
+        pattern = int(callback.data.replace('direct_rec_', ''))
+    except ValueError:
+        await callback.answer('❌ Ошибка выбора', show_alert=True)
+        return
+
+    data = await state.get_data()
+    description = data.get('description', '')
+
+    # Запрос времени запуска
+    await state.update_data(direct_recurrence=pattern)
+    await state.set_state('TaskStates.waiting_for_direct_time')
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text='🔙 Назад', callback_data='direct_recurring'),
+            ],
+        ]
+    )
+
+    await callback.answer()
+    try:
+        await callback.message.edit_text(
+
+        "🕐 <b>Время запуска</b>\n\n"
+        "Отправьте время запуска в формате:\n"
+        "<b>ЧЧ:ММ</b> (например, 14:30)\n\n"
+        "Или выберите preset:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+    except Exception:
+        await callback.message.answer(
+
+        "🕐 <b>Время запуска</b>\n\n"
+        "Отправьте время запуска в формате:\n"
+        "<b>ЧЧ:ММ</b> (например, 14:30)\n\n"
+        "Или выберите preset:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+        "🕐 <b>Время запуска</b>\n\n"
+        "Отправьте время запуска в формате:\n"
+        "<b>ЧЧ:ММ</b> (например, 14:30)\n\n"
+        "Или выберите preset:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+
+@admin.message(StateFilter('TaskStates.waiting_for_direct_time'), F.text)
+async def handle_direct_time(message: Message, state: FSMContext):
+    """Обработка времени запуска для периодической прямой генерации."""
+    if not await check_admin_access(message):
+        return
+
+    time_text = message.text.strip()
+
+    # Парсим время
+    try:
+        if ':' in time_text:
+            hour, minute = map(int, time_text.split(':'))
+            if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                raise ValueError()
+        else:
+            raise ValueError()
+    except ValueError:
+        await message.answer('❌ Неверный формат. Используйте ЧЧ:ММ (например, 14:30)')
+        return
+
+    data = await state.get_data()
+    description = data.get('description', '')
+    pattern = data.get('direct_recurrence', 1)
+    publisher_channel_id = data.get('publisher_channel_id')
+
+    scheduled_time = datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+    async with get_database_service().session_context() as session:
+        factory = RepositoryFactory(session)
+        task_repo = factory.tasks()
+
+        task = await task_repo.create_task(
+            task_type='direct_generation',
+            description=f'{description[:150]} (каждые {pattern} дн.)',  # Описание + периодичность
+            post_id=None,
+            scheduled_at=scheduled_time,
+            recurring=True,
+            recurrence_pattern=pattern,
+            publisher_channel_id=publisher_channel_id,
+        )
+
+    channel_info = f"\nКанал: ID={publisher_channel_id}" if publisher_channel_id else ""
+
+    await message.answer(
+        f"✅ <b>Периодическая задача создана!</b>\n\n"
+        f"ID задачи: {task.id}\n"
+        f"Тип: Прямая генерация{channel_info}\n"
+        f"Периодичность: каждые {pattern} дн.\n"
+        f"Время запуска: {scheduled_time.strftime('%H:%M')}\n"
+        f"Статус: {task.status}",
+        parse_mode='HTML'
+    )
+
+    await state.clear()
+    logger.info(f"📋 Создана периодическая задача прямой генерации: task_id={task.id}, pattern={pattern}, publisher_id={publisher_channel_id}")
+
+
+@admin.callback_query(F.data == 'task_add_scheduled')
+async def task_add_scheduled_callback(callback: CallbackQuery, state: FSMContext):
+    """Начало создания задачи плановой обработки."""
+    # Проверка прав не требуется — кнопка доступна только из меню задач
+    await callback.answer()
+
+    # Вычисляем завтрашнюю дату для примера в описании
+    tomorrow = datetime.now().replace(hour=12, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    tomorrow_str = tomorrow.strftime('%Y-%m-%d %H:%M')
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text='⏰ Запустить сейчас', callback_data='scheduled_now'),
+            ],
+            [
+                InlineKeyboardButton(text='🕐 Запуск ко времени', callback_data='scheduled_scheduled'),
+            ],
+            [
+                InlineKeyboardButton(text='🔁 Периодическая', callback_data='scheduled_recurring'),
+            ],
+            [
+                InlineKeyboardButton(text='🔙 Назад к задачам', callback_data='task_back_to_menu'),
+            ],
+        ]
+    )
+
+    try:
+
+        await callback.message.edit_text(
+
+        "🔄 <b>Плановая обработка новостей</b>\n\n"
+        "Запустит цикл обработки всех ожидающих новостей (checked_at=false).\n\n"
+        "⚠️ <b>Важно:</b> Analyst уже выполнил свою работу на этапе категоризации.\n"
+        "Запускается только Editor → Archivist → Публикация.\n\n"
+        "Выберите тип выполнения:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+    except Exception:
+
+        await callback.message.answer(
+
+        "🔄 <b>Плановая обработка новостей</b>\n\n"
+        "Запустит цикл обработки всех ожидающих новостей (checked_at=false).\n\n"
+        "⚠️ <b>Важно:</b> Analyst уже выполнил свою работу на этапе категоризации.\n"
+        "Запускается только Editor → Archivist → Публикация.\n\n"
+        "Выберите тип выполнения:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+        "🔄 <b>Плановая обработка новостей</b>\n\n"
+        "Запустит цикл обработки всех ожидающих новостей (checked_at=false).\n\n"
+        "⚠️ <b>Важно:</b> Analyst уже выполнил свою работу на этапе категоризации.\n"
+        "Запускается только Editor → Archivist → Публикация.\n\n"
+        "Выберите тип выполнения:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+
+# Примечание: кнопка 'task_add_scheduled' использует callback_data 'task_add_scheduled'
+# для обратной совместимости, но отображается как "Плановая обработка"
+
+
+@admin.callback_query(F.data == 'scheduled_now')
+async def handle_scheduled_now(callback: CallbackQuery, state: FSMContext):
+    """Запуск плановой обработки сейчас."""
+    # Проверка прав не требуется — кнопка доступна только из меню задач
+    async with get_database_service().session_context() as session:
+        factory = RepositoryFactory(session)
+        task_repo = factory.tasks()
+
+        # Добавляем 2 минуты запаса, чтобы задача не ушла в expired из-за очереди обработки
+        scheduled_at = datetime.now() + timedelta(minutes=2)
+
+        task = await task_repo.create_task(
+            task_type='scheduled_processing',
+            description='Плановая обработка всех ожидающих новостей',
+            news_id=None,
+            scheduled_at=scheduled_at,
+        )
+
+    await callback.answer('✅ Задача создана!')
+    try:
+        await callback.message.edit_text(
+
+        f"✅ <b>Задача создана!</b>\n\n"
+        f"ID задачи: {task.id}\n"
+        f"Тип: Плановая обработка\n"
+        f"Новости: Все ожидающие\n"
+        f"Запуск: Немедленно\n"
+        f"Статус: {task.status}\n\n"
+        f"⏳ Запуск обработки...",
+        parse_mode='HTML'
+    )
+    except Exception:
+        await callback.message.answer(
+
+        f"✅ <b>Задача создана!</b>\n\n"
+        f"ID задачи: {task.id}\n"
+        f"Тип: Плановая обработка\n"
+        f"Новости: Все ожидающие\n"
+        f"Запуск: Немедленно\n"
+        f"Статус: {task.status}\n\n"
+        f"⏳ Запуск обработки...",
+        parse_mode='HTML'
+    )
+        f"✅ <b>Задача создана!</b>\n\n"
+        f"ID задачи: {task.id}\n"
+        f"Тип: Плановая обработка\n"
+        f"Новости: Все ожидающие\n"
+        f"Запуск: Немедленно\n"
+        f"Статус: {task.status}\n\n"
+        f"⏳ Запуск обработки...",
+        parse_mode='HTML'
+    )
+
+    logger.info(f"📋 Создана задача плановой обработки: task_id={task.id}")
+
+
+@admin.callback_query(F.data == 'scheduled_scheduled')
+async def handle_scheduled_scheduled(callback: CallbackQuery, state: FSMContext):
+    """Запуск плановой обработки ко времени (одноразовая)."""
+    # Проверка прав не требуется — кнопка доступна только из меню задач
+    await callback.answer()
+    await state.set_state('TaskStates.waiting_for_scheduled_scheduled_time')
+
+    # Вычисляем завтрашнюю дату для примера
+    tomorrow = datetime.now().replace(hour=12, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    tomorrow_str = tomorrow.strftime('%Y-%m-%d %H:%M')
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text='🔙 Назад', callback_data='task_add_scheduled'),
+            ],
+        ]
+    )
+
+    try:
+
+        await callback.message.edit_text(
+
+        f"🕐 <b>Время запуска</b>\n\n"
+        f"Отправьте дату и время в формате:\n"
+        f"<b>YYYY-MM-DD HH:MM</b> (например, {tomorrow_str})\n\n"
+        f"Для отмены нажмите кнопку ниже:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+    except Exception:
+
+        await callback.message.answer(
+
+        f"🕐 <b>Время запуска</b>\n\n"
+        f"Отправьте дату и время в формате:\n"
+        f"<b>YYYY-MM-DD HH:MM</b> (например, {tomorrow_str})\n\n"
+        f"Для отмены нажмите кнопку ниже:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+        f"🕐 <b>Время запуска</b>\n\n"
+        f"Отправьте дату и время в формате:\n"
+        f"<b>YYYY-MM-DD HH:MM</b> (например, {tomorrow_str})\n\n"
+        f"Для отмены нажмите кнопку ниже:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+
+@admin.message(StateFilter('TaskStates.waiting_for_scheduled_scheduled_time'), F.text)
+async def handle_scheduled_scheduled_time(message: Message, state: FSMContext):
+    """Обработка времени для одноразовой плановой обработки."""
+    if not await check_admin_access(message):
+        return
+
+    time_text = message.text.strip()
+
+    # Парсим дату и время
+    try:
+        scheduled_at = datetime.strptime(time_text, '%Y-%m-%d %H:%M')
+        # Проверяем, чтобы время не было в прошлом
+        if scheduled_at <= datetime.now():
+            await message.answer('❌ Время не может быть в прошлом. Пожалуйста, укажите будущее время.')
+            return
+    except ValueError:
+        await message.answer('❌ Неверный формат. Используйте YYYY-MM-DD HH:MM (например, 2026-08-13 12:00)')
+        return
+
+    async with get_database_service().session_context() as session:
+        factory = RepositoryFactory(session)
+        task_repo = factory.tasks()
+
+        task = await task_repo.create_task(
+            task_type='scheduled_processing',
+            description='Плановая обработка по расписанию',
+            news_id=None,
+            scheduled_at=scheduled_at,
+        )
+
+    await message.answer(
+        f"✅ <b>Задача создана!</b>\n\n"
+        f"ID задачи: {task.id}\n"
+        f"Тип: Плановая обработка\n"
+        f"Новости: Все ожидающие\n"
+        f"Запуск: {scheduled_at.strftime('%Y-%m-%d %H:%M')}\n"
+        f"Статус: {task.status}",
+        parse_mode='HTML'
+    )
+
+    await state.clear()
+    logger.info(f"📋 Создана задача плановой обработки на {scheduled_at}: task_id={task.id}")
+
+
+@admin.callback_query(F.data == 'scheduled_recurring')
+async def handle_scheduled_recurring(callback: CallbackQuery, state: FSMContext):
+    """Настройка периодичности для плановой обработки."""
+    # Проверка прав не требуется — кнопка доступна только из меню задач
+    await callback.answer()
+    await state.set_state('TaskStates.waiting_for_scheduled_recurrence')
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text='1 день (ежедневно)', callback_data='sched_rec_1'),
+            ],
+            [
+                InlineKeyboardButton(text='2 дня', callback_data='sched_rec_2'),
+            ],
+            [
+                InlineKeyboardButton(text='3 дня', callback_data='sched_rec_3'),
+            ],
+            [
+                InlineKeyboardButton(text='7 дней (еженедельно)', callback_data='sched_rec_7'),
+            ],
+            [
+                InlineKeyboardButton(text='🔙 Назад', callback_data='task_add_scheduled'),
+            ],
+        ]
+    )
+
+    try:
+
+        await callback.message.edit_text(
+
+        "🔁 <b>Периодичность выполнения</b>\n\n"
+        "Выберите интервал между выполнениями:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+    except Exception:
+
+        await callback.message.answer(
+
+        "🔁 <b>Периодичность выполнения</b>\n\n"
+        "Выберите интервал между выполнениями:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+        "🔁 <b>Периодичность выполнения</b>\n\n"
+        "Выберите интервал между выполнениями:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+
+@admin.callback_query(F.data.startswith('sched_rec_'))
+async def handle_scheduled_recurrence_pattern(callback: CallbackQuery, state: FSMContext):
+    """Обработка выбора периодичности для плановой обработки."""
+    # Проверка прав не требуется — кнопка доступна только из меню задач
+    try:
+        pattern = int(callback.data.replace('sched_rec_', ''))
+    except ValueError:
+        await callback.answer('❌ Ошибка выбора', show_alert=True)
+        return
+
+    await state.update_data(scheduled_recurrence=pattern)
+    await state.set_state('TaskStates.waiting_for_scheduled_time')
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text='🔙 Назад', callback_data='scheduled_recurring'),
+            ],
+        ]
+    )
+
+    await callback.answer()
+    try:
+        await callback.message.edit_text(
+
+        "🕐 <b>Время запуска</b>\n\n"
+        "Отправьте время запуска в формате:\n"
+        "<b>ЧЧ:ММ</b> (например, 14:30)",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+    except Exception:
+        await callback.message.answer(
+
+        "🕐 <b>Время запуска</b>\n\n"
+        "Отправьте время запуска в формате:\n"
+        "<b>ЧЧ:ММ</b> (например, 14:30)",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+        "🕐 <b>Время запуска</b>\n\n"
+        "Отправьте время запуска в формате:\n"
+        "<b>ЧЧ:ММ</b> (например, 14:30)",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+
+@admin.message(StateFilter('TaskStates.waiting_for_scheduled_time'), F.text)
+async def handle_scheduled_time(message: Message, state: FSMContext):
+    """Обработка времени запуска для периодической плановой обработки."""
+    if not await check_admin_access(message):
+        return
+
+    time_text = message.text.strip()
+
+    # Парсим время
+    try:
+        if ':' in time_text:
+            hour, minute = map(int, time_text.split(':'))
+            if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                raise ValueError()
+        else:
+            raise ValueError()
+    except ValueError:
+        await message.answer('❌ Неверный формат. Используйте ЧЧ:ММ (например, 14:30)')
+        return
+
+    data = await state.get_data()
+    pattern = data.get('scheduled_recurrence', 1)
+
+    # Если время уже прошло, устанавливаем на следующий день
+    scheduled_time = datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if scheduled_time <= datetime.now():
+        scheduled_time += timedelta(days=1)
+
+    async with get_database_service().session_context() as session:
+        factory = RepositoryFactory(session)
+        task_repo = factory.tasks()
+
+        task = await task_repo.create_task(
+            task_type='scheduled_processing',
+            description=f'Периодическая плановая обработка (каждые {pattern} дн.)',
+            news_id=None,
+            scheduled_at=scheduled_time,
+            recurring=True,
+            recurrence_pattern=pattern,
+        )
+
+    await message.answer(
+        f"✅ <b>Периодическая задача создана!</b>\n\n"
+        f"ID задачи: {task.id}\n"
+        f"Тип: Плановая обработка\n"
+        f"Периодичность: каждые {pattern} дн.\n"
+        f"Время запуска: {scheduled_time.strftime('%H:%M')}\n"
+        f"Статус: {task.status}",
+        parse_mode='HTML'
+    )
+
+    await state.clear()
+    logger.info(f"📋 Создана периодическая задача плановой обработки: task_id={task.id}, pattern={pattern}")
+
+
+# =============================================================================
+# Редактирование задачи
+# =============================================================================
+
+@admin.callback_query(F.data == 'task_edit_list')
+async def task_edit_list_callback(callback: CallbackQuery):
+    """Список задач для редактирования."""
+    # Проверяем права администратора
+    if not await check_admin_access(callback):
+        await callback.answer('❌ У вас нет прав для этой команды', show_alert=True)
+        return
+
+    async with get_database_service().session_context() as session:
+        factory = RepositoryFactory(session)
+        task_repo = factory.tasks()
+
+        # Показываем только задачи со статусом pending (редактирование разрешено только для них)
+        tasks = await task_repo.get_pending_tasks(limit=20)
+
+    if not tasks:
+        await callback.answer('Нет задач для редактирования (доступны только задачи со статусом pending)', show_alert=True)
+        return
+
+    keyboard_buttons = []
+    for task in tasks[:10]:
+        keyboard_buttons.append([
+            InlineKeyboardButton(
+                text=f'ID={task.id} | {task.task_type[:20]}',
+                callback_data=f'task_edit_{task.id}'
+            )
+        ])
+    keyboard_buttons.append([
+        InlineKeyboardButton(text='🔙 Назад к задачам', callback_data='task_back_to_menu')
+    ])
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+
+    await callback.answer()
+
+    # Редактируем сообщение вместо создания нового
+    try:
+        await callback.message.edit_text(
+
+            "✏️ <b>Редактирование задачи</b>\n\n"
+            "Выберите задачу для редактирования (только pending):\n"
+            "<i>Задачи в работе (active) редактировать нельзя</i>",
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+    except Exception:
+        await callback.message.answer(
+
+            "✏️ <b>Редактирование задачи</b>\n\n"
+            "Выберите задачу для редактирования (только pending):\n"
+            "<i>Задачи в работе (active) редактировать нельзя</i>",
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+            "✏️ <b>Редактирование задачи</b>\n\n"
+            "Выберите задачу для редактирования (только pending):\n"
+            "<i>Задачи в работе (active) редактировать нельзя</i>",
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+            "✏️ <b>Редактирование задачи</b>\n\n"
+            "Выберите задачу для редактирования (только pending):\n"
+            "<i>Задачи в работе (active) редактировать нельзя</i>",
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+
+
+async def show_task_edit_menu(callback: CallbackQuery, state: FSMContext, task_id: int) -> None:
+    """
+    Показать меню редактирования задачи.
+
+    Args:
+        callback: Callback query
+        state: FSM состояние
+        task_id: ID задачи для редактирования
+    """
+    await state.update_data(editing_task_id=task_id)
+
+    async with get_database_service().session_context() as session:
+        factory = RepositoryFactory(session)
+        task_repo = factory.tasks()
+        task = await task_repo.get(task_id)
+
+    if not task:
+        await callback.answer('❌ Задача не найдена', show_alert=True)
+        return
+
+    # Проверяем статус задачи — редактирование только для pending
+    if task.status != 'pending':
+        keyboard_buttons = [
+            [
+                InlineKeyboardButton(text='🔙 Назад к списку', callback_data='task_edit_list'),
+            ],
+        ]
+        keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+
+        await callback.answer()
+        try:
+            await callback.message.edit_text(
+
+            f"⚠️ <b>Задача ID={task.id} не может быть отредактирована</b>\n\n"
+            f"Тип: {task.task_type}\n"
+            f"Статус: <b>{task.status}</b>\n\n"
+            f"<i>Редактирование разрешено только для задач со статусом pending</i>",
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+        except Exception:
+            await callback.message.answer(
+
+            f"⚠️ <b>Задача ID={task.id} не может быть отредактирована</b>\n\n"
+            f"Тип: {task.task_type}\n"
+            f"Статус: <b>{task.status}</b>\n\n"
+            f"<i>Редактирование разрешено только для задач со статусом pending</i>",
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+            f"⚠️ <b>Задача ID={task.id} не может быть отредактирована</b>\n\n"
+            f"Тип: {task.task_type}\n"
+            f"Статус: <b>{task.status}</b>\n\n"
+            f"<i>Редактирование разрешено только для задач со статусом pending</i>",
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+        return
+
+    # Формируем кнопки для pending задач
+    keyboard_buttons = []
+
+    # Описание редактируем только для прямой генерации
+    if task.task_type == 'direct_generation':
+        keyboard_buttons.append([
+            InlineKeyboardButton(text='✏️ Описание', callback_data='edit_field_description'),
+        ])
+
+    # Канал публикации редактируем только для прямой генерации
+    if task.task_type == 'direct_generation':
+        # Получаем название канала
+        channel_name = "Не выбран"
+        if task.publisher_channel_id:
+            async with get_database_service().session_context() as session:
+                factory = RepositoryFactory(session)
+                publishers_repo = factory.publishers()
+                pub = await publishers_repo.get_by_id(task.publisher_channel_id)
+                if pub:
+                    channel_name = pub.title
+
+        keyboard_buttons.append([
+            InlineKeyboardButton(text=f'📢 Канал: {channel_name[:20]}', callback_data='edit_field_publisher'),
+        ])
+
+    keyboard_buttons.append([
+        InlineKeyboardButton(text='🕐 Время', callback_data='edit_field_scheduled_at'),
+    ])
+    keyboard_buttons.append([
+        InlineKeyboardButton(text='🔁 Периодичность', callback_data='edit_field_recurrence'),
+    ])
+
+    # Кнопка отмены задачи
+    keyboard_buttons.append([
+        InlineKeyboardButton(text='❌ Отменить задачу', callback_data=f'task_cancel_{task.id}'),
+    ])
+
+    keyboard_buttons.append([
+        InlineKeyboardButton(text='🔙 Назад к списку', callback_data='task_edit_list'),
+    ])
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+
+    await callback.answer()
+    try:
+        await callback.message.edit_text(
+
+        f"✏️ <b>Редактирование задачи ID={task.id}</b>\n\n"
+        f"Тип: {task.task_type}\n"
+        f"Статус: {task.status}\n"
+        f"Описание: {task.description}\n"
+        f"Время: {task.scheduled_at.strftime('%Y-%m-%d %H:%M') if task.scheduled_at else 'Не указано'}\n"
+        f"Периодическая: {'Да' if task.recurring else 'Нет'}\n"
+        f"Периодичность: {task.recurrence_pattern or '-'} дн.\n\n"
+        "Выберите поле для редактирования:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+    except Exception:
+        await callback.message.answer(
+
+        f"✏️ <b>Редактирование задачи ID={task.id}</b>\n\n"
+        f"Тип: {task.task_type}\n"
+        f"Статус: {task.status}\n"
+        f"Описание: {task.description}\n"
+        f"Время: {task.scheduled_at.strftime('%Y-%m-%d %H:%M') if task.scheduled_at else 'Не указано'}\n"
+        f"Периодическая: {'Да' if task.recurring else 'Нет'}\n"
+        f"Периодичность: {task.recurrence_pattern or '-'} дн.\n\n"
+        "Выберите поле для редактирования:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+        f"✏️ <b>Редактирование задачи ID={task.id}</b>\n\n"
+        f"Тип: {task.task_type}\n"
+        f"Статус: {task.status}\n"
+        f"Описание: {task.description}\n"
+        f"Время: {task.scheduled_at.strftime('%Y-%m-%d %H:%M') if task.scheduled_at else 'Не указано'}\n"
+        f"Периодическая: {'Да' if task.recurring else 'Нет'}\n"
+        f"Периодичность: {task.recurrence_pattern or '-'} дн.\n\n"
+        "Выберите поле для редактирования:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+
+@admin.callback_query(F.data.startswith('task_edit_'))
+async def task_edit_callback(callback: CallbackQuery, state: FSMContext):
+    """Редактирование выбранной задачи."""
+    # Проверка прав не требуется — кнопка доступна только из списка задач
+    task_id = int(callback.data.replace('task_edit_', ''))
+    await show_task_edit_menu(callback, state, task_id)
+
+
+@admin.callback_query(F.data.startswith('task_cancel_') & ~F.data.startswith('task_cancel_confirm_'))
+async def task_cancel_confirm_callback(callback: CallbackQuery):
+    """Подтверждение отмены задачи."""
+    # Извлекаем task_id из callback data вида 'task_cancel_123'
+    task_id_str = callback.data.replace('task_cancel_', '')
+    try:
+        task_id = int(task_id_str)
+    except ValueError:
+        await callback.answer('❌ Ошибка: неверный ID задачи', show_alert=True)
+        return
+
+    async with get_database_service().session_context() as session:
+        factory = RepositoryFactory(session)
+        task_repo = factory.tasks()
+        task = await task_repo.get(task_id)
+
+    if not task:
+        await callback.answer('❌ Задача не найдена', show_alert=True)
+        return
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text='✅ Да, отменить', callback_data=f'task_cancel_confirm_{task_id}'),
+            ],
+            [
+                InlineKeyboardButton(text='🔙 Назад к редактированию', callback_data=f'task_edit_{task_id}'),
+            ],
+        ]
+    )
+
+    await callback.answer()
+    try:
+        await callback.message.edit_text(
+
+        f"❌ <b>Отмена задачи ID={task.id}</b>\n\n"
+        f"Тип: {task.task_type}\n"
+        f"Описание: {task.description[:50]}{'...' if len(task.description) > 50 else ''}\n\n"
+        "Вы уверены? Это действие нельзя отменить.",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+    except Exception:
+        await callback.message.answer(
+
+        f"❌ <b>Отмена задачи ID={task.id}</b>\n\n"
+        f"Тип: {task.task_type}\n"
+        f"Описание: {task.description[:50]}{'...' if len(task.description) > 50 else ''}\n\n"
+        "Вы уверены? Это действие нельзя отменить.",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+        f"❌ <b>Отмена задачи ID={task.id}</b>\n\n"
+        f"Тип: {task.task_type}\n"
+        f"Описание: {task.description[:50]}{'...' if len(task.description) > 50 else ''}\n\n"
+        "Вы уверены? Это действие нельзя отменить.",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+
+@admin.callback_query(F.data.startswith('task_cancel_confirm_'))
+async def task_cancel_execute_callback(callback: CallbackQuery):
+    """Выполнение отмены задачи."""
+    task_id = int(callback.data.replace('task_cancel_confirm_', ''))
+
+    async with get_database_service().session_context() as session:
+        factory = RepositoryFactory(session)
+        task_repo = factory.tasks()
+
+        canceled = await task_repo.mark_canceled(task_id)
+
+    if canceled:
+        await callback.answer('✅ Задача отменена', show_alert=True)
+        await callback.message.delete()
+        logger.info(f"🚫 Отменена задача: task_id={task_id}")
+    else:
+        await callback.answer('❌ Ошибка: задача не найдена', show_alert=True)
+
+
+@admin.callback_query(F.data.startswith('edit_field_'))
+async def edit_field_callback(callback: CallbackQuery, state: FSMContext):
+    """Начало редактирования поля задачи."""
+    # Проверка прав не требуется — кнопка доступна только из меню редактирования
+    field = callback.data.replace('edit_field_', '')
+    data = await state.get_data()
+    task_id = data.get('editing_task_id')
+
+    if not task_id:
+        await callback.answer('❌ Ошибка: задача не выбрана', show_alert=True)
+        return
+
+    # Обработка выбора канала — отдельный хендлер со списком
+    if field == 'publisher':
+        async with get_database_service().session_context() as session:
+            factory = RepositoryFactory(session)
+            publishers_repo = factory.publishers()
+            publishers = await publishers_repo.get_all(active_only=True)
+
+        if not publishers:
+            await callback.answer('Нет доступных каналов', show_alert=True)
+            return
+
+        keyboard_buttons = []
+        for pub in publishers[:10]:
+            keyboard_buttons.append([
+                InlineKeyboardButton(text=f'📢 {pub.title}', callback_data=f'edit_pub_select_{pub.id}'),
+            ])
+        keyboard_buttons.append([
+            InlineKeyboardButton(text='⏭️ Не выбирать канал', callback_data='edit_pub_skip'),
+        ])
+        keyboard_buttons.append([
+            InlineKeyboardButton(text='🔙 Назад к редактированию', callback_data=f'task_edit_{task_id}'),
+        ])
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+
+        await callback.answer()
+        try:
+            await callback.message.edit_text(
+
+            "📢 <b>Выберите канал публикации</b>\n\n"
+            "Канал будет указан в задаче (опционально):",
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+        except Exception:
+            await callback.message.answer(
+
+            "📢 <b>Выберите канал публикации</b>\n\n"
+            "Канал будет указан в задаче (опционально):",
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+            "📢 <b>Выберите канал публикации</b>\n\n"
+            "Канал будет указан в задаче (опционально):",
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+        return
+
+    # Для остальных полей — ввод текста
+    await state.set_state(f'TaskStates.editing_{field}')
+    await callback.answer()
+
+    field_names = {
+        'description': 'Описание',
+        'scheduled_at': 'Время (формат: YYYY-MM-DD HH:MM)',
+        'recurrence': 'Периодичность в днях (число)',
+    }
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text='🔙 Назад к редактированию', callback_data=f'task_edit_{task_id}'),
+            ],
+        ]
+    )
+
+    try:
+
+        await callback.message.edit_text(
+
+        f"✏️ <b>Редактирование: {field_names.get(field, field)}</b>\n\n"
+        f"Отправьте новое значение.\n\n"
+        "Для отмены нажмите кнопку ниже:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+    except Exception:
+
+        await callback.message.answer(
+
+        f"✏️ <b>Редактирование: {field_names.get(field, field)}</b>\n\n"
+        f"Отправьте новое значение.\n\n"
+        "Для отмены нажмите кнопку ниже:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+        f"✏️ <b>Редактирование: {field_names.get(field, field)}</b>\n\n"
+        f"Отправьте новое значение.\n\n"
+        "Для отмены нажмите кнопку ниже:",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+
+@admin.message(StateFilter('TaskStates.editing_description'))
+async def handle_edit_description(message: Message, state: FSMContext):
+    """Обработка нового описания задачи."""
+    if not await check_admin_access(message):
+        return
+
+    data = await state.get_data()
+    task_id = data.get('editing_task_id')
+
+    async with get_database_service().session_context() as session:
+        factory = RepositoryFactory(session)
+        task_repo = factory.tasks()
+
+        await task_repo.update_task(task_id, description=message.text)
+
+    await message.answer(f"✅ Описание обновлено!")
+    await state.clear()
+
+
+@admin.callback_query(F.data.startswith('edit_pub_select_'))
+async def handle_edit_pub_select(callback: CallbackQuery, state: FSMContext):
+    """Выбор канала при редактировании задачи."""
+    try:
+        publisher_id = int(callback.data.replace('edit_pub_select_', ''))
+    except ValueError:
+        await callback.answer('❌ Ошибка выбора', show_alert=True)
+        return
+
+    stored_data = await state.get_data()
+    task_id = stored_data.get('editing_task_id')
+
+    if not task_id:
+        await callback.answer('❌ Ошибка: задача не выбрана', show_alert=True)
+        return
+
+    async with get_database_service().session_context() as session:
+        factory = RepositoryFactory(session)
+        task_repo = factory.tasks()
+
+        await task_repo.update_task(task_id, publisher_channel_id=publisher_id)
+
+    # Получаем название канала для подтверждения
+    publishers_repo = factory.publishers()
+    pub = await publishers_repo.get_by_id(publisher_id)
+
+    await callback.answer(f"✅ Канал '{pub.title if pub else 'выбран'}' установлен!", show_alert=True)
+    await callback.message.delete()
+
+    # Показываем меню редактирования заново (передаём task_id из состояния)
+    await show_task_edit_menu(callback, state, task_id)
+
+
+@admin.callback_query(F.data == 'edit_pub_skip')
+async def handle_edit_pub_skip(callback: CallbackQuery, state: FSMContext):
+    """Пропустить выбор канала при редактировании."""
+    stored_data = await state.get_data()
+    task_id = stored_data.get('editing_task_id')
+
+    if not task_id:
+        await callback.answer('❌ Ошибка: задача не выбрана', show_alert=True)
+        return
+
+    async with get_database_service().session_context() as session:
+        factory = RepositoryFactory(session)
+        task_repo = factory.tasks()
+
+        await task_repo.update_task(task_id, publisher_channel_id=None)
+
+    await callback.answer('✅ Канал сброшен!', show_alert=True)
+    await callback.message.delete()
+
+    # Показываем меню редактирования заново
+    await task_edit_callback(callback, state)
+
+
+@admin.message(StateFilter('TaskStates.editing_scheduled_at'))
+async def handle_edit_scheduled_at(message: Message, state: FSMContext):
+    """Обработка нового времени задачи."""
+    if not await check_admin_access(message):
+        return
+
+    try:
+        scheduled_at = datetime.strptime(message.text, '%Y-%m-%d %H:%M')
+    except ValueError:
+        await message.answer('❌ Неверный формат. Используйте YYYY-MM-DD HH:MM')
+        return
+
+    # Проверяем, чтобы время не было в прошлом
+    if scheduled_at <= datetime.now():
+        await message.answer(
+            '❌ Время не может быть в прошлом.\n\n'
+            'Пожалуйста, укажите будущее время.'
+        )
+        return
+
+    data = await state.get_data()
+    task_id = data.get('editing_task_id')
+
+    async with get_database_service().session_context() as session:
+        factory = RepositoryFactory(session)
+        task_repo = factory.tasks()
+
+        await task_repo.update_task(task_id, scheduled_at=scheduled_at)
+
+    await message.answer(f"✅ Время обновлено на {scheduled_at.strftime('%Y-%m-%d %H:%M')}!")
+    await state.clear()
+
+
+@admin.message(StateFilter('TaskStates.editing_recurrence'))
+async def handle_edit_recurrence(message: Message, state: FSMContext):
+    """Обработка новой периодичности задачи."""
+    if not await check_admin_access(message):
+        return
+
+    try:
+        pattern = int(message.text)
+        if pattern < 1:
+            raise ValueError()
+    except ValueError:
+        await message.answer('❌ Неверный формат. Отправьте число дней (минимум 1).')
+        return
+
+    data = await state.get_data()
+    task_id = data.get('editing_task_id')
+
+    async with get_database_service().session_context() as session:
+        factory = RepositoryFactory(session)
+        task_repo = factory.tasks()
+
+        # Получаем задачу для сохранения оригинального описания
+        task = await task_repo.get(task_id)
+        if task:
+            # Сохраняем оригинальное описание, добавляя информацию о периодичности
+            original_desc = task.description or ''
+
+            # Если описание уже содержит информацию о периодичности, удаляем её
+            import re
+            clean_desc = re.sub(r'\s*\(каждые \d+ дн\.\)|\(ежедневно\)', '', original_desc).strip()
+
+            # Формируем новое описание с обновлённой периодичностью
+            if task.task_type == 'direct_generation':
+                # Для прямой генерации сохраняем оригинальное описание
+                new_description = f'{clean_desc} (каждые {pattern} дн.)' if clean_desc else f'Периодическая прямая генерация (каждые {pattern} дн.)'
+            elif task.task_type == 'scheduled_processing':
+                # Для плановой обработки сохраняем оригинальное описание
+                new_description = f'{clean_desc} (каждые {pattern} дн.)' if clean_desc else f'Периодическая плановая обработка (каждые {pattern} дн.)'
+            else:
+                new_description = original_desc
+
+            await task_repo.update_task(
+                task_id,
+                recurring=True,
+                recurrence_pattern=pattern,
+                description=new_description,
+            )
+
+    await message.answer(f"✅ Периодичность обновлена: каждые {pattern} дн.!")
+    await state.clear()
+
+
+# =============================================================================
+# Удаление задачи
+# =============================================================================
+
+@admin.callback_query(F.data == 'task_delete_list')
+async def task_delete_list_callback(callback: CallbackQuery):
+    """Список задач для удаления."""
+    # Проверяем права администратора
+    if not await check_admin_access(callback):
+        await callback.answer('❌ У вас нет прав для этой команды', show_alert=True)
+        return
+
+    async with get_database_service().session_context() as session:
+        factory = RepositoryFactory(session)
+        task_repo = factory.tasks()
+
+        tasks = await task_repo.get_all_tasks(limit=20)
+
+    if not tasks:
+        await callback.answer('Нет задач для удаления', show_alert=True)
+        return
+
+    keyboard_buttons = []
+    for task in tasks[:10]:
+        keyboard_buttons.append([
+            InlineKeyboardButton(
+                text=f'ID={task.id} | {task.task_type[:20]}',
+                callback_data=f'task_delete_{task.id}'
+            )
+        ])
+    keyboard_buttons.append([
+        InlineKeyboardButton(text='🔙 Назад к задачам', callback_data='task_back_to_menu')
+    ])
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+
+    await callback.answer()
+
+    # Редактируем сообщение вместо создания нового
+    try:
+        await callback.message.edit_text(
+
+            "🗑️ <b>Удаление задачи</b>\n\n"
+            "Выберите задачу для удаления:",
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+    except Exception:
+        await callback.message.answer(
+
+            "🗑️ <b>Удаление задачи</b>\n\n"
+            "Выберите задачу для удаления:",
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+            "🗑️ <b>Удаление задачи</b>\n\n"
+            "Выберите задачу для удаления:",
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+            "🗑️ <b>Удаление задачи</b>\n\n"
+            "Выберите задачу для удаления:",
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+
+
+@admin.callback_query(F.data.startswith('task_delete_') & ~F.data.startswith('task_delete_confirm_'))
+async def task_delete_confirm_callback(callback: CallbackQuery, state: FSMContext):
+    """Подтверждение удаления задачи."""
+    # Проверка прав не требуется — кнопка доступна только из списка задач
+    # Извлекаем task_id из callback data вида 'task_delete_123'
+    task_id_str = callback.data.replace('task_delete_', '')
+    try:
+        task_id = int(task_id_str)
+    except ValueError:
+        await callback.answer('❌ Ошибка: неверный ID задачи', show_alert=True)
+        return
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text='✅ Да, удалить', callback_data=f'task_delete_confirm_{task_id}'),
+            ],
+            [
+                InlineKeyboardButton(text='🔙 Назад к списку', callback_data='task_delete_list'),
+            ],
+        ]
+    )
+
+    await callback.answer()
+    try:
+        await callback.message.edit_text(
+
+        f"🗑️ <b>Удаление задачи ID={task_id}</b>\n\n"
+        "Вы уверены? Это действие нельзя отменить.",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+    except Exception:
+        await callback.message.answer(
+
+        f"🗑️ <b>Удаление задачи ID={task_id}</b>\n\n"
+        "Вы уверены? Это действие нельзя отменить.",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+        f"🗑️ <b>Удаление задачи ID={task_id}</b>\n\n"
+        "Вы уверены? Это действие нельзя отменить.",
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+
+@admin.callback_query(F.data.startswith('task_delete_confirm_'))
+async def task_delete_execute_callback(callback: CallbackQuery):
+    """Выполнение удаления задачи."""
+    # Проверка прав не требуется — кнопка доступна только из подтверждения
+    task_id = int(callback.data.replace('task_delete_confirm_', ''))
+
+    async with get_database_service().session_context() as session:
+        factory = RepositoryFactory(session)
+        task_repo = factory.tasks()
+
+        deleted = await task_repo.delete_task(task_id)
+
+    if deleted:
+        await callback.answer('✅ Задача удалена', show_alert=True)
+        try:
+            await callback.message.delete()
+        except Exception:
+            # Сообщение может быть уже удалено или изменено
+            pass
+        logger.info(f"🗑️ Удалена задача: task_id={task_id}")
+    else:
+        await callback.answer('❌ Ошибка: задача не найдена', show_alert=True)
+
+
+# =============================================================================
+# Список задач
+# =============================================================================
+
+@admin.callback_query(F.data == 'task_list')
+async def task_list_callback(callback: CallbackQuery):
+    """Показать список всех задач (pending и active)."""
+    # Проверяем права администратора
+    if not await check_admin_access(callback):
+        await callback.answer('❌ У вас нет прав для этой команды', show_alert=True)
+        return
+
+    async with get_database_service().session_context() as session:
+        factory = RepositoryFactory(session)
+        task_repo = factory.tasks()
+
+        # Показываем только задачи со статусами pending и active
+        tasks = await task_repo.get_pending_and_active_tasks(limit=20)
+
+    if not tasks:
+        await callback.answer('Нет активных задач', show_alert=True)
+        return
+
+    text = "📋 <b>Активные задачи:</b>\n\n"
+    for task in tasks:
+        status_icon = {'pending': '⏳', 'active': '▶️'}.get(task.status, '❓')
+        recurring_icon = '🔁' if task.recurring else ''
+        text += f"{status_icon} <b>ID={task.id}</b> | {task.task_type} {recurring_icon}\n"
+        text += f"   Описание: {task.description[:40]}{'...' if len(task.description) > 40 else ''}\n"
+        if task.post_id:
+            text += f"   Пост ID: {task.post_id}\n"
+        if task.news_id:
+            text += f"   Новость ID: {task.news_id}\n"
+        if task.recurrence_pattern:
+            text += f"   Периодичность: каждые {task.recurrence_pattern} дн.\n"
+        text += f"   Статус: {task.status}\n\n"
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text='🔙 Назад к задачам', callback_data='task_back_to_menu'),
+            ],
+        ]
+    )
+
+    await callback.answer()
+
+    # Редактируем сообщение вместо создания нового
+    try:
+        await callback.message.edit_text(
+text, parse_mode='HTML', reply_markup=keyboard)
+    except Exception:
+        await callback.message.answer(
+text, parse_mode='HTML', reply_markup=keyboard)text, parse_mode='HTML', reply_markup=keyboard)
+# =============================================================================
+# Навигация
+# =============================================================================
+
+@admin.callback_query(F.data == 'back_to_admin_menu')
+async def back_to_admin_menu_callback(callback: CallbackQuery):
+    """Вернуться в главное меню админа."""
+    # Проверка прав не требуется — кнопка доступна только админам
+    from services.bot.handlers.keyboards import admin_kb
+
+    await callback.answer()
+    await callback.message.delete()
+    try:
+        await callback.message.edit_text(
+
+        '🔙 <b>Возврат в меню администратора</b>',
+        parse_mode='HTML',
+        reply_markup=admin_kb
+    )
+    except Exception:
+        await callback.message.answer(
+
+        '🔙 <b>Возврат в меню администратора</b>',
+        parse_mode='HTML',
+        reply_markup=admin_kb
+    )
+        '🔙 <b>Возврат в меню администратора</b>',
+        parse_mode='HTML',
+        reply_markup=admin_kb
+    )
+
+
+# =============================================================================
+# Отмена задач (устарело — теперь кнопка "Назад")
+# =============================================================================
+
+@admin.message(Command('cancel'))
+async def cancel_task(message: Message, state: FSMContext):
+    """Отмена текущего состояния для задач (устарело)."""
+    # Проверяем права администратора
+    if not await check_admin_access(message):
+        return
+
+    current_state = await state.get_state()
+
+    if not current_state or not current_state.startswith('TaskStates.'):
+        return
+
+    await state.clear()
+    await message.answer('❌ Задача отменена.')

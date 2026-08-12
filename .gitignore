@@ -1,12 +1,18 @@
 # Environment
 /.env
+.env
 
-# Database
+# macOS
+.DS_Store
+
+# Database (SQLite)
 /db.sqlite3
+*.sqlite3
+!vector_store/chroma.sqlite3
 
 # Telegram sessions
-/userbot.session
-/userbot.session-journal
+*.session*
+*.session-journal
 
 # Logs
 /logs/

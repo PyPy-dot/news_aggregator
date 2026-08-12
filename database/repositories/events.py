@@ -5,7 +5,7 @@ Event repository для работы с событиями.
 import json
 from datetime import datetime, timezone, timedelta
 from typing import Optional
-from sqlalchemy import select, update, desc
+from sqlalchemy import select, update, desc, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import EventContext
@@ -65,17 +65,15 @@ class EventRepository(BaseRepository[EventContext]):
         context_data: dict,
         event_category: str,
         tags: Optional[list[str]] = None,
-        summary: str = ''
     ) -> EventContext:
         """
-        Создать новое событие.
+        Создать новое событие (case-insensitive tags).
 
         Args:
             post_id: ID оригинального поста
             context_data: Данные контекста
             event_category: Категория события
             tags: Список тегов
-            summary: Выжимка для векторного поиска
 
         Returns:
             Созданное событие
@@ -84,8 +82,11 @@ class EventRepository(BaseRepository[EventContext]):
             post_id=post_id,
             context_data=json.dumps(context_data, ensure_ascii=False),
             event_category=event_category,
-            tags=json.dumps(tags or [], ensure_ascii=False),
-            summary=summary,
+            # Нормализация тэгов к нижнему регистру
+            tags=json.dumps(
+                [tag.lower() for tag in tags] if tags else [],
+                ensure_ascii=False
+            ),
             created_at=datetime.now(timezone.utc)
         )
         self.session.add(event)
@@ -98,16 +99,14 @@ class EventRepository(BaseRepository[EventContext]):
         event_id: int,
         context_data: Optional[dict] = None,
         tags: Optional[list[str]] = None,
-        summary: Optional[str] = None
     ) -> bool:
         """
-        Обновить событие.
+        Обновить событие (case-insensitive tags).
 
         Args:
             event_id: ID события
             context_data: Новые данные контекста
             tags: Новые теги
-            summary: Новая выжимка
 
         Returns:
             True если обновлено, False если не найдено
@@ -117,9 +116,10 @@ class EventRepository(BaseRepository[EventContext]):
             if context_data is not None:
                 event.context_data = json.dumps(context_data, ensure_ascii=False)
             if tags is not None:
-                event.tags = json.dumps(tags, ensure_ascii=False)
-            if summary is not None:
-                event.summary = summary
+                # Нормализация тэгов к нижнему регистру
+                event.tags = json.dumps(
+                    [tag.lower() for tag in tags], ensure_ascii=False
+                )
             await self.session.commit()
             return True
         return False
@@ -155,3 +155,22 @@ class EventRepository(BaseRepository[EventContext]):
         if event:
             return json.loads(event.context_data)
         return None
+
+    async def delete_all(self) -> int:
+        """
+        Удалить все события из базы данных.
+
+        Returns:
+            Количество удалённых записей
+        """
+        result = await self.session.execute(
+            select(func.count()).select_from(EventContext)
+        )
+        count = result.scalar() or 0
+
+        await self.session.execute(
+            delete(EventContext)
+        )
+        await self.session.commit()
+
+        return count

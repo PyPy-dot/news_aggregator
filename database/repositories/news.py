@@ -5,7 +5,7 @@ News repository для работы с сгенерированными ново
 import json
 from datetime import datetime, timezone
 from typing import Optional
-from sqlalchemy import select, update, desc
+from sqlalchemy import select, update, desc, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import GeneratedNews
@@ -19,6 +19,18 @@ class NewsRepository(BaseRepository[GeneratedNews]):
 
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(session, GeneratedNews)
+
+    async def get_by_id(self, news_id: int) -> GeneratedNews | None:
+        """
+        Получить новость по ID.
+
+        Args:
+            news_id: ID новости
+
+        Returns:
+            Новость или None
+        """
+        return await self.get(news_id)
 
     async def get_pending(self, limit: int = 20) -> list[GeneratedNews]:
         """
@@ -76,9 +88,31 @@ class NewsRepository(BaseRepository[GeneratedNews]):
             return True
         return False
 
+    async def edit(self, news_id: int, admin_id: int, new_text: str) -> bool:
+        """
+        Отредактировать новость (статус 'edited').
+
+        Args:
+            news_id: ID новости
+            admin_id: ID админа
+            new_text: Новый текст новости
+
+        Returns:
+            True если отредактирована, False если не найдена
+        """
+        news = await self.get(news_id)
+        if news:
+            news.text = new_text
+            news.moderation_status = 'edited'
+            news.admin_id = admin_id
+            await self.session.commit()
+            return True
+        return False
+
     async def get_by_post(self, original_post_id: int) -> Optional[GeneratedNews]:
         """
         Получить сгенерированную новость по ID оригинального поста.
+        (Заглушка, т.к. source_post_ids удалён из модели)
 
         Args:
             original_post_id: ID оригинального поста
@@ -86,13 +120,8 @@ class NewsRepository(BaseRepository[GeneratedNews]):
         Returns:
             Новость или None
         """
-        # Ищем новость, где source_post_ids содержит original_post_id
-        result = await self.session.execute(
-            select(GeneratedNews)
-            .where(GeneratedNews.source_post_ids.contains(str(original_post_id)))
-            .order_by(desc(GeneratedNews.created_at))
-        )
-        return result.scalars().first()
+        # Возвращаем None, т.к. связь с постами больше не хранится
+        return None
 
     async def get_recent(self, limit: int = 10) -> list[GeneratedNews]:
         """
@@ -114,16 +143,16 @@ class NewsRepository(BaseRepository[GeneratedNews]):
     async def mark_published(
         self,
         news_id: int,
-        publisher_channel_id: int,
-        published_at: datetime
+        publisher_channel_id: Optional[int] = None,
+        published_at: Optional[datetime] = None
     ) -> bool:
         """
         Отметить новость как опубликованную.
 
         Args:
             news_id: ID новости
-            publisher_channel_id: ID канала публикации
-            published_at: Время публикации
+            publisher_channel_id: ID канала публикации (опционально)
+            published_at: Время публикации (по умолчанию сейчас)
 
         Returns:
             True если обновлена, False если не найдена
@@ -134,7 +163,7 @@ class NewsRepository(BaseRepository[GeneratedNews]):
 
         news.bypass_ara = True
         news.publisher_channel_id = publisher_channel_id
-        news.published_at = published_at
+        news.published_at = published_at or datetime.now(timezone.utc)
 
         await self.session.commit()
         return True
@@ -143,7 +172,6 @@ class NewsRepository(BaseRepository[GeneratedNews]):
         self,
         text: str,
         category: str,
-        source_post_ids: list[int],
         source_event_ids: Optional[list[int]] = None,
         tags: Optional[list[str]] = None,
         moderation_status: str = 'pending',
@@ -156,7 +184,6 @@ class NewsRepository(BaseRepository[GeneratedNews]):
         Args:
             text: Текст новости
             category: Категория
-            source_post_ids: ID исходных постов
             source_event_ids: ID событий
             tags: Теги новости
             moderation_status: Статус модерации
@@ -169,7 +196,6 @@ class NewsRepository(BaseRepository[GeneratedNews]):
         news = GeneratedNews(
             text=text,
             category=category,
-            source_post_ids=json.dumps(source_post_ids, ensure_ascii=False),
             source_event_ids=json.dumps(source_event_ids or [], ensure_ascii=False),
             tags=json.dumps(tags or [], ensure_ascii=False),
             moderation_status=moderation_status,
@@ -181,3 +207,22 @@ class NewsRepository(BaseRepository[GeneratedNews]):
         await self.session.commit()
         await self.session.refresh(news)
         return news
+
+    async def delete_all(self) -> int:
+        """
+        Удалить все сгенерированные новости из базы данных.
+
+        Returns:
+            Количество удалённых записей
+        """
+        result = await self.session.execute(
+            select(func.count()).select_from(GeneratedNews)
+        )
+        count = result.scalar() or 0
+
+        await self.session.execute(
+            delete(GeneratedNews)
+        )
+        await self.session.commit()
+
+        return count

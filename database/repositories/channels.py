@@ -7,8 +7,9 @@ from typing import Optional
 from sqlalchemy import select, update, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database.models import Channel
+from database.models import Channel, TelegramPost
 from database.repositories.base import BaseRepository
+from config.settings import settings
 
 
 class ChannelRepository(BaseRepository[Channel]):
@@ -121,7 +122,7 @@ class ChannelRepository(BaseRepository[Channel]):
 
     async def add_tag(self, channel_id: int, tag: str) -> bool:
         """
-        Добавить тег каналу.
+        Добавить тег каналу (case-insensitive).
 
         Args:
             channel_id: ID канала в Telegram
@@ -132,9 +133,10 @@ class ChannelRepository(BaseRepository[Channel]):
         """
         channel = await self.get_by_telegram_id(channel_id)
         if channel:
-            tags = json.loads(channel.tags or '[]')
-            if tag not in tags:
-                tags.append(tag)
+            tag_normalized = tag.lower()
+            tags = [t.lower() for t in json.loads(channel.tags or '[]')]
+            if tag_normalized not in tags:
+                tags.append(tag_normalized)
                 channel.tags = json.dumps(tags, ensure_ascii=False)
                 await self.session.commit()
             return True
@@ -142,7 +144,7 @@ class ChannelRepository(BaseRepository[Channel]):
 
     async def update_tags(self, channel_id: int, tags: list[str]) -> bool:
         """
-        Обновить теги канала.
+        Обновить теги канала (case-insensitive).
 
         Args:
             channel_id: ID канала в Telegram
@@ -153,7 +155,10 @@ class ChannelRepository(BaseRepository[Channel]):
         """
         channel = await self.get_by_telegram_id(channel_id)
         if channel:
-            channel.tags = json.dumps(tags, ensure_ascii=False)
+            # Нормализация тэгов к нижнему регистру
+            channel.tags = json.dumps(
+                [tag.lower() for tag in tags], ensure_ascii=False
+            )
             await self.session.commit()
             return True
         return False
@@ -172,3 +177,73 @@ class ChannelRepository(BaseRepository[Channel]):
         if channel and channel.tags:
             return json.loads(channel.tags)
         return []
+
+    async def update_trust_rating(self, channel_id: int) -> bool:
+        """
+        Обновить рейтинг доверия канала на основе последних N новостей.
+
+        Рейтинг = средний рейтинг последних постов / 100 (нормализация к 0-1)
+        N берётся из конфига (channel_trust_window_size).
+
+        Args:
+            channel_id: ID канала в Telegram
+
+        Returns:
+            True если обновлён, False если не найден
+        """
+        channel = await self.get_by_telegram_id(channel_id)
+        if not channel:
+            return False
+
+        # Получаем последние N новостей канала (из конфига)
+        result = await self.session.execute(
+            select(TelegramPost)
+            .where(TelegramPost.channel_id == channel_id)
+            .order_by(desc(TelegramPost.created_at))
+            .limit(settings.channel_trust_window_size)
+        )
+        posts = result.scalars().all()
+
+        if posts:
+            # Средний рейтинг новостей (нормализуем к 0-1)
+            avg_rate = sum(p.rate for p in posts) / len(posts)
+            channel.trust_rating = min(1.0, avg_rate / 100.0)
+            await self.session.commit()
+            return True
+        return False
+
+    async def decrease_trust_rating(self, channel_id: int, amount: float = 0.05) -> bool:
+        """
+        Снизить рейтинг доверия канала на указанную величину.
+
+        Args:
+            channel_id: ID канала в Telegram
+            amount: Величина снижения (по умолчанию 0.05 = 5%)
+
+        Returns:
+            True если обновлён, False если не найден
+        """
+        channel = await self.get_by_telegram_id(channel_id)
+        if channel:
+            channel.trust_rating = max(0.0, channel.trust_rating - amount)
+            await self.session.commit()
+            return True
+        return False
+
+    async def increase_trust_rating(self, channel_id: int, amount: float = 0.15) -> bool:
+        """
+        Увеличить рейтинг доверия канала на указанную величину.
+
+        Args:
+            channel_id: ID канала в Telegram
+            amount: Величина увеличения (по умолчанию 0.15 = 15%)
+
+        Returns:
+            True если обновлён, False если не найден
+        """
+        channel = await self.get_by_telegram_id(channel_id)
+        if channel:
+            channel.trust_rating = min(1.0, channel.trust_rating + amount)
+            await self.session.commit()
+            return True
+        return False

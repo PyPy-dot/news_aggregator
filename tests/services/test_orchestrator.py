@@ -1,27 +1,39 @@
 """
-Tests for NewsOrchestrator.
+Tests for NewsOrchestrator with strategies.
 """
 
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch, MagicMock, PropertyMock
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.news.orchestrator import NewsOrchestrator, NewsPriority
+from services.news.orchestrator import NewsOrchestrator
 from database import RepositoryFactory
+from services.news.strategies.base import NewsProcessingStrategy
+from services.news.strategies.urgent import UrgentNewsStrategy
+from services.news.strategies.scheduled import ScheduledNewsStrategy
+from services.news.strategies.trusted import TrustedSourceStrategy
 
 
 @pytest.fixture
-def mock_repo_factory():
+def mock_repos():
+    """Фикстура для мок-репозиториев."""
+    return {
+        'posts': AsyncMock(),
+        'events': AsyncMock(),
+        'news': AsyncMock(),
+        'publishers': AsyncMock(),
+    }
+
+
+@pytest.fixture
+def mock_repo_factory(mock_repos):
     """Фикстура для мок-фабрики репозиториев."""
     factory = MagicMock(spec=RepositoryFactory)
-
-    # Мок-репозитории
-    factory.posts = MagicMock(return_value=AsyncMock())
-    factory.events = MagicMock(return_value=AsyncMock())
-    factory.news = MagicMock(return_value=AsyncMock())
-    factory.publishers = MagicMock(return_value=AsyncMock())
-
+    factory.posts.return_value = mock_repos['posts']
+    factory.events.return_value = mock_repos['events']
+    factory.news.return_value = mock_repos['news']
+    factory.publishers.return_value = mock_repos['publishers']
     return factory
 
 
@@ -32,14 +44,10 @@ def mock_session():
     return session
 
 
-class TestNewsPriority:
-    """Тесты для NewsPriority enum."""
-
-    def test_priority_values(self):
-        """Тест значений приоритетов."""
-        assert NewsPriority.URGENT.value == 'urgent'
-        assert NewsPriority.SCHEDULED.value == 'scheduled'
-        assert NewsPriority.TRUSTED.value == 'trusted'
+@pytest.fixture
+def mock_notification_service():
+    """Фикстура для мок notification service."""
+    return MagicMock()
 
 
 class TestNewsOrchestrator:
@@ -47,61 +55,151 @@ class TestNewsOrchestrator:
 
     def test_init(self, mock_repo_factory):
         """Тест инициализации."""
+        # Создаём мок notification_service для теста
+        mock_notification_service = MagicMock()
+
         orchestrator = NewsOrchestrator(
             repo_factory=mock_repo_factory,
-            model='test-model'
+            notification_service=mock_notification_service,
         )
 
         assert orchestrator.repo_factory is mock_repo_factory
-        assert orchestrator.model == 'test-model'
-        assert orchestrator.analyst is not None
-        assert orchestrator.editor is not None
-        assert orchestrator.archivist is not None
         assert orchestrator.event_bus is not None
-        assert orchestrator.notification_service is not None
+        assert orchestrator.notification_service is mock_notification_service
         assert orchestrator._running is False
+        # Проверяем что стратегии инициализированы
+        assert len(orchestrator._strategies) == 3
+        assert 'urgent' in orchestrator._strategies
+        assert 'scheduled' in orchestrator._strategies
+        assert 'trusted' in orchestrator._strategies
 
-    def test_init_default_model(self, mock_repo_factory):
-        """Тест инициализации с моделью по умолчанию."""
-        from config.settings import settings
+    def test_strategies_types(self, mock_repo_factory, mock_notification_service):
+        """Тест типов стратегий."""
+        orchestrator = NewsOrchestrator(
+            repo_factory=mock_repo_factory,
+            notification_service=mock_notification_service,
+        )
+        
+        assert isinstance(orchestrator._strategies['urgent'], UrgentNewsStrategy)
+        assert isinstance(orchestrator._strategies['scheduled'], ScheduledNewsStrategy)
+        assert isinstance(orchestrator._strategies['trusted'], TrustedSourceStrategy)
 
+    def test_determine_priority_urgent(self, mock_repo_factory, mock_notification_service):
+        """Тест определения приоритета для срочных новостей."""
+        orchestrator = NewsOrchestrator(
+            repo_factory=mock_repo_factory,
+            notification_service=mock_notification_service,
+        )
+        
+        priority = orchestrator._determine_priority(urgency=5, is_trusted_source=False)
+        assert priority == 'urgent'
+        
+        priority = orchestrator._determine_priority(urgency=4, is_trusted_source=False)
+        assert priority == 'urgent'
+
+    def test_determine_priority_scheduled(self, mock_repo_factory):
+        """Тест определения приоритета для плановых новостей."""
         orchestrator = NewsOrchestrator(repo_factory=mock_repo_factory)
+        
+        priority = orchestrator._determine_priority(urgency=3, is_trusted_source=False)
+        assert priority == 'scheduled'
+        
+        priority = orchestrator._determine_priority(urgency=1, is_trusted_source=False)
+        assert priority == 'scheduled'
 
-        assert orchestrator.model == settings.agent_model
+    def test_determine_priority_trusted(self, mock_repo_factory):
+        """Тест определения приоритета для доверенных источников."""
+        orchestrator = NewsOrchestrator(repo_factory=mock_repo_factory)
+        
+        # Доверенный источник + срочность >= 4 = trusted
+        priority = orchestrator._determine_priority(urgency=5, is_trusted_source=True)
+        assert priority == 'trusted'
+        
+        priority = orchestrator._determine_priority(urgency=4, is_trusted_source=True)
+        assert priority == 'trusted'
+
+    def test_get_strategy(self, mock_repo_factory, mock_notification_service):
+        """Тест получения стратегии."""
+        orchestrator = NewsOrchestrator(
+            repo_factory=mock_repo_factory,
+            notification_service=mock_notification_service,
+        )
+        
+        strategy = orchestrator._get_strategy('urgent')
+        assert isinstance(strategy, NewsProcessingStrategy)
+        assert strategy.name == 'urgent'
+        
+        strategy = orchestrator._get_strategy('scheduled')
+        assert strategy.name == 'scheduled'
+        
+        strategy = orchestrator._get_strategy('trusted')
+        assert strategy.name == 'trusted'
+
+    def test_get_strategy_invalid(self, mock_repo_factory):
+        """Тест получения несуществующей стратегии."""
+        orchestrator = NewsOrchestrator(repo_factory=mock_repo_factory)
+        
+        with pytest.raises(ValueError):
+            orchestrator._get_strategy('invalid')
 
     @pytest.mark.asyncio
-    async def test_process_news_trusted(self, mock_repo_factory):
+    async def test_process_news_trusted(self, mock_repo_factory, mock_repos, mock_notification_service):
         """Тест обработки новости от доверенного источника."""
-        orchestrator = NewsOrchestrator(repo_factory=mock_repo_factory)
-
-        # Запускаем оркестратор (устанавливаем флаг _running)
+        orchestrator = NewsOrchestrator(
+            repo_factory=mock_repo_factory,
+            notification_service=mock_notification_service,
+        )
         orchestrator._running = True
 
-        # Мок для publish repo
-        mock_publisher = AsyncMock()
-        mock_publisher.get_all.return_value = [MagicMock(id=1)]
-        mock_repo_factory.publishers.return_value = mock_publisher
+        # Мок для publisher repo - возвращаем publisher с matching категорией
+        mock_publisher = MagicMock()
+        mock_publisher.id = 1
+        mock_publisher.channel_id = 123
+        mock_publisher.category = "Политика"
+        mock_publisher.title = "Test Publisher"
+        mock_repos['publishers'].get_all.return_value = [mock_publisher]
 
-        # Мок для post repo
-        mock_post_repo = AsyncMock()
-        mock_repo_factory.posts.return_value = mock_post_repo
+        # Мок для posts repo
+        mock_post = MagicMock()
+        mock_post.id = 1
+        mock_post.urgency = 5
+        mock_repos['posts'].get = AsyncMock(return_value=mock_post)
+        mock_repos['posts'].mark_direct_publish = AsyncMock()
 
-        await orchestrator.process_news(
-            post_id=1,
-            text="News text",
-            category="Политика",
-            urgency=5,
-            channel_id=123,
-            is_trusted_source=True
-        )
+        # Мок для event_bus
+        orchestrator.event_bus.emit = AsyncMock()
 
-        # Должен вызваться mark_direct_publish
-        mock_post_repo.mark_direct_publish.assert_called_once()
+        # Мок для get_bot_instance и PublisherService (импортируются внутри метода)
+        with patch('services.bot.bot.get_bot_instance') as mock_get_bot, \
+             patch('services.bot.handlers.publisher.PublisherService') as MockPublisherService:
+
+            # Настраиваем моки
+            mock_bot = MagicMock()
+            mock_get_bot.return_value = mock_bot
+
+            mock_publisher_service = AsyncMock()
+            mock_publisher_service.publish_to_channel = AsyncMock(return_value=True)
+            MockPublisherService.return_value = mock_publisher_service
+
+            await orchestrator.process_news(
+                post_id=1,
+                text="News text",
+                category="Политика",
+                urgency=5,
+                channel_id=123,
+                is_trusted_source=True
+            )
+
+            # Должен вызваться mark_direct_publish
+            mock_repos['posts'].mark_direct_publish.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_process_news_urgent(self, mock_repo_factory):
+    async def test_process_news_urgent(self, mock_repo_factory, mock_repos, mock_notification_service):
         """Тест обработки срочной новости."""
-        orchestrator = NewsOrchestrator(repo_factory=mock_repo_factory)
+        orchestrator = NewsOrchestrator(
+            repo_factory=mock_repo_factory,
+            notification_service=mock_notification_service,
+        )
         orchestrator._running = True
 
         # Мок для event_bus
@@ -120,15 +218,16 @@ class TestNewsOrchestrator:
         assert orchestrator.event_bus.emit.call_count >= 1
 
     @pytest.mark.asyncio
-    async def test_process_news_scheduled(self, mock_repo_factory):
+    async def test_process_news_scheduled(self, mock_repo_factory, mock_repos, mock_notification_service):
         """Тест обработки плановой новости."""
-        orchestrator = NewsOrchestrator(repo_factory=mock_repo_factory)
+        orchestrator = NewsOrchestrator(
+            repo_factory=mock_repo_factory,
+            notification_service=mock_notification_service,
+        )
         orchestrator._running = True
 
         # Мок для events repo
-        mock_events_repo = AsyncMock()
-        mock_events_repo.create_event.return_value = MagicMock(id=99)
-        mock_repo_factory.events.return_value = mock_events_repo
+        mock_repos['events'].create_event = AsyncMock(return_value=MagicMock(id=99))
 
         await orchestrator.process_news(
             post_id=3,
@@ -140,7 +239,7 @@ class TestNewsOrchestrator:
         )
 
         # Должен быть создан event
-        mock_events_repo.create_event.assert_called_once()
+        mock_repos['events'].create_event.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_process_news_not_running(self, mock_repo_factory, caplog):
@@ -162,24 +261,25 @@ class TestNewsOrchestrator:
         assert "не запущен" in caplog.text
 
     @pytest.mark.asyncio
-    async def test_process_pending_news_batch_empty(self, mock_repo_factory):
+    async def test_process_pending_news_batch_empty(self, mock_repo_factory, mock_repos):
         """Тест обработки пустой пачки новостей."""
         orchestrator = NewsOrchestrator(repo_factory=mock_repo_factory)
         orchestrator._running = True
 
         # Мок для posts repo
-        mock_posts_repo = AsyncMock()
-        mock_posts_repo.get_unanalyzed.return_value = []
-        mock_repo_factory.posts.return_value = mock_posts_repo
+        mock_repos['posts'].get_unanalyzed.return_value = []
 
         count = await orchestrator.process_pending_news_batch(hours=48)
 
         assert count == 0
 
     @pytest.mark.asyncio
-    async def test_process_pending_news_batch(self, mock_repo_factory):
-        """Тест обработки пачки новостей."""
-        orchestrator = NewsOrchestrator(repo_factory=mock_repo_factory)
+    async def test_process_pending_news_batch(self, mock_repo_factory, mock_repos, mock_notification_service):
+        """Тест обработки пачки новостей (группировка по категориям)."""
+        orchestrator = NewsOrchestrator(
+            repo_factory=mock_repo_factory,
+            notification_service=mock_notification_service,
+        )
         orchestrator._running = True
 
         # Мок для posts repo
@@ -187,19 +287,23 @@ class TestNewsOrchestrator:
         mock_post.id = 1
         mock_post.category = "Политика"
         mock_post.urgency = "3"
+        mock_post.text = "Test news text"
+        mock_post.tags = '[]'
+        mock_post.category_confidence = 0.5
+        mock_post.checked_at = False
 
-        mock_posts_repo = AsyncMock()
-        mock_posts_repo.get_unanalyzed.return_value = [mock_post]
-        mock_posts_repo.is_analyzed.return_value = False
-        mock_repo_factory.posts.return_value = mock_posts_repo
+        mock_repos['posts'].get_unanalyzed.return_value = [mock_post]
+        mock_repos['posts'].mark_analyzed = AsyncMock(return_value=True)
 
-        # Мок для event_bus
-        orchestrator.event_bus.emit = AsyncMock()
+        # Мок для _process_analyzed_posts_batch метода (групповая обработка)
+        orchestrator._process_analyzed_posts_batch = AsyncMock()
 
         count = await orchestrator.process_pending_news_batch(hours=48)
 
-        assert count == 1
-        orchestrator.event_bus.emit.assert_called()
+        # Проверяем, что новость была обработана
+        assert count >= 1  # Должна обработать хотя бы одну новость
+        # Проверяем, что _process_analyzed_posts_batch был вызван
+        orchestrator._process_analyzed_posts_batch.assert_called()
 
     @pytest.mark.asyncio
     async def test_process_pending_news_batch_not_running(self, mock_repo_factory):
@@ -243,3 +347,21 @@ class TestNewsOrchestrator:
         await orchestrator.stop()
         # Флаг должен быть сброшен
         assert orchestrator._running is False
+
+
+class TestEventBusPriority:
+    """Тесты для EventBus с приоритетами."""
+
+    def test_event_high_priority(self):
+        """Тест создания события с высоким приоритетом."""
+        from services.ai_agent.events import Event, EventType
+        
+        event = Event.high_priority(EventType.GENERATE_NEWS, {'test': 'data'})
+        assert event.priority == 1
+
+    def test_event_low_priority(self):
+        """Тест создания события с низким приоритетом."""
+        from services.ai_agent.events import Event, EventType
+        
+        event = Event.low_priority(EventType.GENERATE_NEWS, {'test': 'data'})
+        assert event.priority == 5

@@ -1,0 +1,149 @@
+# =============================================================================
+# News Aggregator — Docker Compose для интеграционных тестов
+# =============================================================================
+# Запуск:
+#   docker-compose -f docker-compose.test.yml up -d
+#
+# Запуск тестов:
+#   docker-compose -f docker-compose.test.yml run app pytest tests/test_integration/ -v
+#
+# Остановка:
+#   docker-compose -f docker-compose.test.yml down
+# =============================================================================
+
+version: '3.8'
+
+services:
+  # ---------------------------------------------------------------------------
+  # Приложение для запуска тестов
+  # ---------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: news-aggregator-test-app
+    environment:
+      # Тестовая БД
+      - DATABASE_URL=sqlite+aiosqlite:///./test_db.sqlite3
+      # Ollama
+      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_MODEL=qwen2.5:7b
+      # ChromaDB
+      - CHROMA_HOST=http://chromadb:8000
+      # Redis
+      - REDIS_URL=redis://redis:6379
+      # Тестовые настройки
+      - LOG_LEVEL=DEBUG
+      - TELEGRAM_BOT_TOKEN=test_token
+      - TELEGRAM_API_ID=12345
+      - TELEGRAM_API_HASH=test_hash
+      - ADMIN_ID=123456
+      - ENCRYPTION_KEY=test-encryption-key-32-chars!!
+      - JWT_SECRET=test-jwt-secret-key-32-chars!!
+    depends_on:
+      ollama:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - ./tests:/app/tests
+    networks:
+      - test-network
+    command: sleep infinity  # Ждём запуска тестов вручную
+
+  # ---------------------------------------------------------------------------
+  # Ollama — LLM для тестов
+  # ---------------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    container_name: news-aggregator-test-ollama
+    volumes:
+      - ollama_test_data:/root/.ollama
+    networks:
+      - test-network
+    ports:
+      - "11435:11434"  # Порт 11435 чтобы не конфликтовал с основным
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+
+  # ---------------------------------------------------------------------------
+  # ChromaDB — векторная база для тестов
+  # ---------------------------------------------------------------------------
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: news-aggregator-test-chroma
+    volumes:
+      - chroma_test_data:/chroma/chroma
+    networks:
+      - test-network
+    ports:
+      - "8003:8000"  # Порт 8003 чтобы не конфликтовал с основным
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    environment:
+      - IS_PERSISTENT=TRUE
+
+  # ---------------------------------------------------------------------------
+  # Redis — для тестов очереди
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: news-aggregator-test-redis
+    networks:
+      - test-network
+    ports:
+      - "6380:6379"  # Порт 6380 чтобы не конфликтовал с основным
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL — опционально для тестов БД
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:15-alpine
+    container_name: news-aggregator-test-db
+    environment:
+      - POSTGRES_USER=test
+      - POSTGRES_PASSWORD=test_password
+      - POSTGRES_DB=test_news_aggregator
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    networks:
+      - test-network
+    ports:
+      - "5433:5432"  # Порт 5433 чтобы не конфликтовал с основным
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d test_news_aggregator"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+
+networks:
+  test-network:
+    driver: bridge
+
+volumes:
+  ollama_test_data:
+    driver: local
+  chroma_test_data:
+    driver: local
+  postgres_test_data:
+    driver: local

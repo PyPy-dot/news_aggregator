@@ -7,24 +7,27 @@ Listener Bot — мониторинг Telegram каналов.
 
 import asyncio
 import logging
-from typing import Optional, Set
+from typing import Optional, Set, Any
 
 from telethon import TelegramClient, events
 from telethon.errors import SessionPasswordNeededError
 
-try:
-    from . import config as conf
-except ImportError:
-    import services.listener.config as conf
+from typing import TYPE_CHECKING
 
 from database import RepositoryFactory
 from database.repositories.channels import ChannelRepository
-from services.core.database import get_database_service
-from services.telegram.categorization import CategorizationService, CategorizationTask
+from services.database import get_database_service
+# Используем новый модуль categorization напрямую
+from services.categorization.queue import CategorizationQueue, CategorizationTask
+from services.categorization.processor import CategorizationProcessor
+from services.categorization.saver import NewsSaver
+from services.categorization.classifier import NewsClassifier
+from services.ai_agent.agents.categorizer import CategorizerAgent
 from services.telegram.notification import NotificationService
-from services.news.orchestrator import NewsOrchestrator
-from services.ai_agent.vector_routers import register_vector_search_handlers
 from config.settings import settings
+
+if TYPE_CHECKING:
+    from services.core.container import Container
 
 logger = logging.getLogger(__name__)
 
@@ -35,20 +38,25 @@ class ListenerBot:
 
     Делегирует обработку новостей сервисам:
     - CategorizationService — категоризация
-    - NewsOrchestrator — координация обработки
     - NotificationService — уведомления админам
     """
 
-    def __init__(self) -> None:
-        """Инициализация бота."""
+    def __init__(self, container: Optional['Container'] = None) -> None:
+        """
+        Инициализация бота.
+
+        Args:
+            container: DI контейнер (опционально, для получения сервисов)
+        """
+        self._container = container
+
         # Telegram клиент
         self.client: Optional[TelegramClient] = None
         self._client_initialized = False
 
         # Сервисы
         self.categorization_service: Optional[CategorizationService] = None
-        self.notification_service: Optional[NotificationService] = None
-        self.orchestrator: Optional[NewsOrchestrator] = None
+        self._notification_service: Optional[NotificationService] = None
 
         # Кэш обработанных сообщений
         self._processed_messages: Set[str] = set()
@@ -63,13 +71,83 @@ class ListenerBot:
         # Задача обработки очереди
         self._queue_task: Optional[asyncio.Task] = None
 
+        # Кэш каналов для динамического добавления/удаления
+        self._channel_ids: Set[int] = set()
+        self._channels_lock = asyncio.Lock()
+
+        # Хранение обработчиков по ID канала для возможности удаления
+        self._event_handlers: dict[int, tuple] = {}  # channel_id -> (handler_func, event_type)
+        self._handlers_lock = asyncio.Lock()
+
+        # Задача мониторинга каналов (отслеживает добавления и удаления)
+        self._channel_monitor_task: Optional[asyncio.Task] = None
+
     @property
-    def repo_factory(self) -> RepositoryFactory:
+    def notification_service(self) -> Optional[NotificationService]:
+        """Получить NotificationService из контейнера или кэша."""
+        if self._notification_service is None and self._container:
+            self._notification_service = self._container.get_notification_service()
+        return self._notification_service
+
+    async def get_repo_factory(self) -> RepositoryFactory:
         """Получить фабрику репозиториев."""
         if self._repo_factory is None:
             db_service = get_database_service()
-            self._repo_factory = RepositoryFactory(db_service.create_session())
+            self._db_session = await db_service.create_session()
+            self._repo_factory = RepositoryFactory(self._db_session)
         return self._repo_factory
+
+    async def check_session_freshness(self, session_name: str) -> dict:
+        """
+        Проверить состояние и свежесть сессии.
+
+        Returns:
+            dict с информацией о сессии:
+            - exists: bool — файл сессии существует
+            - authorized: bool — сессия авторизована
+            - user_id: int | None — ID пользователя
+            - username: str | None — username
+            - last_active: datetime | None — последняя активность
+            - is_fresh: bool — сессия активна (не старше 7 дней)
+        """
+        import os
+        from datetime import datetime, timedelta
+
+        session_file = f"{session_name}.session"
+        result = {
+            'exists': False,
+            'authorized': False,
+            'user_id': None,
+            'username': None,
+            'last_active': None,
+            'is_fresh': False,
+            'session_age_days': None,
+        }
+
+        # Проверяем существование файла
+        if not os.path.exists(session_file):
+            logger.debug(f"📁 Файл сессии {session_file} не найден")
+            return result
+
+        result['exists'] = True
+        logger.debug(f"📁 Файл сессии {session_file} найден")
+
+        try:
+            # Проверяем дату модификации файла
+            mtime = os.path.getmtime(session_file)
+            last_modified = datetime.fromtimestamp(mtime)
+            result['last_active'] = last_modified
+
+            age = datetime.now() - last_modified
+            result['session_age_days'] = age.days
+            result['is_fresh'] = age.days < 7  # Сессия считается свежей если < 7 дней
+
+            logger.info(f"🕒 Возраст сессии: {age.days} дн. (свежая: {result['is_fresh']})")
+
+        except Exception as e:
+            logger.warning(f"⚠️ Не удалось проверить дату сессии: {e}")
+
+        return result
 
     async def initialize(self) -> None:
         """
@@ -82,52 +160,271 @@ class ListenerBot:
             return
 
         logger.info("🔌 Инициализация Telegram клиента...")
-        logger.debug(f"API_ID: {conf.API_ID}, API_HASH: {conf.API_HASH[:8]}...")
+        # Логируем только часть данных для безопасности
+        phone_masked = settings.phone_number[:3] + '***' if len(settings.phone_number) > 3 else '***'
+        logger.debug(f"API_ID: {settings.api_id}, API_HASH: {settings.api_hash[:8]}..., Phone: {phone_masked}")
 
         try:
+            # Используем файловую сессию для сохранения авторизации между запусками
+            session_name = 'userbot'
+            session_file = f"{session_name}.session"
+            logger.debug(f"📁 Использование сессии: {session_file}")
+
+            # Проверяем, находится ли проект на сетевом диске (Yandex.Disk, Google Drive и т.д.)
+            import os
+            session_path = os.path.abspath(session_file)
+            if 'Yandex.Disk' in session_path or 'Google Drive' in session_path or 'OneDrive' in session_path:
+                logger.warning(
+                    f"⚠️ Проект находится на сетевом диске ({session_path})!\n"
+                    f"   Это может вызвать проблемы с блокировкой файла сессии.\n"
+                    f"   Рекомендация: переместите проект в локальную папку."
+                )
+
+            # Проверяем состояние сессии перед подключением
+            session_info = await self.check_session_freshness(session_name)
+            if session_info['exists']:
+                if session_info['is_fresh']:
+                    logger.info(f"✅ Сессия свежая ({session_info['session_age_days']} дн.)")
+                else:
+                    logger.warning(f"⚠️ Сессия устарела ({session_info['session_age_days']} дн.) — возможна повторная авторизация")
+            else:
+                logger.info("📁 Сессия не найдена — потребуется авторизация")
+
+            # Проверка прокси
+            proxy_url = getattr(settings, 'telegram_proxy', None)
+            mtproto_proxy = getattr(settings, 'telegram_mtproto_proxy', None)
+            proxy = None
+
+            # Сначала проверяем MTProto прокси (официальные прокси Telegram)
+            if mtproto_proxy:
+                logger.info(f"🔑 Использование MTProto прокси: {mtproto_proxy[:50]}...")
+                try:
+                    # Формат: server:port:secret или https://t.me/proxy?server=...&port=...&secret=...
+                    import re
+                    if 't.me/proxy' in mtproto_proxy:
+                        # Парсим URL
+                        match = re.search(r'server=([^&]+)&port=(\d+)&secret=([^\s&]+)', mtproto_proxy)
+                        if match:
+                            server, port, secret = match.groups()
+                            proxy = (server, int(port), secret)
+                    elif ':' in mtproto_proxy:
+                        # Простой формат server:port:secret
+                        parts = mtproto_proxy.strip().split(':')
+                        if len(parts) >= 3:
+                            proxy = (parts[0], int(parts[1]), parts[2])
+
+                    if proxy:
+                        logger.info(f"✅ MTProto прокси настроен: {proxy[0]}:{proxy[1]}")
+                    else:
+                        logger.warning(f"⚠️ Не удалось распарсить MTProto прокси")
+                except Exception as e:
+                    logger.warning(f"⚠️ Ошибка настройки MTProto прокси: {e}")
+
+            # Если MTProto нет, проверяем обычный прокси
+            elif proxy_url:
+                logger.info(f"🔑 Использование прокси: {proxy_url}")
+                try:
+                    import socks
+                    import urllib.parse
+
+                    parsed = urllib.parse.urlparse(proxy_url)
+
+                    # Определяем тип прокси
+                    if parsed.scheme.lower() == 'socks5':
+                        proxy = (socks.SOCKS5, parsed.hostname, parsed.port or 1080)
+                    elif parsed.scheme.lower() == 'socks4':
+                        proxy = (socks.SOCKS4, parsed.hostname, parsed.port or 1080)
+                    elif parsed.scheme.lower() in ('http', 'https'):
+                        # HTTP прокси
+                        proxy = (socks.HTTP, parsed.hostname, parsed.port or 8080)
+                    else:
+                        # По умолчанию SOCKS5
+                        proxy = (socks.SOCKS5, parsed.hostname, parsed.port or 1080)
+
+                    logger.debug(f"✅ Прокси настроен: {parsed.scheme}://{parsed.hostname}:{parsed.port or 1080}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Не удалось настроить прокси: {e}. Подключаемся без прокси.")
+
             self.client = TelegramClient(
-                'userbot',
-                api_id=conf.API_ID,
-                api_hash=conf.API_HASH,
-                connection_retries=5,
+                session_name,
+                api_id=settings.api_id,
+                api_hash=settings.api_hash,
+                connection_retries=10,
                 retry_delay=2,
-                timeout=30,
-                use_ipv6=True,
-                flood_sleep_threshold=60,
+                timeout=60,
+                use_ipv6=True,  # Требуется для работы в вашей сети
+                flood_sleep_threshold=300,
+                auto_reconnect=True,
+                proxy=proxy,
+                # Указываем устройство как "официальный клиент" для доверия Telegram
+                device_model="Telegram Desktop",
+                system_version="Windows 10",
+                app_version="4.9.2",
+                lang_code="en",
+                system_lang_code="en-US",
             )
 
             logger.debug("Подключение к Telegram...")
-            await self.client.connect()
-            logger.debug("✅ Подключение установлено")
-            self._client_initialized = True
+            try:
+                await self.client.connect()
+                logger.debug("✅ Подключение установлено")
+                self._client_initialized = True
+
+                # Проверяем авторизацию после подключения
+                if await self.client.is_user_authorized():
+                    me = await self.client.get_me()
+                    logger.info(f"✅ Сессия активна: @{me.username} (ID: {me.id})")
+
+                    # Проверяем, не истёк ли токен (попытка получить информацию)
+                    try:
+                        await self.client.get_me()
+                        logger.info("✅ Токен сессии действителен")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Токен сессии может быть недействителен: {e}")
+                        # Помечаем сессию как неавторизованную
+                        self._client_initialized = False
+                        await self.client.disconnect()
+                        raise
+
+            except Exception as e:
+                logger.error(f"❌ Ошибка подключения к Telegram: {type(e).__name__}: {e}")
+                # Пробуем пересоздать клиент с чистой сессией
+                logger.info("🔄 Попытка пересоздать сессию...")
+                await self.client.disconnect()
+                # Удаляем файл сессии
+                import os
+                session_file = f"{session_name}.session"
+                if os.path.exists(session_file):
+                    os.remove(session_file)
+                    logger.info(f"🗑️ Сессия {session_file} удалена")
+                # Пересоздаём клиент
+                self.client = TelegramClient(
+                    session_name,
+                    api_id=settings.api_id,
+                    api_hash=settings.api_hash,
+                    connection_retries=3,
+                    retry_delay=1,
+                    timeout=30,
+                    use_ipv6=False,
+                    flood_sleep_threshold=60,
+                    auto_reconnect=True,
+                    proxy=proxy,
+                    device_model="Desktop",
+                    system_version="10",
+                    app_version="1.0.0",
+                )
+                await self.client.connect()
+                logger.info("✅ Подключение установлено после пересоздания сессии")
+                self._client_initialized = True
+
+            # Проверяем, есть ли строка сессии в окружении (для Docker/production)
+            if settings.telegram_session_string:
+                logger.info("🔐 Восстановление сессии из TELEGRAM_SESSION_STRING...")
+                try:
+                    from telethon.sessions import StringSession
+                    await self.client.sign_in(StringSession(settings.telegram_session_string))
+                    logger.info("✅ Сессия восстановлена из строки")
+                except Exception as e:
+                    logger.warning(f"⚠️ Не удалось восстановить сессию из строки: {e}")
 
             if not await self.client.is_user_authorized():
-                logger.warning(
-                    "⚠️ Требуется авторизация! Введите код из Telegram в консоль."
-                )
-                await self.client.send_code_request(conf.PHONE_NUMBER)
+                logger.warning("⚠️ Требуется авторизация!")
+                logger.info("📝 Используйте консольный ввод для авторизации (безопасный метод)")
 
-                # Неблокирующий ввод кода
-                code = await asyncio.get_event_loop().run_in_executor(
-                    None, input, 'Enter the code: '
-                )
-                try:
-                    await self.client.sign_in(conf.PHONE_NUMBER, code)
-                except SessionPasswordNeededError:
-                    password = await asyncio.get_event_loop().run_in_executor(
-                        None, input, 'Password: '
-                    )
-                    await self.client.sign_in(password=password)
+                # Используем только консольную авторизацию
+                # Telegram блокирует передачу кодов ботам как нарушение безопасности
+                await self._console_auth()
 
             me = await self.client.get_me()
             logger.info(f"✅ UserBot авторизован: @{me.username} (ID: {me.id})")
+
+            # Сохраняем строку сессии для будущего использования (опционально)
+            # session_str = self.client.session.save()
+            # logger.info(f"💾 Session string: {session_str}")
 
         except asyncio.CancelledError:
             logger.info("🛑 Инициализация ListenerBot отменена")
             raise
         except Exception as e:
-            logger.error(f"❌ Ошибка инициализации Telegram клиента: {type(e).__name__}: {e}", exc_info=True)
+            # Специальная обработка FloodWaitError и других ошибок
+            import traceback
+            error_msg = str(e)
+
+            # FloodWaitError обработка
+            if hasattr(e, 'seconds') and hasattr(e, 'message'):
+                # Это FloodWaitError от Telethon
+                wait_seconds = e.seconds
+                wait_minutes = wait_seconds / 60
+                wait_hours = wait_minutes / 60
+
+                if wait_hours >= 1:
+                    wait_msg = f"{wait_hours:.1f} ч. ({int(wait_minutes)} мин.)"
+                elif wait_minutes >= 1:
+                    wait_msg = f"{wait_minutes:.1f} мин. ({wait_seconds} сек.)"
+                else:
+                    wait_msg = f"{wait_seconds} сек."
+
+                logger.error(
+                    f"🚫 Telegram ограничивает запросы авторизации!\n"
+                    f"   Причина: Слишком много запросов кода подтверждения\n"
+                    f"   Время ожидания: {wait_msg}\n"
+                    f"   Решение: Используйте другой номер или подождите до {wait_msg}\n"
+                    f"   (Ошибка: FloodWaitError: {e.message})"
+                )
+            # Обработка ошибки доступа к файлу (WinError 1231, сетевая папка)
+            elif 'WinError 1231' in error_msg or 'сетевая папка недоступна' in error_msg.lower() or 'Network location unavailable' in error_msg:
+                logger.error(
+                    f"🚫 Ошибка доступа к файлу сессии!\n"
+                    f"   Причина: Проект находится на сетевом диске (Yandex.Disk/Google Drive)\n"
+                    f"   Решение:\n"
+                    f"   1. Переместите проект в локальную папку (не синхронизируемую)\n"
+                    f"   2. Или добавьте '.session' файлы в исключения синхронизации\n"
+                    f"   3. Или установите TELEGRAM_SESSION_STRING вместо файловой сессии"
+                )
+            # Обработка ошибки "database is locked"
+            elif 'database is locked' in error_msg:
+                logger.error(
+                    f"🚫 База данных заблокирована!\n"
+                    f"   Причина: Другой процесс использует базу данных\n"
+                    f"   Решение:\n"
+                    f"   1. Остановите другие экземпляры приложения\n"
+                    f"   2. Переместите проект с сетевого диска (Yandex.Disk)\n"
+                    f"   3. Используйте PostgreSQL вместо SQLite"
+                )
+            else:
+                logger.error(f"❌ Ошибка инициализации Telegram клиента: {type(e).__name__}: {e}", exc_info=True)
+                logger.debug(f"Traceback: {traceback.format_exc()}")
+
+            # Не прерываем работу — ListenerBot может работать без авторизации
+            # (будет пропущен при запуске в main.py)
             raise
+
+    async def _console_auth(self) -> None:
+        """
+        Авторизация через консольный ввод.
+
+        Использует стандартный подход Telethon: input() для кода и пароля.
+        """
+        logger.info("🔐 АВТОРИЗАЦИЯ TELEGRAM")
+        logger.info("📱 Код будет отправлен в ваше приложение Telegram")
+        logger.info("⚠️ Не пересылайте код никому — введите в консоль!")
+
+        # Запрашиваем код
+        await self.client.send_code_request(settings.phone_number)
+
+        # Ввод кода через input() (как в Telethon)
+        code = input('Код из Telegram: ')
+
+        try:
+            await self.client.sign_in(settings.phone_number, code)
+        except SessionPasswordNeededError:
+            logger.warning("🔒 Требуется облачный пароль Telegram")
+            logger.warning("⚠️ Введите пароль (символы будут видны в консоли):")
+            password = input('Облачный пароль: ')
+            await self.client.sign_in(password=password)
+
+        logger.info("✅ АВТОРИЗАЦИЯ УСПЕШНА")
+
 
     async def start(self) -> None:
         """
@@ -147,13 +444,20 @@ class ListenerBot:
         channel_ids = await self._get_channel_ids()
         logger.info(f"📋 Найдено каналов в БД: {len(channel_ids)}")
 
+        # Сохраняем каналы в кэш
+        async with self._channels_lock:
+            self._channel_ids = set(channel_ids)
+
         if channel_ids:
             # Регистрируем обработчик для каждого канала
-            for channel_id in channel_ids:
-                self.client.add_event_handler(
-                    self.handle_new_post,
-                    events.NewMessage(chats=[channel_id])
-                )
+            async with self._handlers_lock:
+                for channel_id in channel_ids:
+                    handler = events.NewMessage(chats=[channel_id])
+                    self.client.add_event_handler(
+                        self.handle_new_post,
+                        handler
+                    )
+                    self._event_handlers[channel_id] = (self.handle_new_post, handler)
             logger.info(
                 f"✅ Обработчик событий добавлен для {len(channel_ids)} каналов"
             )
@@ -161,15 +465,19 @@ class ListenerBot:
             logger.warning("⚠️ Нет каналов для мониторинга! Добавьте каналы через бота.")
 
         # Запускаем обработку очереди категоризации
-        if self.categorization_service:
-            self._queue_task = asyncio.create_task(
-                self.categorization_service.process_queue()
-            )
-            logger.info("✅ Обработка очереди категоризации запущена")
+        self._queue_task = asyncio.create_task(
+            self._process_categorization_queue()
+        )
+        logger.info("✅ Обработка очереди категоризации запущена")
 
-        # Запускаем шину событий оркестратора
-        if self.orchestrator:
-            await self.orchestrator.start_event_bus()
+        # Запускаем мониторинг новых каналов
+        self._channel_monitor_task = asyncio.create_task(
+            self._monitor_new_channels()
+        )
+        logger.info("✅ Мониторинг новых каналов запущен")
+
+        # Шина событий оркестратора запускается в Scheduler
+        # ListenerBot только добавляет задачи в очередь категоризации
 
         self._running = True
         logger.info("👂 UserBot слушает события...")
@@ -193,18 +501,21 @@ class ListenerBot:
 
         Последовательность:
         1. Останавливаем флаг работы
-        2. Отменяем задачу обработки очереди
-        3. Останавливаем оркестратор
-        4. Отключаем Telegram клиент
+        2. Останавливаем сервис категоризации (с закрытием сессии)
+        3. Отменяем задачу обработки очереди
+        4. Отменяем задачу мониторинга каналов
+        5. Удаляем все обработчики событий
+        6. Отключаем Telegram клиент
+        7. Очищаем фабрику репозиториев
         """
         logger.info("🛑 Остановка ListenerBot...")
 
         self._running = False
 
-        # 1. Останавливаем обработку очереди
-        if self.categorization_service:
+        # 1. Останавливаем очередь категоризации
+        if hasattr(self, 'categorization_queue') and self.categorization_queue:
             logger.info("⏳ Остановка очереди категоризации...")
-            self.categorization_service.stop()
+            await self.categorization_queue.stop()
 
         # 2. Отменяем задачу очереди если есть
         if self._queue_task and not self._queue_task.done():
@@ -215,41 +526,142 @@ class ListenerBot:
             except (asyncio.CancelledError, asyncio.TimeoutError):
                 pass
 
-        # 3. Останавливаем оркестратор
-        if self.orchestrator:
-            logger.info("⏳ Остановка NewsOrchestrator...")
-            await self.orchestrator.stop()
+        # 3. Отменяем задачу мониторинга каналов
+        if self._channel_monitor_task and not self._channel_monitor_task.done():
+            logger.info("⏳ Отмена задачи мониторинга каналов...")
+            self._channel_monitor_task.cancel()
+            try:
+                await asyncio.wait_for(self._channel_monitor_task, timeout=3.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
 
-        # 4. Отключаем Telegram клиент
+        # 4. Удаляем все обработчики событий
+        async with self._handlers_lock:
+            if self._event_handlers:
+                logger.info(f"🗑️ Удаление {len(self._event_handlers)} обработчиков событий...")
+                for channel_id, (handler_func, handler) in list(self._event_handlers.items()):
+                    try:
+                        self.client.remove_event_handler(handler_func, handler)
+                    except Exception as e:
+                        logger.debug(f"Ошибка удаления обработчика канала {channel_id}: {e}")
+                self._event_handlers.clear()
+                logger.info("✅ Все обработчики удалены")
+
+        # 5. Отключаем Telegram клиент
         if self.client:
             try:
                 logger.info("🔌 Отключение от Telegram...")
+                # Синхронизируем сессию перед отключением (важно для сохранения session файла)
+                if hasattr(self.client, '_session') and self.client._session:
+                    try:
+                        await self.client._session.flush()
+                        logger.debug("✅ Сессия Telethon синхронизирована")
+                    except Exception as e:
+                        logger.debug(f"⚠️ Ошибка синхронизации сессии Telethon: {e}")
                 await self.client.disconnect()
                 logger.info("✅ Telegram клиент отключён")
             except Exception as e:
                 logger.error(f"❌ Ошибка отключения Telegram клиента: {e}")
 
-        # 5. Очищаем фабрику репозиториев
+        # 6. Закрываем сессию БД
+        if hasattr(self, '_db_session') and self._db_session:
+            try:
+                await self._db_session.close()
+                logger.debug("✅ Сессия БД закрыта")
+            except Exception as e:
+                logger.debug(f"⚠️ Ошибка закрытия сессии БД: {e}")
+            self._db_session = None
+
+        # 7. Очищаем фабрику репозиториев
         self._repo_factory = None
 
         logger.info("👋 ListenerBot полностью остановлен")
 
     def _init_services(self) -> None:
         """Инициализация сервисов."""
-        # Сервис категоризации
-        self.categorization_service = CategorizationService(
-            model=settings.agent_model
+        # Сервис категоризации — используем новый модуль напрямую
+        self.categorization_queue = CategorizationQueue()
+        self.categorizer = CategorizerAgent(model=settings.agent_model)
+        self.categorization_classifier = NewsClassifier()
+
+        # Процессор будет создан при запуске
+        self.categorization_processor = None
+
+        # Сервис уведомлений будет получен из контейнера при первом обращении
+        # через свойство notification_service
+
+        # NewsOrchestrator запускается в Scheduler, не создаём здесь
+        self.orchestrator = None
+
+    async def _init_categorization_processor(self):
+        """Инициализировать процессор категоризации (ленивая инициализация)."""
+        if self.categorization_processor:
+            return
+
+        db_service = get_database_service()
+        session = await db_service.create_session()
+        repo_factory = RepositoryFactory(session)
+
+        # Создаём сервис сохранения
+        saver = NewsSaver(
+            posts_repo=repo_factory.posts(),
+            channels_repo=repo_factory.channels(),
+            events_repo=repo_factory.events(),
         )
 
-        # Сервис уведомлений
-        self.notification_service = NotificationService()
-
-        # Координатор обработки новостей
-        self.orchestrator = NewsOrchestrator(
-            repo_factory=self.repo_factory,
-            model=settings.agent_model,
+        # Создаём процессор
+        self.categorization_processor = CategorizationProcessor(
+            categorizer=self.categorizer,
+            saver=saver,
+            channel_provider=repo_factory.channels(),
             notification_service=self.notification_service,
         )
+
+        logger.info("✅ CategorizationProcessor инициализирован")
+
+    async def _process_categorization_queue(self) -> None:
+        """
+        Обрабатывать очередь категоризации.
+
+        Запускается как фоновая задача.
+        """
+        # Инициализируем процессор
+        await self._init_categorization_processor()
+
+        # Запускаем единую очередь агентов (если ещё не запущена)
+        from services.ai_agent.agent_queue import get_agent_queue
+        agent_queue = get_agent_queue()
+        if not agent_queue._running:
+            await agent_queue.start()
+            # Логирование внутри agent_queue.start() — не дублируем
+
+        self.categorization_queue.start()
+        logger.info("🔄 Запущена обработка очереди категоризации")
+
+        try:
+            while self._running:
+                # Получаем задачу из очереди (блокирует до появления)
+                task = await self.categorization_queue.get()
+                if task is None:
+                    # Остановка
+                    break
+
+                try:
+                    # Делегируем обработку процессору
+                    await self.categorization_processor.process(task)
+                except Exception as e:
+                    logger.error(f"Ошибка обработки задачи категоризации: {e}")
+
+        except asyncio.CancelledError:
+            logger.info("🛑 Обработка очереди категоризации отменена")
+            # Останавливаем AgentTaskQueue
+            await agent_queue.stop()
+            raise
+        finally:
+            await self.categorization_queue.stop()
+            # Останавливаем AgentTaskQueue
+            await agent_queue.stop()
+            logger.info("🛑 Обработка очереди категоризации остановлена")
 
     async def _get_channel_ids(self) -> list[int]:
         """Получить ID каналов из БД."""
@@ -259,6 +671,90 @@ class ListenerBot:
             channels_db = await channels_repo.get_all_channels()
             return [ch.channel_id for ch in channels_db]
 
+    async def _monitor_new_channels(self) -> None:
+        """
+        Мониторинг новых каналов в БД и динамическое добавление/удаление обработчиков.
+
+        Проверяет БД каждые 10 секунд на наличие новых и удалённых каналов.
+        """
+        logger.info("🔍 Запуск мониторинга каналов (добавление/удаление)...")
+
+        while self._running:
+            try:
+                await asyncio.sleep(10)  # Проверка каждые 10 секунд
+
+                # Получаем текущие каналы из БД
+                current_channel_ids = set(await self._get_channel_ids())
+
+                # Находим новые и удалённые каналы
+                async with self._channels_lock:
+                    new_channel_ids = current_channel_ids - self._channel_ids
+                    removed_channel_ids = self._channel_ids - current_channel_ids
+
+                # Обработка новых каналов
+                if new_channel_ids:
+                    logger.info(f"🆕 Обнаружено новых каналов: {len(new_channel_ids)}")
+
+                    async with self._handlers_lock:
+                        for channel_id in new_channel_ids:
+                            try:
+                                handler = events.NewMessage(chats=[channel_id])
+                                self.client.add_event_handler(
+                                    self.handle_new_post,
+                                    handler
+                                )
+                                self._event_handlers[channel_id] = (self.handle_new_post, handler)
+                                logger.info(f"  ✅ Добавлен обработчик для канала ID={channel_id}")
+                            except Exception as e:
+                                logger.error(
+                                    f"  ❌ Ошибка добавления обработчика для канала ID={channel_id}: {e}"
+                                )
+
+                    async with self._channels_lock:
+                        self._channel_ids.update(new_channel_ids)
+
+                    logger.info(
+                        f"✅ Всего каналов для мониторинга: {len(self._channel_ids)}"
+                    )
+
+                # Обработка удалённых каналов
+                if removed_channel_ids:
+                    logger.info(f"🗑️ Обнаружено удалённых каналов: {len(removed_channel_ids)}")
+
+                    async with self._handlers_lock:
+                        for channel_id in removed_channel_ids:
+                            try:
+                                if channel_id in self._event_handlers:
+                                    handler_func, handler = self._event_handlers[channel_id]
+                                    self.client.remove_event_handler(handler_func, handler)
+                                    del self._event_handlers[channel_id]
+                                    logger.info(
+                                        f"  ✅ Удалён обработчик для канала ID={channel_id}"
+                                    )
+                                else:
+                                    logger.warning(
+                                        f"  ⚠️ Обработчик для канала ID={channel_id} не найден в кэше"
+                                    )
+                            except Exception as e:
+                                logger.error(
+                                    f"  ❌ Ошибка удаления обработчика для канала ID={channel_id}: {e}"
+                                )
+
+                    async with self._channels_lock:
+                        self._channel_ids.difference_update(removed_channel_ids)
+
+                    logger.info(
+                        f"✅ Осталось каналов для мониторинга: {len(self._channel_ids)}"
+                    )
+
+            except asyncio.CancelledError:
+                logger.info("🛑 Мониторинг каналов остановлен")
+                break
+            except Exception as e:
+                logger.error(f"❌ Ошибка мониторинга каналов: {e}", exc_info=True)
+
+        logger.debug("Мониторинг каналов завершён")
+
     async def handle_new_post(self, event) -> None:
         """
         Обработчик новых постов.
@@ -266,63 +762,119 @@ class ListenerBot:
         Args:
             event: Telethon событие
         """
-        text = event.message.text
-        if not text:
-            logger.debug("Игнорируем пост без текста")
-            return
-
         channel_id = event.chat_id
         message_id = event.message.id
         msg_key = f"{channel_id}:{message_id}"
 
-        # Проверяем и добавляем сообщение в обработанные
-        async with self._messages_lock:
-            if msg_key in self._processed_messages:
-                logger.debug(f"Сообщение {msg_key} уже обработано, пропускаем")
-                return
+        # Проверяем дубликаты и блокируем обработку
+        if not await self._check_duplicate_message(msg_key):
+            return
 
-            self._processed_messages.add(msg_key)
+        # Получаем текст сообщения
+        text = event.message.text
+        if not text:
+            logger.debug(f"Игнорируем пост без текста (ID={message_id})")
+            return
 
-            # Очищаем старые записи
-            if len(self._processed_messages) > settings.processed_messages_cache_max:
-                items = list(self._processed_messages)
-                self._processed_messages.clear()
-                self._processed_messages.update(
-                    items[-settings.processed_messages_cache_trim:]
-                )
-
-        # Получаем канал через репозиторий
-        db_service = get_database_service()
-        async with db_service.session_context() as session:
-            channels_repo = ChannelRepository(session)
-            channel_obj = await channels_repo.get_by_telegram_id(channel_id)
-
+        # Получаем канал из БД
+        channel_obj = await self._get_channel(channel_id)
         if channel_obj is None:
             logger.warning(f"Канал {channel_id} не найден в БД, игнорируем")
             return
 
-        title = channel_obj.title
-        desc = channel_obj.description
+        logger.info(f"📬 Новый пост из: {channel_obj.title} (ID={message_id}, msg_key={msg_key})")
 
-        logger.info(f"📬 Новый пост из: {title}")
+        # Формируем промпт и добавляем в очередь
+        await self._enqueue_categorization_task(
+            channel_id=channel_id,
+            message_id=message_id,
+            text=text,
+            channel=channel_obj,
+        )
 
-        # Формируем промпт для категоризации
+    async def _check_duplicate_message(self, msg_key: str) -> bool:
+        """
+        Проверить, не было ли сообщение уже обработано.
+
+        Args:
+            msg_key: Уникальный ключ сообщения
+
+        Returns:
+            True если сообщение новое, False если дубликат
+        """
+        # Используем отдельный lock для каждого msg_key
+        if not hasattr(self, '_msg_locks'):
+            self._msg_locks = {}
+
+        if msg_key not in self._msg_locks:
+            self._msg_locks[msg_key] = asyncio.Lock()
+
+        async with self._msg_locks[msg_key]:
+            async with self._messages_lock:
+                if msg_key in self._processed_messages:
+                    logger.debug(f"Сообщение {msg_key} уже обработано, пропускаем")
+                    self._msg_locks.pop(msg_key, None)
+                    return False
+
+                self._processed_messages.add(msg_key)
+
+                # Очищаем старые записи
+                if len(self._processed_messages) > settings.processed_messages_cache_max:
+                    items = list(self._processed_messages)
+                    self._processed_messages.clear()
+                    self._processed_messages.update(
+                        items[-settings.processed_messages_cache_trim:]
+                    )
+
+            self._msg_locks.pop(msg_key, None)
+            return True
+
+    async def _get_channel(self, channel_id: int) -> Optional[Any]:
+        """
+        Получить канал из БД по Telegram ID.
+
+        Args:
+            channel_id: Telegram ID канала
+
+        Returns:
+            Объект канала или None
+        """
+        db_service = get_database_service()
+        async with db_service.session_context() as session:
+            channels_repo = ChannelRepository(session)
+            return await channels_repo.get_by_telegram_id(channel_id)
+
+    async def _enqueue_categorization_task(
+        self,
+        channel_id: int,
+        message_id: int,
+        text: str,
+        channel,
+    ) -> None:
+        """
+        Сформировать промпт и добавить задачу в очередь категоризации.
+
+        Args:
+            channel_id: Telegram ID канала
+            message_id: ID сообщения
+            text: Текст поста
+            channel: Объект канала из БД
+        """
         prompt = f'''## Название ресурса
-{title}
+{channel.title}
 
 ## Описание ресурса
-{desc}
+{channel.description}
 
 ## Текст новости
 {text}'''
 
-        # Добавляем задачу в очередь категоризации
-        if self.categorization_service:
+        if self.categorization_queue:
             task = CategorizationTask(
                 channel_id=channel_id,
                 prompt=prompt,
                 original_text=text,
-                title=title,
-                desc=desc
+                title=channel.title,
+                desc=channel.description,
             )
-            await self.categorization_service.add_task(task)
+            await self.categorization_queue.add(task)
