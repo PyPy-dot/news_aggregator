@@ -19,7 +19,7 @@ async def migrate():
 
     try:
         db_service = get_database_service()
-    async with db_service.engine.begin() as conn:
+        async with db_service.engine.begin() as conn:
             # Пробуем добавить колонку (игнорируем ошибку если уже существует)
             try:
                 await conn.execute(text(
