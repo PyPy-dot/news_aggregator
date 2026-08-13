@@ -88,40 +88,36 @@ class TestCategorizationQueue:
         assert task.channel_id == sample_task.channel_id
         assert queue.is_empty
 
-    def test_get_task_blocks_when_empty(self, queue):
+    @pytest.mark.asyncio
+    async def test_get_task_blocks_when_empty(self, queue):
         """Тест блокировки get на пустой очереди."""
-        async def get_with_timeout():
-            queue.start()  # Запускаем очередь
-            task = asyncio.create_task(queue.get())
-            await asyncio.sleep(0.1)
-            # Задача не должна завершиться, пока очередь пуста
-            assert not task.done()
-            queue.stop()  # Останавливаем для завершения
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+        queue.start()  # Запускаем очередь
+        task = asyncio.create_task(queue.get())
+        await asyncio.sleep(0.1)
+        # Задача не должна завершиться, пока очередь пуста
+        assert not task.done()
+        await queue.stop()  # Останавливаем для завершения (async!)
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
-        asyncio.run(get_with_timeout())
-
-    def test_start_stop(self, queue):
+    @pytest.mark.asyncio
+    async def test_start_stop(self, queue):
         """Тест запуска и остановки."""
         assert not queue.is_running
         queue.start()
         assert queue.is_running
-        queue.stop()
+        await queue.stop()  # async!
         assert not queue.is_running
 
-    def test_get_returns_none_on_stop(self, queue):
+    @pytest.mark.asyncio
+    async def test_get_returns_none_on_stop(self, queue):
         """Тест получения None при остановке."""
-        async def get_on_stop():
-            queue.start()
-            # Получаем задачу, которая должна вернуть None после stop
-            get_task = asyncio.create_task(queue.get())
-            await asyncio.sleep(0.05)
-            queue.stop()
-            result = await get_task
-            return result
-
-        result = asyncio.run(get_on_stop())
+        queue.start()
+        # Получаем задачу, которая должна вернуть None после stop
+        get_task = asyncio.create_task(queue.get())
+        await asyncio.sleep(0.05)
+        await queue.stop()  # async!
+        result = await get_task
         assert result is None
