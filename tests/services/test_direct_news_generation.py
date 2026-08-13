@@ -291,7 +291,14 @@ class TestPublishDirectToChannel:
         factory.posts = MagicMock(return_value=AsyncMock())
         factory.events = MagicMock(return_value=AsyncMock())
         factory.news = MagicMock(return_value=AsyncMock())
-        factory.publishers = MagicMock(return_value=AsyncMock())
+
+        # Настраиваем publishers mock с правильным return value для get_by_id
+        publishers_repo_mock = AsyncMock()
+        mock_publisher = MagicMock()
+        mock_publisher.channel_id = -1001
+        mock_publisher.title = 'Test Channel'
+        publishers_repo_mock.get_by_id = AsyncMock(return_value=mock_publisher)
+        factory.publishers = MagicMock(return_value=publishers_repo_mock)
         return factory
 
     @pytest.fixture

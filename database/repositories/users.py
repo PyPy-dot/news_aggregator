@@ -116,13 +116,13 @@ class UserRepository(BaseRepository[User]):
             has_subscription=(role == 'admin'),  # Admin получает подписку
             subscription_started_at=now if role == 'admin' else None,
             subscription_ends_at=None if role == 'admin' else None,  # NULL = бессрочно для admin
-            # Нормализация тэгов к нижнему регистру (категории — как есть, из справочника)
+            # Нормализация тэгов и категорий к нижнему регистру
             preferred_tags=json.dumps(
                 [tag.lower() for tag in preferred_tags] if preferred_tags else [],
                 ensure_ascii=False
             ),
             preferred_categories=json.dumps(
-                preferred_categories if preferred_categories else [],
+                [cat.lower() for cat in preferred_categories] if preferred_categories else [],
                 ensure_ascii=False
             ),
         )
@@ -219,9 +219,9 @@ class UserRepository(BaseRepository[User]):
             )
 
         if preferred_categories is not None:
-            # Категории сохраняем как есть (оригинальный регистр из справочника)
+            # Нормализация категорий к нижнему регистру
             user.preferred_categories = json.dumps(
-                preferred_categories, ensure_ascii=False
+                [cat.lower() for cat in preferred_categories], ensure_ascii=False
             )
 
         await self.session.commit()
@@ -276,7 +276,7 @@ class UserRepository(BaseRepository[User]):
 
     async def add_preferred_category(self, telegram_id: int, category: str) -> bool:
         """
-        Добавить предпочтительную категорию.
+        Добавить предпочтительную категорию (case-insensitive).
 
         Args:
             telegram_id: ID пользователя в Telegram
@@ -289,16 +289,17 @@ class UserRepository(BaseRepository[User]):
         if not user:
             return False
 
-        categories = json.loads(user.preferred_categories or '[]')
-        if category not in categories:
-            categories.append(category)
+        category_normalized = category.lower()
+        categories = [c.lower() for c in json.loads(user.preferred_categories or '[]')]
+        if category_normalized not in categories:
+            categories.append(category_normalized)
             user.preferred_categories = json.dumps(categories, ensure_ascii=False)
             await self.session.commit()
         return True
 
     async def remove_preferred_category(self, telegram_id: int, category: str) -> bool:
         """
-        Удалить предпочтительную категорию.
+        Удалить предпочтительную категорию (case-insensitive).
 
         Args:
             telegram_id: ID пользователя в Telegram
@@ -311,9 +312,10 @@ class UserRepository(BaseRepository[User]):
         if not user:
             return False
 
-        categories = json.loads(user.preferred_categories or '[]')
-        if category in categories:
-            categories.remove(category)
+        category_normalized = category.lower()
+        categories = [c.lower() for c in json.loads(user.preferred_categories or '[]')]
+        if category_normalized in categories:
+            categories.remove(category_normalized)
             user.preferred_categories = json.dumps(categories, ensure_ascii=False)
             await self.session.commit()
         return True

@@ -169,13 +169,9 @@ class TestNewsOrchestrator:
         # Мок для event_bus
         orchestrator.event_bus.emit = AsyncMock()
 
-        # Мок для get_bot_instance и PublisherService (импортируются внутри метода)
-        with patch('services.bot.bot.get_bot_instance') as mock_get_bot, \
-             patch('services.bot.handlers.publisher.PublisherService') as MockPublisherService:
-
-            # Настраиваем моки
-            mock_bot = MagicMock()
-            mock_get_bot.return_value = mock_bot
+        # Мок для get_bot_instance_async и PublisherService (импортируются внутри метода)
+        with patch('services.news.strategies.trusted.get_bot_instance_async', return_value=MagicMock()) as mock_get_bot, \
+             patch('services.news.strategies.trusted.PublisherService') as MockPublisherService:
 
             mock_publisher_service = AsyncMock()
             mock_publisher_service.publish_to_channel = AsyncMock(return_value=True)
