@@ -119,16 +119,6 @@ async def edit_channels(message: Message, state: FSMContext):
 
 
 
-@admin.message(F.text == 'Работа с сайтами')
-@admin.message(Command('edit_sites'))
-async def edit_sites(message: Message):
-    """Команда /edit_sites — работа с сайтами (не реализовано)."""
-    if not await check_admin_access(message):
-        return
-
-    await message.answer('Пока не реализовано')
-
-
 @admin.message(Command('gen_news_by_id'))
 async def gen_news_by_id(message: Message):
     """Команда /gen_news_by_id — генерация новости по ID поста."""

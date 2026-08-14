@@ -1,0 +1,1133 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Консоль — Админ-панель</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css"/>
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3B82F6',
+                        secondary: '#10B981',
+                        accent: '#8B5CF6',
+                        dark: '#1F2937',
+                        terminal: {
+                            bg: '#1f2430',
+                            fg: '#cbccc6',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .sidebar-item:hover {
+            background: linear-gradient(90deg, rgba(59,130,246,0.1) 0%, transparent 100%);
+            border-left: 3px solid #3B82F6;
+        }
+        .sidebar-item.active {
+            background: linear-gradient(90deg, rgba(59,130,246,0.15) 0%, transparent 100%);
+            border-left: 3px solid #3B82F6;
+            color: #3B82F6;
+        }
+        /* Terminal custom styles */
+        .xterm {
+            padding: 1rem;
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+        }
+        .xterm-viewport::-webkit-scrollbar {
+            width: 10px;
+        }
+        .xterm-viewport::-webkit-scrollbar-track {
+            background: #1f2430;
+        }
+        .xterm-viewport::-webkit-scrollbar-thumb {
+            background: #3b4252;
+            border-radius: 5px;
+        }
+        .xterm-viewport::-webkit-scrollbar-thumb:hover {
+            background: #4c566a;
+        }
+        /* Command input */
+        .command-input {
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+            background: #1a1f2e;
+            border: 1px solid #3b4252;
+            color: #cbccc6;
+        }
+        .command-input:focus {
+            outline: none;
+            border-color: #3B82F6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        /* Console output */
+        .console-output {
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+            background: #1a1f2e;
+            border: 1px solid #3b4252;
+            color: #cbccc6;
+        }
+        /* Status indicators */
+        .status-running {
+            animation: pulse-green 2s infinite;
+        }
+        .status-stopped {
+            background-color: #bf616a !important;
+        }
+        @keyframes pulse-green {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        /* Control buttons */
+        .control-btn {
+            transition: all 0.2s ease;
+        }
+        .control-btn:hover {
+            transform: translateY(-2px);
+        }
+        .control-btn:active {
+            transform: translateY(0);
+        }
+        /* Tab buttons */
+        .tab-btn {
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s ease;
+        }
+        .tab-btn.active {
+            border-bottom-color: #3B82F6;
+            color: #3B82F6;
+        }
+        /* Log entry colors */
+        .log-info { color: #5e81ac; }
+        .log-success { color: #a3be8c; }
+        .log-warning { color: #ebcb8b; }
+        .log-error { color: #bf616a; }
+        .log-debug { color: #d8dee9; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div class="flex h-screen overflow-hidden">
+
+        <!-- Боковая панель -->
+        <aside class="w-64 bg-dark text-white flex-shrink-0 flex flex-col h-full">
+            <!-- Логотип -->
+            <div class="p-6 border-b border-gray-700 flex-shrink-0">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-newspaper text-white"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-lg font-bold">News Aggregator</h1>
+                        <p class="text-xs text-gray-400">Admin Panel v{{ version }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Навигация (скроллится если не помещается) -->
+            <nav class="flex-1 overflow-y-auto mt-6 px-3">
+                <p class="text-xs text-gray-500 uppercase tracking-wider mb-3 px-3">Основное</p>
+
+                <a href="/" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
+                    <i class="fas fa-home w-5"></i>
+                    <span class="ml-3">Главная</span>
+                </a>
+
+                <a href="/dashboard" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
+                    <i class="fas fa-chart-line w-5"></i>
+                    <span class="ml-3">Дашборд</span>
+                </a>
+
+                <a href="/news" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
+                    <i class="fas fa-newspaper w-5"></i>
+                    <span class="ml-3">Новости</span>
+                </a>
+
+                <a href="/channels" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
+                    <i class="fas fa-broadcast-tower w-5"></i>
+                    <span class="ml-3">Каналы</span>
+                </a>
+
+                <a href="/users" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
+                    <i class="fas fa-users w-5"></i>
+                    <span class="ml-3">Пользователи</span>
+                </a>
+
+                <p class="text-xs text-gray-500 uppercase tracking-wider mb-3 px-3 mt-6">Источники</p>
+
+                <a href="/tasks" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
+                    <i class="fas fa-tasks w-5"></i>
+                    <span class="ml-3">Задачи</span>
+                </a>
+
+                <a href="/rss" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
+                    <i class="fas fa-rss w-5"></i>
+                    <span class="ml-3">RSS ленты</span>
+                </a>
+
+                <a href="/web" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
+                    <i class="fas fa-globe w-5"></i>
+                    <span class="ml-3">Web парсинг</span>
+                </a>
+
+                <p class="text-xs text-gray-500 uppercase tracking-wider mb-3 px-3 mt-6">Инструменты</p>
+
+                <a href="/console" class="sidebar-item active flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
+                    <i class="fas fa-terminal w-5"></i>
+                    <span class="ml-3">Консоль</span>
+                </a>
+
+                <a href="/settings" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
+                    <i class="fas fa-cog w-5"></i>
+                    <span class="ml-3">Настройки</span>
+                </a>
+            </nav>
+        </aside>
+
+        <!-- Основной контент -->
+        <div class="flex-1 flex flex-col overflow-hidden">
+
+            <!-- Верхняя панель -->
+            <header class="bg-white shadow-sm border-b border-gray-200 flex-shrink-0">
+                <div class="px-6 py-4 flex items-center justify-between">
+                    <div>
+                        <h2 class="text-2xl font-bold text-gray-800">Консоль управления</h2>
+                        <p class="text-sm text-gray-500 mt-1">Терминал, команды, управление сервисами</p>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <!-- Статусы сервисов -->
+                        <div class="flex items-center space-x-4 text-sm">
+                            <div class="flex items-center space-x-2">
+                                <span class="w-2 h-2 rounded-full status-running" id="bot-status" style="background-color: #a3be8c;"></span>
+                                <span class="text-gray-600">Бот</span>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <span class="w-2 h-2 rounded-full status-running" id="listener-status" style="background-color: #a3be8c;"></span>
+                                <span class="text-gray-600">Лисенер</span>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <span class="w-2 h-2 rounded-full status-running" id="scheduler-status" style="background-color: #a3be8c;"></span>
+                                <span class="text-gray-600">Шедулер</span>
+                            </div>
+                        </div>
+                        {% if user and user.logged_in %}
+                        <div class="flex items-center space-x-3 pl-4 border-l border-gray-200">
+                            <div class="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center text-white font-semibold">
+                                {{ user.username[0].upper() if user.username else 'A' }}
+                            </div>
+                            <a href="/auth/logout" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm font-medium">
+                                <i class="fas fa-sign-out-alt mr-2"></i>
+                                Выйти
+                            </a>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </header>
+
+            <!-- Контент страницы -->
+            <main class="flex-1 overflow-hidden p-6 bg-gray-50">
+                <div class="w-full h-full flex flex-col">
+
+                    <!-- Вкладки -->
+                    <div class="flex items-center justify-between mb-4 flex-shrink-0">
+                        <div class="flex items-center space-x-1 border-b border-gray-200">
+                            <button class="tab-btn active px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900" data-tab="terminal">
+                                <i class="fas fa-terminal mr-2"></i>Терминал
+                            </button>
+                            <button class="tab-btn px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900" data-tab="logs">
+                                <i class="fas fa-scroll mr-2"></i>Логи
+                            </button>
+                            <button class="tab-btn px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900" data-tab="python">
+                                <i class="fab fa-python mr-2"></i>Python
+                            </button>
+                            <button class="tab-btn px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900" data-tab="sql">
+                                <i class="fas fa-database mr-2"></i>SQL
+                            </button>
+                        </div>
+
+                        <!-- Кнопки Старт/Стоп -->
+                        <div class="flex items-center space-x-2">
+                            <button onclick="startAllServices()" id="start-all-btn" class="control-btn px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 text-sm font-medium">
+                                <i class="fas fa-play mr-2"></i>Старт
+                            </button>
+                            <button onclick="stopAllServices()" id="stop-all-btn" class="control-btn px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 text-sm font-medium">
+                                <i class="fas fa-stop mr-2"></i>Стоп
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Содержимое вкладок -->
+                    <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
+
+                        <!-- Вкладка Терминал -->
+                        <div id="terminal-tab" class="tab-content flex-1 flex flex-col min-h-0 overflow-hidden">
+                            <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
+                                <!-- Панель управления сервисами -->
+                                <div class="flex items-center flex-wrap gap-2 mb-4 p-4 bg-white rounded-lg shadow-sm flex-shrink-0">
+                                    <span class="text-sm font-medium text-gray-700 mr-2">Управление:</span>
+                                    <button onclick="controlService('bot', 'restart')" class="control-btn px-3 py-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm font-medium">
+                                        <i class="fas fa-redo mr-1"></i>Бот
+                                    </button>
+                                    <button onclick="controlService('listener', 'restart')" class="control-btn px-3 py-1.5 bg-purple-500 text-white rounded-lg hover:bg-purple-600 text-sm font-medium">
+                                        <i class="fas fa-redo mr-1"></i>Лисенер
+                                    </button>
+                                    <button onclick="openListenerAuthFromConsole()" class="control-btn px-3 py-1.5 bg-teal-500 text-white rounded-lg hover:bg-teal-600 text-sm font-medium" title="Авторизация Telegram">
+                                        <i class="fas fa-sign-in-alt mr-1"></i>Telegram
+                                    </button>
+                                    <button onclick="controlService('scheduler', 'restart')" class="control-btn px-3 py-1.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 text-sm font-medium">
+                                        <i class="fas fa-redo mr-1"></i>Шедулер
+                                    </button>
+                                    <button onclick="clearTerminal()" class="control-btn px-3 py-1.5 bg-gray-500 text-white rounded-lg hover:bg-gray-600 text-sm font-medium ml-auto">
+                                        <i class="fas fa-trash mr-1"></i>Очистить
+                                    </button>
+                                </div>
+
+                                <!-- Терминал -->
+                                <div id="terminal-container" class="flex-1 bg-terminal-bg rounded-lg overflow-hidden border border-gray-700 min-h-0"></div>
+
+                                <!-- Поле ввода команд -->
+                                <div class="mt-4 flex items-center space-x-3 flex-shrink-0">
+                                    <span class="text-gray-500 font-mono">$</span>
+                                    <input type="text" id="command-input" class="command-input flex-1 px-4 py-3 rounded-lg text-sm"
+                                           placeholder="Введите команду (help для списка команд)..." autocomplete="off">
+                                    <button onclick="executeCommand()" class="px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 text-sm font-medium">
+                                        <i class="fas fa-play mr-2"></i>Выполнить
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Вкладка Логи -->
+                        <div id="logs-tab" class="tab-content flex-1 flex flex-col min-h-0 hidden">
+                            <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
+                                <div class="flex items-center space-x-3 mb-4 p-4 bg-white rounded-lg shadow-sm flex-shrink-0">
+                                    <select id="log-level" class="px-4 py-2 border border-gray-300 rounded-lg text-sm">
+                                        <option value="DEBUG">DEBUG</option>
+                                        <option value="INFO" selected>INFO</option>
+                                        <option value="WARNING">WARNING</option>
+                                        <option value="ERROR">ERROR</option>
+                                        <option value="CRITICAL">CRITICAL</option>
+                                    </select>
+                                    <select id="log-source" class="px-4 py-2 border border-gray-300 rounded-lg text-sm">
+                                        <option value="all">Все источники</option>
+                                        <option value="main">main</option>
+                                        <option value="bot">bot</option>
+                                        <option value="listener">listener</option>
+                                        <option value="scheduler">scheduler</option>
+                                        <option value="web_admin">web_admin</option>
+                                        <option value="ai_agent">ai_agent</option>
+                                    </select>
+                                    <button onclick="loadLogs()" class="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm font-medium">
+                                        <i class="fas fa-sync mr-2"></i>Обновить
+                                    </button>
+                                    <button onclick="clearLogs()" class="px-6 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 text-sm font-medium ml-auto">
+                                        <i class="fas fa-trash mr-2"></i>Очистить
+                                    </button>
+                                </div>
+                                <div id="logs-container" class="console-output flex-1 p-4 rounded-lg overflow-auto text-sm font-mono min-h-0 bg-gray-900 text-gray-100"></div>
+                            </div>
+                        </div>
+
+                        <!-- Вкладка Python -->
+                        <div id="python-tab" class="tab-content flex-1 flex flex-col min-h-0 hidden">
+                            <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
+                                <textarea id="python-code" class="command-input w-full px-4 py-3 rounded-lg text-sm mb-4 resize-none flex-shrink-0"
+                                          placeholder="# Введите Python код для выполнения&#10;print('Hello, World!')"
+                                          style="font-family: 'JetBrains Mono', monospace; height: 150px;"></textarea>
+                                <div class="flex items-center space-x-3 mb-4 flex-shrink-0">
+                                    <button onclick="executePython()" class="px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 text-sm font-medium">
+                                        <i class="fas fa-play mr-2"></i>Выполнить
+                                    </button>
+                                    <button onclick="clearPythonOutput()" class="px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 text-sm font-medium">
+                                        <i class="fas fa-trash mr-2"></i>Очистить вывод
+                                    </button>
+                                </div>
+                                <div id="python-output" class="console-output flex-1 p-4 rounded-lg overflow-auto text-sm whitespace-pre-wrap min-h-0"></div>
+                            </div>
+                        </div>
+
+                        <!-- Вкладка SQL -->
+                        <div id="sql-tab" class="tab-content flex-1 flex flex-col min-h-0 hidden">
+                            <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
+                                <textarea id="sql-query" class="command-input w-full px-4 py-3 rounded-lg text-sm mb-4 resize-none flex-shrink-0"
+                                          placeholder="-- Введите SQL запрос&#10;SELECT * FROM users LIMIT 10;"
+                                          style="font-family: 'JetBrains Mono', monospace; height: 150px;"></textarea>
+                                <div class="flex items-center space-x-3 mb-4 flex-shrink-0">
+                                    <button onclick="executeSQL()" class="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm font-medium">
+                                        <i class="fas fa-play mr-2"></i>Выполнить
+                                    </button>
+                                    <button onclick="clearSQLOutput()" class="px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 text-sm font-medium">
+                                        <i class="fas fa-trash mr-2"></i>Очистить вывод
+                                    </button>
+                                </div>
+                                <div id="sql-output" class="console-output flex-1 p-4 rounded-lg overflow-auto text-sm whitespace-pre-wrap min-h-0"></div>
+                            </div>
+                        </div>
+
+                    </div>
+
+                </div>
+            </main>
+
+            <!-- Модальное окно авторизации ListenerBot -->
+            <div id="listener-auth-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 hidden">
+                <div class="bg-gray-800 rounded-xl shadow-2xl p-8 max-w-md w-full mx-4 border-2 border-blue-500">
+                    <div class="text-center mb-6">
+                        <div class="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg animate-pulse">
+                            <i class="fab fa-telegram-plane text-white text-4xl"></i>
+                        </div>
+                        <h3 class="text-2xl font-bold text-white">Авторизация Telegram</h3>
+                        <p class="text-sm text-gray-400 mt-2" id="auth-message">Требуется вход в Telegram</p>
+                        <p class="text-xs text-blue-400 mt-1">ListenerBot ожидает авторизации</p>
+                    </div>
+
+                    <div class="flex items-center justify-center mb-6">
+                        <div class="flex items-center space-x-3">
+                            <div class="text-center">
+                                <div id="step-code-indicator" class="w-4 h-4 rounded-full bg-blue-500 animate-pulse mx-auto"></div>
+                                <p class="text-xs text-gray-500 mt-1">Код</p>
+                            </div>
+                            <div class="w-12 h-0.5 bg-gray-600"></div>
+                            <div class="text-center">
+                                <div id="step-password-indicator" class="w-4 h-4 rounded-full bg-gray-600 mx-auto"></div>
+                                <p class="text-xs text-gray-500 mt-1">Пароль</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="code-form">
+                        <label for="auth-code" class="block text-sm font-medium text-gray-300 mb-2">
+                            <i class="fas fa-key mr-2 text-blue-400"></i>Код подтверждения
+                        </label>
+                        <input type="text" id="auth-code" placeholder="12345" maxlength="10"
+                            class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-center text-xl tracking-widest font-mono" />
+                        <p class="text-xs text-gray-500 mt-2 text-center">
+                            Код отправлен на <span id="auth-phone" class="text-blue-400"></span>
+                        </p>
+                    </div>
+
+                    <div id="password-form" class="hidden">
+                        <label for="auth-password" class="block text-sm font-medium text-gray-300 mb-2">
+                            <i class="fas fa-lock mr-2 text-green-400"></i>Облачный пароль Telegram
+                        </label>
+                        <input type="password" id="auth-password" placeholder="Ваш облачный пароль"
+                            class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all text-center" />
+                        <p class="text-xs text-gray-500 mt-2 text-center">Облачная защита аккаунта Telegram</p>
+                    </div>
+
+                    <div id="auth-error" class="hidden mt-4 bg-red-900/50 border border-red-700 text-red-200 px-4 py-3 rounded-lg text-sm">
+                        <i class="fas fa-exclamation-triangle mr-2"></i>
+                        <span id="auth-error-text"></span>
+                    </div>
+
+                    <div id="auth-success" class="hidden mt-4 bg-green-900/50 border border-green-700 text-green-200 px-4 py-3 rounded-lg text-sm text-center">
+                        <i class="fas fa-check-circle mr-2"></i>
+                        <span id="auth-success-text">Авторизация успешна!</span>
+                    </div>
+
+                    <div class="flex items-center justify-between mt-6 space-x-3">
+                        <button onclick="cancelListenerAuth()" class="flex-1 px-4 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors text-sm font-medium border border-gray-600">
+                            <i class="fas fa-times mr-2"></i>Отмена
+                        </button>
+                        <button onclick="submitListenerAuth()" id="auth-submit-btn" class="flex-1 px-4 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white rounded-lg transition-all text-sm font-medium shadow-lg">
+                            <i class="fas fa-arrow-right mr-2"></i>Далее
+                        </button>
+                    </div>
+
+                    <div id="auth-loading" class="hidden mt-4 text-center">
+                        <i class="fas fa-circle-notch fa-spin text-blue-500 text-2xl"></i>
+                        <p class="text-sm text-gray-400 mt-2">Обработка запроса...</p>
+                    </div>
+                </div>
+            </div>
+
+            {% include 'components/footer.html' %}
+        </div>
+    </div>
+
+    <!-- Скрипты -->
+    <script>
+        // Инициализация xterm.js
+        let terminal;
+        let fitAddon;
+
+        function initTerminal() {
+            const terminalContainer = document.getElementById('terminal-container');
+            terminal = new Terminal({
+                cursorBlink: true,
+                fontSize: 14,
+                fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                theme: {
+                    background: '#1f2430',
+                    foreground: '#cbccc6',
+                    cursor: '#ffcc66',
+                    cursorAccent: '#1f2430',
+                    selection: 'rgba(255, 255, 255, 0.3)',
+                    black: '#1f2430',
+                    red: '#bf616a',
+                    green: '#a3be8c',
+                    yellow: '#ebcb8b',
+                    blue: '#5e81ac',
+                    magenta: '#b48ead',
+                    cyan: '#88c0d0',
+                    white: '#d8dee9',
+                    brightBlack: '#4c566a',
+                    brightRed: '#bf616a',
+                    brightGreen: '#a3be8c',
+                    brightYellow: '#ebcb8b',
+                    brightBlue: '#5e81ac',
+                    brightMagenta: '#b48ead',
+                    brightCyan: '#88c0d0',
+                    brightWhite: '#eceff4'
+                }
+            });
+
+            fitAddon = new FitAddon.FitAddon();
+            terminal.loadAddon(fitAddon);
+            terminal.open(terminalContainer);
+            fitAddon.fit();
+
+            // Приветственное сообщение
+            terminal.writeln('\x1b[1;36m╔═══════════════════════════════════════════════════════════╗\x1b[0m');
+            terminal.writeln('\x1b[1;36m║\x1b[0m  \x1b[1;33mNews Aggregator Console v{{ version }}\x1b[0m                           \x1b[1;36m║\x1b[0m');
+            terminal.writeln('\x1b[1;36m╠═══════════════════════════════════════════════════════════╣\x1b[0m');
+            terminal.writeln('\x1b[1;36m║\x1b[0m  \x1b[32mДобро пожаловать в консоль управления!\x1b[0m                   \x1b[1;36m║\x1b[0m');
+            terminal.writeln('\x1b[1;36m║\x1b[0m  Введите \x1b[33mhelp\x1b[0m для списка команд                           \x1b[1;36m║\x1b[0m');
+            terminal.writeln('\x1b[1;36m╚═══════════════════════════════════════════════════════════╝\x1b[0m');
+            terminal.writeln('');
+
+            // Обработчик ввода
+            terminal.onData(e => {
+                if (e === '\r') {
+                    // Enter
+                    const command = document.getElementById('command-input').value;
+                    executeCommand();
+                } else if (e === '\x7f') {
+                    // Backspace
+                    const input = document.getElementById('command-input');
+                    input.value = input.value.slice(0, -1);
+                } else if (e >= ' ' && e <= '~') {
+                    // Printable characters
+                    document.getElementById('command-input').value += e;
+                }
+            });
+
+            // Ресайз окна
+            window.addEventListener('resize', () => fitAddon.fit());
+        }
+
+        // Переключение вкладок
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                // Удаляем активный класс у всех кнопок
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                // Добавляем активный класс нажатой кнопке
+                btn.classList.add('active');
+
+                // Скрываем все вкладки
+                document.querySelectorAll('.tab-content').forEach(tab => tab.classList.add('hidden'));
+                // Показываем нужную вкладку
+                const tabName = btn.dataset.tab;
+                document.getElementById(`${tabName}-tab`).classList.remove('hidden');
+
+                // Если это вкладка терминала, подстраиваем размер
+                if (tabName === 'terminal' && fitAddon) {
+                    setTimeout(() => fitAddon.fit(), 100);
+                }
+            });
+        });
+
+        // Выполнение команды
+        async function executeCommand() {
+            const input = document.getElementById('command-input');
+            const command = input.value.trim();
+
+            if (!command) return;
+
+            // Вывод команды в терминал
+            terminal.writeln(`\x1b[32m$\x1b[0m ${command}`);
+
+            try {
+                const response = await fetch('/console/api/execute', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ command })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    if (result.output) {
+                        // Разбиваем вывод на строки и выводим каждую отдельно
+                        const lines = result.output.split('\n');
+                        lines.forEach(line => terminal.writeln(line));
+                    }
+                } else {
+                    terminal.writeln(`\x1b[31mОшибка: ${result.error}\x1b[0m`);
+                }
+            } catch (error) {
+                terminal.writeln(`\x1b[31mОшибка выполнения: ${error.message}\x1b[0m`);
+            }
+
+            input.value = '';
+        }
+
+        // Управление сервисами
+        async function controlService(service, action) {
+            terminal.writeln(`\x1b[33m[${action}] ${service}...\x1b[0m`);
+
+            try {
+                const response = await fetch(`/console/api/${service}/${action}`, {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    terminal.writeln(`\x1b[32m✅ ${service} ${action}ed successfully\x1b[0m`);
+                    updateServiceStatus();
+                } else {
+                    terminal.writeln(`\x1b[31m❌ Ошибка: ${result.error}\x1b[0m`);
+                }
+            } catch (error) {
+                terminal.writeln(`\x1b[31m❌ Ошибка: ${error.message}\x1b[0m`);
+            }
+        }
+
+        // Запуск всех сервисов
+        async function startAllServices() {
+            terminal.writeln('\x1b[1;33m🚀 Запуск всех сервисов...\x1b[0m');
+
+            const services = ['bot', 'listener', 'scheduler'];
+            for (const service of services) {
+                await controlService(service, 'start');
+            }
+
+            terminal.writeln('\x1b[32m✅ Все сервисы запущены\x1b[0m');
+            updateServiceStatus();
+        }
+
+        // Остановка всех сервисов
+        async function stopAllServices() {
+            terminal.writeln('\x1b[1;31m🛑 Остановка всех сервисов...\x1b[0m');
+
+            const services = ['scheduler', 'listener', 'bot'];
+            for (const service of services) {
+                await controlService(service, 'stop');
+            }
+
+            terminal.writeln('\x1b[31m✅ Все сервисы остановлены\x1b[0m');
+            updateServiceStatus();
+        }
+
+        // Очистка терминала
+        function clearTerminal() {
+            terminal.clear();
+            terminal.writeln('\x1b[32mТерминал очищен\x1b[0m');
+        }
+
+        // Выполнение Python кода
+        async function executePython() {
+            const code = document.getElementById('python-code').value;
+            const outputDiv = document.getElementById('python-output');
+
+            outputDiv.innerHTML = '<span class="text-gray-500">Выполнение...</span>';
+
+            try {
+                const response = await fetch('/console/api/python', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ code })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    outputDiv.innerHTML = `<span class="text-green-400">${escapeHtml(result.output || 'Выполнено без вывода')}</span>`;
+                } else {
+                    outputDiv.innerHTML = `<span class="text-red-400">Ошибка:\n${escapeHtml(result.error)}</span>`;
+                }
+            } catch (error) {
+                outputDiv.innerHTML = `<span class="text-red-400">Ошибка выполнения: ${error.message}</span>`;
+            }
+        }
+
+        // Выполнение SQL запроса
+        async function executeSQL() {
+            const query = document.getElementById('sql-query').value;
+            const outputDiv = document.getElementById('sql-output');
+
+            outputDiv.innerHTML = '<span class="text-gray-500">Выполнение...</span>';
+
+            try {
+                const response = await fetch('/console/api/sql', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ query })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    if (Array.isArray(result.rows)) {
+                        // Форматируем результат как таблицу
+                        let html = '<table class="w-full text-left">';
+                        if (result.columns) {
+                            html += '<thead><tr class="border-b border-gray-600">';
+                            result.columns.forEach(col => {
+                                html += `<th class="py-2 px-2 text-blue-400">${escapeHtml(col)}</th>`;
+                            });
+                            html += '</tr></thead>';
+                        }
+                        html += '<tbody>';
+                        result.rows.forEach(row => {
+                            html += '<tr class="border-b border-gray-700">';
+                            if (Array.isArray(row)) {
+                                row.forEach(cell => {
+                                    html += `<td class="py-2 px-2">${escapeHtml(String(cell))}</td>`;
+                                });
+                            } else {
+                                html += `<td class="py-2 px-2">${escapeHtml(String(row))}</td>`;
+                            }
+                            html += '</tr>';
+                        });
+                        html += '</tbody></table>';
+                        outputDiv.innerHTML = html;
+                    } else {
+                        outputDiv.innerHTML = `<span class="text-green-400">Выполнено. Затронуто строк: ${result.affected || 0}</span>`;
+                    }
+                } else {
+                    outputDiv.innerHTML = `<span class="text-red-400">Ошибка SQL:\n${escapeHtml(result.error)}</span>`;
+                }
+            } catch (error) {
+                outputDiv.innerHTML = `<span class="text-red-400">Ошибка выполнения: ${error.message}</span>`;
+            }
+        }
+
+        // Очистка вывода Python
+        function clearPythonOutput() {
+            document.getElementById('python-output').innerHTML = '';
+        }
+
+        // Очистка вывода SQL
+        function clearSQLOutput() {
+            document.getElementById('sql-output').innerHTML = '';
+        }
+
+        // Загрузка логов
+        async function loadLogs() {
+            const level = document.getElementById('log-level').value;
+            const source = document.getElementById('log-source').value;
+            const container = document.getElementById('logs-container');
+
+            try {
+                const params = new URLSearchParams({ level, source, limit: 200 });
+                const response = await fetch(`/console/api/logs?${params}`);
+                const result = await response.json();
+
+                if (result.success && Array.isArray(result.logs)) {
+                    container.innerHTML = result.logs.map(log => {
+                        const levelClass = {
+                            'DEBUG': 'text-gray-400',
+                            'INFO': 'text-blue-400',
+                            'WARNING': 'text-yellow-400',
+                            'ERROR': 'text-red-400',
+                            'CRITICAL': 'text-red-600 font-bold'
+                        }[log.level] || 'text-gray-300';
+
+                        return `<div class="${levelClass} mb-1">[${log.timestamp}] [${log.source}] ${escapeHtml(log.message)}</div>`;
+                    }).join('');
+                    // Автопрокрутка вниз
+                    container.scrollTop = container.scrollHeight;
+                } else {
+                    container.innerHTML = '<span class="text-gray-500">Нет логов</span>';
+                }
+            } catch (error) {
+                container.innerHTML = `<span class="text-red-400">Ошибка загрузки: ${error.message}</span>`;
+            }
+        }
+
+        // Очистка логов
+        async function clearLogs() {
+            try {
+                await fetch('/console/api/logs/clear', { method: 'POST' });
+                document.getElementById('logs-container').innerHTML = '';
+            } catch (error) {
+                console.error('Ошибка очистки логов:', error);
+            }
+        }
+
+        // Утилита для экранирования HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Обновление статусов сервисов
+        async function updateServiceStatus() {
+            try {
+                const response = await fetch('/console/api/status');
+                const result = await response.json();
+
+                if (result.success) {
+                    const services = result.services || {};
+
+                    // Обновляем индикаторы
+                    ['bot', 'listener', 'scheduler'].forEach(service => {
+                        const indicator = document.getElementById(`${service}-status`);
+                        if (indicator && services[service] !== undefined) {
+                            if (services[service]) {
+                                indicator.style.backgroundColor = '#a3be8c';
+                                indicator.classList.remove('status-stopped');
+                            } else {
+                                indicator.style.backgroundColor = '#bf616a';
+                                indicator.classList.add('status-stopped');
+                            }
+                        }
+                    });
+
+                    // Обновляем кнопки Старт/Стоп
+                    const allRunning = ['bot', 'listener', 'scheduler'].every(s => services[s]);
+                    document.getElementById('start-all-btn').disabled = allRunning;
+                    document.getElementById('stop-all-btn').disabled = allRunning === false && Object.values(services).some(s => s);
+                }
+            } catch (error) {
+                console.error('Ошибка обновления статусов:', error);
+            }
+        }
+
+        // Инициализация при загрузке
+        document.addEventListener('DOMContentLoaded', () => {
+            initTerminal();
+            updateServiceStatus();
+            loadLogs();
+            checkAuthParameter(); // Проверка параметра auth=listener
+
+            // Обработка Enter в поле команд
+            document.getElementById('command-input').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    executeCommand();
+                }
+            });
+
+            // Обновление статусов каждые 5 секунд
+            setInterval(updateServiceStatus, 5000);
+
+            // Автообновление логов каждые 3 секунды
+            setInterval(loadLogs, 3000);
+        });
+
+        // Обновление статуса системы
+        (function() {
+            const STATUS = {
+                allRunning: { text: 'Система активна', class: 'bg-green-500 animate-pulse' },
+                allStopped: { text: 'Система остановлена', class: 'bg-red-500' },
+                partial: { text: 'Частичная работа', class: 'bg-yellow-500' }
+            };
+            function update() {
+                fetch('/api/services/status')
+                    .then(r => r.ok ? r.json() : null)
+                    .then(d => {
+                        if (d && d.success) {
+                            const s = d.services || {};
+                            const allRun = ['bot','listener','scheduler'].every(x => s[x]===true);
+                            const allStop = Object.values(s).every(x => !x);
+                            const st = allRun ? STATUS.allRunning : (allStop ? STATUS.allStopped : STATUS.partial);
+                            const i = document.getElementById('system-status-indicator');
+                            const t = document.getElementById('system-status-text');
+                            if (i) i.className = `w-2 h-2 rounded-full ${st.class}`;
+                            if (t) t.textContent = st.text;
+                        }
+                    });
+            }
+            update();
+            setInterval(update, 5000);
+        })();
+
+        // =====================================================================
+        // Глобальное модальное окно авторизации ListenerBot
+        // =====================================================================
+
+        let authCheckInterval = null;
+        let authStep = 'code';
+        let authModalVisible = false;
+
+        // Проверка необходимости авторизации
+        async function checkListenerAuthNeeded() {
+            try {
+                const response = await fetch('/listener-auth/api/listener/auth/check');
+                const result = await response.json();
+
+                if (result.success) {
+                    if (result.auth_needed && !authModalVisible) {
+                        const state = result.state || { step: 'code' };
+                        console.log('🔐 Авторизация требуется, открываем модалку:', state);
+                        openListenerAuthModal(state);
+                    }
+                }
+            } catch (error) {
+                console.error('Ошибка проверки авторизации:', error);
+            }
+        }
+
+        // Открыть модальное окно авторизации
+        function openListenerAuthModal(state) {
+            if (authModalVisible) return;
+
+            authModalVisible = true;
+            authStep = state.step || 'code';
+
+            document.getElementById('listener-auth-modal').classList.remove('hidden');
+            hideListenerAuthElement('auth-error');
+            hideListenerAuthElement('auth-success');
+            clearListenerAuthInputs();
+
+            if (state.phone_number) {
+                document.getElementById('auth-phone').textContent = state.phone_number;
+            }
+
+            updateListenerAuthStep();
+            startListenerAuthStatusCheck();
+        }
+
+        // Закрыть модальное окно
+        function closeListenerAuthModal() {
+            document.getElementById('listener-auth-modal').classList.add('hidden');
+            authModalVisible = false;
+            if (authCheckInterval) {
+                clearInterval(authCheckInterval);
+                authCheckInterval = null;
+            }
+        }
+
+        // Отменить авторизацию
+        async function cancelListenerAuth() {
+            try {
+                await fetch('/listener-auth/api/listener/auth/cancel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            } catch (e) {
+                console.error('Ошибка отмены:', e);
+            }
+            closeListenerAuthModal();
+        }
+
+        // Отправить данные авторизации
+        async function submitListenerAuth() {
+            const loading = document.getElementById('auth-loading');
+            const errorDiv = document.getElementById('auth-error');
+            const errorText = document.getElementById('auth-error-text');
+
+            hideListenerAuthElement('auth-error');
+            hideListenerAuthElement('auth-success');
+            loading.classList.remove('hidden');
+
+            try {
+                if (authStep === 'code') {
+                    const code = document.getElementById('auth-code').value.trim();
+                    if (!code) {
+                        showListenerAuthError('Введите код из Telegram');
+                        loading.classList.add('hidden');
+                        return;
+                    }
+
+                    const response = await fetch('/listener-auth/api/listener/auth/code', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ code })
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        document.getElementById('auth-code').value = '';
+                        loading.classList.add('hidden');
+                        // Ждем обновления статуса
+                    } else {
+                        showListenerAuthError(result.error || 'Ошибка отправки кода');
+                        loading.classList.add('hidden');
+                    }
+                } else if (authStep === 'password') {
+                    const password = document.getElementById('auth-password').value;
+                    if (!password) {
+                        showListenerAuthError('Введите облачный пароль');
+                        loading.classList.add('hidden');
+                        return;
+                    }
+
+                    const response = await fetch('/listener-auth/api/listener/auth/password', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ password })
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        document.getElementById('auth-password').value = '';
+                        // После успешного ввода пароля закрываем модалку
+                        showListenerAuthSuccess('Авторизация успешна!');
+                        setTimeout(() => {
+                            closeListenerAuthModal();
+                        }, 1000);
+                    } else {
+                        showListenerAuthError(result.error || 'Ошибка отправки пароля');
+                        loading.classList.add('hidden');
+                    }
+                }
+            } catch (error) {
+                showListenerAuthError('Ошибка сети: ' + error.message);
+                loading.classList.add('hidden');
+            }
+        }
+
+        // Показать ошибку
+        function showListenerAuthError(message) {
+            const errorDiv = document.getElementById('auth-error');
+            const errorText = document.getElementById('auth-error-text');
+            errorText.textContent = message;
+            errorDiv.classList.remove('hidden');
+        }
+
+        // Скрыть элемент
+        function hideListenerAuthElement(id) {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('hidden');
+        }
+
+        // Очистить поля ввода
+        function clearListenerAuthInputs() {
+            const codeInput = document.getElementById('auth-code');
+            const passInput = document.getElementById('auth-password');
+            if (codeInput) codeInput.value = '';
+            if (passInput) passInput.value = '';
+        }
+
+        // Обновить шаг авторизации
+        function updateListenerAuthStep() {
+            const codeForm = document.getElementById('code-form');
+            const passForm = document.getElementById('password-form');
+            const codeIndicator = document.getElementById('step-code-indicator');
+            const passIndicator = document.getElementById('step-password-indicator');
+            const submitBtn = document.getElementById('auth-submit-btn');
+            const message = document.getElementById('auth-message');
+
+            if (authStep === 'password') {
+                codeForm.classList.add('hidden');
+                passForm.classList.remove('hidden');
+                codeIndicator.classList.remove('bg-blue-500', 'animate-pulse');
+                codeIndicator.classList.add('bg-green-500');
+                passIndicator.classList.remove('bg-gray-600');
+                passIndicator.classList.add('bg-blue-500', 'animate-pulse');
+                if (submitBtn) submitBtn.innerHTML = '<i class="fas fa-check mr-2"></i>Войти';
+                if (message) message.textContent = 'Введите облачный пароль Telegram';
+            } else {
+                codeForm.classList.remove('hidden');
+                passForm.classList.add('hidden');
+                codeIndicator.classList.remove('bg-gray-600');
+                codeIndicator.classList.add('bg-blue-500', 'animate-pulse');
+                passIndicator.classList.remove('bg-blue-500', 'animate-pulse');
+                passIndicator.classList.add('bg-gray-600');
+                if (submitBtn) submitBtn.innerHTML = '<i class="fas fa-arrow-right mr-2"></i>Далее';
+                if (message) message.textContent = 'Код отправлен в Telegram';
+            }
+        }
+
+        // Проверка статуса авторизации
+        function startListenerAuthStatusCheck() {
+            if (authCheckInterval) clearInterval(authCheckInterval);
+            authCheckInterval = setInterval(async () => {
+                try {
+                    const response = await fetch('/listener-auth/api/listener/auth/status');
+                    const result = await response.json();
+
+                    if (result.success && result.state) {
+                        const state = result.state;
+                        if (state.step === 'password' && authStep !== 'password') {
+                            authStep = 'password';
+                            updateListenerAuthStep();
+                        } else if (state.step === 'completed' || state.step === null) {
+                            // Авторизация завершена
+                            showListenerAuthSuccess('Авторизация успешна!');
+                            closeListenerAuthModal();
+                        } else if (state.step === 'error') {
+                            showListenerAuthError(state.error || 'Ошибка авторизации');
+                        }
+                    }
+                } catch (error) {
+                    console.error('Ошибка проверки статуса:', error);
+                }
+            }, 2000);
+        }
+
+        // Показать успех
+        function showListenerAuthSuccess(message) {
+            const successDiv = document.getElementById('auth-success');
+            const successText = document.getElementById('auth-success-text');
+            successText.textContent = message;
+            successDiv.classList.remove('hidden');
+        }
+
+        // Обработка параметра URL auth=listener
+        function checkAuthParameter() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const authParam = urlParams.get('auth');
+            if (authParam === 'listener') {
+                console.log('🔐 Обнаружен параметр auth=listener, запускаем проверку авторизации');
+                checkListenerAuthNeeded();
+                // Очищаем URL
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+        }
+
+        // Открыть авторизацию из консоли (по кнопке)
+        async function openListenerAuthFromConsole() {
+            console.log('🔐 Открытие авторизации Listener из консоли...');
+            // Сначала пробуем запустить процесс авторизации через API
+            try {
+                const response = await fetch('/listener-auth/api/listener/auth/check');
+                const result = await response.json();
+                console.log('🔐 Результат проверки авторизации:', result);
+
+                if (result.success) {
+                    if (result.auth_needed) {
+                        // Авторизация требуется или уже запущена
+                        const state = result.state || { step: 'code' };
+                        openListenerAuthModal(state);
+                    } else {
+                        // Уже авторизован или listener не запущен
+                        const reason = result.reason || 'unknown';
+                        if (reason === 'already_authorized') {
+                            alert('✅ ListenerBot уже авторизован');
+                        } else if (reason === 'listener_not_running') {
+                            alert('⚠️ ListenerBot не запущен. Запустите его в консоли перед авторизацией.');
+                        } else {
+                            alert('ℹ️ ' + (result.message || 'Статус: ' + reason));
+                        }
+                    }
+                } else {
+                    alert('❌ Ошибка проверки статуса: ' + (result.error || 'Неизвестная ошибка'));
+                }
+            } catch (error) {
+                console.error('Ошибка проверки авторизации:', error);
+                alert('❌ Ошибка сети: ' + error.message);
+            }
+        }
+    </script>
+</body>
+</html>

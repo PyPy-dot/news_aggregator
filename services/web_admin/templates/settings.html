@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Настройки — Админ-панель</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3B82F6',
+                        secondary: '#10B981',
+                        accent: '#8B5CF6',
+                        dark: '#1F2937',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .sidebar-item:hover {
+            background: linear-gradient(90deg, rgba(59,130,246,0.1) 0%, transparent 100%);
+            border-left: 3px solid #3B82F6;
+        }
+        .sidebar-item.active {
+            background: linear-gradient(90deg, rgba(59,130,246,0.15) 0%, transparent 100%);
+            border-left: 3px solid #3B82F6;
+            color: #3B82F6;
+        }
+        .env-input {
+            transition: all 0.2s;
+        }
+        .env-input:focus {
+            border-color: #3B82F6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        .tab-btn.active {
+            border-bottom-color: #3B82F6;
+            color: #3B82F6;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div class="flex h-screen overflow-hidden">
+
+        <!-- Боковая панель -->
+        <aside class="w-64 bg-dark text-white flex-shrink-0 overflow-y-auto">
+            <!-- Логотип -->
+            <div class="p-6 border-b border-gray-700">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-newspaper text-white"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-lg font-bold">News Aggregator</h1>
+                        <p class="text-xs text-gray-400">Admin Panel v{{ version }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Навигация -->
+            <nav class="mt-6 px-3">
+                <p class="text-xs text-gray-500 uppercase tracking-wider mb-3 px-3">Основное</p>
+
+                <a href="/" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
+                    <i class="fas fa-home w-5"></i>
+                    <span class="ml-3">Главная</span>
+                </a>
+
+                <a href="/dashboard" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
+                    <i class="fas fa-chart-line w-5"></i>
+                    <span class="ml-3">Дашборд</span>
+                </a>
+
+                <a href="/news" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
+                    <i class="fas fa-newspaper w-5"></i>
+                    <span class="ml-3">Новости</span>
+                </a>
+
+                <a href="/channels" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
+                    <i class="fas fa-broadcast-tower w-5"></i>
+                    <span class="ml-3">Каналы</span>
+                </a>
+
+                <a href="/users" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
+                    <i class="fas fa-users w-5"></i>
+                    <span class="ml-3">Пользователи</span>
+                </a>
+
+                <p class="text-xs text-gray-500 uppercase tracking-wider mb-3 px-3 mt-6">Источники</p>
+
+                <a href="/tasks" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
+                    <i class="fas fa-tasks w-5"></i>
+                    <span class="ml-3">Задачи</span>
+                </a>
+
+                <a href="/rss" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
+                    <i class="fas fa-rss w-5"></i>
+                    <span class="ml-3">RSS ленты</span>
+                </a>
+
+                <a href="/web" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
+                    <i class="fas fa-globe w-5"></i>
+                    <span class="ml-3">Web парсинг</span>
+                </a>
+
+                <p class="text-xs text-gray-500 uppercase tracking-wider mb-3 px-3 mt-6">Инструменты</p>
+
+                <a href="/console" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
+                    <i class="fas fa-terminal w-5"></i>
+                    <span class="ml-3">Консоль</span>
+                </a>
+
+                <a href="/settings" class="sidebar-item active flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
+                    <i class="fas fa-cog w-5"></i>
+                    <span class="ml-3">Настройки</span>
+                </a>
+            </nav>
+        </aside>
+
+        <!-- Основной контент -->
+        <div class="flex-1 flex flex-col overflow-hidden">
+
+            <!-- Верхняя панель -->
+            <header class="bg-white shadow-sm border-b border-gray-200">
+                <div class="px-6 py-4 flex items-center justify-between">
+                    <div>
+                        <h2 class="text-2xl font-bold text-gray-800">Настройки</h2>
+                        <p class="text-sm text-gray-500 mt-1">Управление переменными окружения</p>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        {% if user and user.logged_in %}
+                        <div class="flex items-center space-x-3 pl-4 border-l border-gray-200">
+                            <div class="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center text-white font-semibold">
+                                {{ user.username[0].upper() if user.username else 'A' }}
+                            </div>
+                            <a href="/auth/logout" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm font-medium">
+                                <i class="fas fa-sign-out-alt mr-2"></i>
+                                Выйти
+                            </a>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </header>
+
+            <!-- Контент страницы -->
+            <main class="flex-1 overflow-y-auto p-6 bg-gray-50">
+                <div class="max-w-5xl mx-auto">
+
+                    <!-- Сообщение о сохранении -->
+                    <div id="save-message" class="hidden mb-6 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
+                        <i class="fas fa-check-circle mr-2"></i>
+                        <span id="save-message-text"></span>
+                    </div>
+
+                    <!-- Сообщение об ошибке -->
+                    <div id="error-message" class="hidden mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                        <i class="fas fa-exclamation-circle mr-2"></i>
+                        <span id="error-message-text"></span>
+                    </div>
+
+                    <!-- Вкладки категорий -->
+                    <div class="mb-6">
+                        <div class="border-b border-gray-200">
+                            <nav class="-mb-px flex space-x-6 overflow-x-auto">
+                                {% for category in grouped_vars.keys() %}
+                                <button
+                                    onclick="switchTab('{{ category }}')"
+                                    id="tab-{{ category }}"
+                                    class="tab-btn whitespace-nowrap pb-4 px-1 border-b-2 font-medium text-sm transition-colors {{ 'active border-blue-500 text-blue-600' if loop.first else 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300' }}"
+                                >
+                                    {{ category }}
+                                </button>
+                                {% endfor %}
+                            </nav>
+                        </div>
+                    </div>
+
+                    <!-- Форма настроек -->
+                    <form id="settings-form" class="bg-white rounded-lg shadow-sm border border-gray-200">
+                        <div class="p-6">
+                            {% for category, vars in grouped_vars.items() %}
+                            <div id="category-{{ category }}" class="category-content {{ 'hidden' if not loop.first }}">
+                                <h3 class="text-lg font-bold text-gray-800 mb-4">{{ category }}</h3>
+                                <div class="space-y-4">
+                                    {% for var in vars %}
+                                    <div class="grid grid-cols-3 gap-4 items-center">
+                                        <div>
+                                            <label class="block text-sm font-medium text-gray-700">
+                                                {{ var.key }}
+                                            </label>
+                                            <p class="text-xs text-gray-500 mt-0.5">{{ var.description }}</p>
+                                        </div>
+                                        <div class="col-span-2">
+                                            {% if var.type == 'boolean' %}
+                                            <select
+                                                name="{{ var.key }}"
+                                                class="env-input w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                            >
+                                                <option value="true" {{ 'selected' if var.value == 'true' }}>True</option>
+                                                <option value="false" {{ 'selected' if var.value == 'false' }}>False</option>
+                                            </select>
+                                            {% elif var.type == 'select' %}
+                                            <select
+                                                name="{{ var.key }}"
+                                                class="env-input w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                            >
+                                                {% for option in var.options %}
+                                                <option value="{{ option }}" {{ 'selected' if var.value == option }}>{{ option }}</option>
+                                                {% endfor %}
+                                            </select>
+                                            {% elif var.type == 'password' %}
+                                            <input
+                                                type="password"
+                                                name="{{ var.key }}"
+                                                value="{{ var.value }}"
+                                                class="env-input w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                            />
+                                            {% elif var.type == 'number' %}
+                                            <input
+                                                type="number"
+                                                name="{{ var.key }}"
+                                                value="{{ var.value }}"
+                                                class="env-input w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                            />
+                                            {% else %}
+                                            <input
+                                                type="text"
+                                                name="{{ var.key }}"
+                                                value="{{ var.value }}"
+                                                class="env-input w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                            />
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+
+                        <!-- Кнопки -->
+                        <div class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+                            <p class="text-xs text-gray-500">
+                                <i class="fas fa-info-circle mr-1"></i>
+                                Изменения вступят в силу после перезапуска приложения
+                            </p>
+                            <div class="flex items-center space-x-3">
+                                <button
+                                    type="button"
+                                    onclick="resetForm()"
+                                    class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm font-medium"
+                                >
+                                    <i class="fas fa-undo mr-2"></i>
+                                    Сбросить
+                                </button>
+                                <button
+                                    type="submit"
+                                    class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500 transition-colors text-sm font-medium"
+                                >
+                                    <i class="fas fa-save mr-2"></i>
+                                    Сохранить
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+
+                    <!-- Информация -->
+                    <div class="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <h4 class="text-sm font-bold text-blue-800 mb-2">
+                            <i class="fas fa-lightbulb mr-2"></i>
+                            Как использовать
+                        </h4>
+                        <ul class="text-sm text-blue-700 space-y-1">
+                            <li>• Измените значения переменных в форме выше</li>
+                            <li>• Нажмите "Сохранить" для записи в .env файл</li>
+                            <li>• Перезапустите приложение для применения изменений</li>
+                            <li>• Некоторые переменные требуют перезапуска конкретных сервисов</li>
+                        </ul>
+                    </div>
+
+                </div>
+            </main>
+
+            {% include 'components/footer.html' %}
+        </div>
+    </div>
+
+    <!-- Скрипты -->
+    <script>
+        // Переключение вкладок
+        function switchTab(category) {
+            // Скрываем все категории
+            document.querySelectorAll('.category-content').forEach(el => el.classList.add('hidden'));
+            // Показываем нужную
+            document.getElementById(`category-${category}`).classList.remove('hidden');
+
+            // Обновляем кнопки
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active', 'border-blue-500', 'text-blue-600');
+                btn.classList.add('border-transparent', 'text-gray-500');
+            });
+            const activeBtn = document.getElementById(`tab-${category}`);
+            activeBtn.classList.add('active', 'border-blue-500', 'text-blue-600');
+            activeBtn.classList.remove('border-transparent', 'text-gray-500');
+        }
+
+        // Сброс формы
+        function resetForm() {
+            if (confirm('Сбросить все изменения?')) {
+                document.getElementById('settings-form').reset();
+                hideMessage('save-message');
+                hideMessage('error-message');
+            }
+        }
+
+        // Показать сообщение
+        function showMessage(type, text) {
+            const saveMsg = document.getElementById('save-message');
+            const errorMsg = document.getElementById('error-message');
+
+            hideMessage('save-message');
+            hideMessage('error-message');
+
+            if (type === 'success') {
+                document.getElementById('save-message-text').textContent = text;
+                saveMsg.classList.remove('hidden');
+            } else {
+                document.getElementById('error-message-text').textContent = text;
+                errorMsg.classList.remove('hidden');
+            }
+        }
+
+        // Скрыть сообщение
+        function hideMessage(id) {
+            document.getElementById(id).classList.add('hidden');
+        }
+
+        // Отправка формы
+        document.getElementById('settings-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const formData = new FormData(e.target);
+            const variables = {};
+
+            for (const [key, value] of formData.entries()) {
+                variables[key] = value;
+            }
+
+            try {
+                const response = await fetch('/settings/api/env', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ variables })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showMessage('success', result.message);
+                } else {
+                    showMessage('error', result.error || 'Ошибка сохранения');
+                }
+            } catch (error) {
+                showMessage('error', 'Ошибка сети: ' + error.message);
+            }
+        });
+
+        // Обновление статуса системы
+        (function() {
+            const STATUS = {
+                allRunning: { text: 'Система активна', class: 'bg-green-500 animate-pulse' },
+                allStopped: { text: 'Система остановлена', class: 'bg-red-500' },
+                partial: { text: 'Частичная работа', class: 'bg-yellow-500' }
+            };
+            function update() {
+                fetch('/api/services/status')
+                    .then(r => r.ok ? r.json() : null)
+                    .then(d => {
+                        if (d && d.success) {
+                            const s = d.services || {};
+                            const allRun = ['bot','listener','scheduler'].every(x => s[x]===true);
+                            const allStop = Object.values(s).every(x => !x);
+                            const st = allRun ? STATUS.allRunning : (allStop ? STATUS.allStopped : STATUS.partial);
+                            const i = document.getElementById('system-status-indicator');
+                            const t = document.getElementById('system-status-text');
+                            if (i) i.className = `w-2 h-2 rounded-full ${st.class}`;
+                            if (t) t.textContent = st.text;
+                        }
+                    });
+            }
+            update();
+            setInterval(update, 5000);
+        })();
+    </script>
+</body>
+</html>

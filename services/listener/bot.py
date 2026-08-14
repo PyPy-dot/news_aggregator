@@ -271,51 +271,154 @@ class ListenerBot:
                 self._client_initialized = True
 
                 # Проверяем авторизацию после подключения
-                if await self.client.is_user_authorized():
-                    me = await self.client.get_me()
-                    logger.info(f"✅ Сессия активна: @{me.username} (ID: {me.id})")
+                try:
+                    is_authorized = await self.client.is_user_authorized()
+                except Exception as auth_err:
+                    error_str = str(auth_err)
+                    # Проверяем на AuthKeyUnregisteredError или ошибку SQLite
+                    if ('AuthKeyUnregistered' in type(auth_err).__name__ or
+                        'no such table' in error_str or
+                        'database disk image is malformed' in error_str):
+                        logger.warning(f"⚠️ Сессия повреждена: {error_str}")
+                        is_authorized = False
+                        # Помечаем для удаления
+                        self._client_initialized = False
+                        await self.client.disconnect()
+                        # Удаляем повреждённую сессию
+                        import os
+                        session_file = f"{session_name}.session"
+                        session_journal = f"{session_name}.session-journal"
+                        for f in [session_file, session_journal]:
+                            if os.path.exists(f):
+                                try:
+                                    os.remove(f)
+                                    logger.info(f"🗑️ Удалён файл сессии: {f}")
+                                except Exception as remove_err:
+                                    logger.warning(f"⚠️ Не удалось удалить {f}: {remove_err}")
+                        # Переподключаемся с чистой сессией
+                        logger.info("🔄 Переподключение с чистой сессией...")
+                        self.client = TelegramClient(
+                            session_name,
+                            api_id=settings.api_id,
+                            api_hash=settings.api_hash,
+                            connection_retries=3,
+                            retry_delay=1,
+                            timeout=30,
+                            use_ipv6=use_ipv6,
+                            flood_sleep_threshold=60,
+                            auto_reconnect=True,
+                            proxy=proxy,
+                            device_model="Telegram Desktop",
+                            system_version="Windows 10",
+                            app_version="4.9.2",
+                            lang_code="en",
+                            system_lang_code="en-US",
+                        )
+                        await self.client.connect()
+                        logger.info("✅ Подключение установлено после очистки сессии")
+                        self._client_initialized = True
+                        # Проверяем авторизацию ещё раз
+                        is_authorized = await self.client.is_user_authorized()
+                    else:
+                        raise
 
-                    # Проверяем, не истёк ли токен (попытка получить информацию)
+                if is_authorized:
                     try:
-                        await self.client.get_me()
-                        logger.info("✅ Токен сессии действителен")
-                    except Exception as e:
-                        logger.warning(f"⚠️ Токен сессии может быть недействителен: {e}")
-                        # Помечаем сессию как неавторизованную
+                        me = await self.client.get_me()
+                        logger.info(f"✅ Сессия активна: @{me.username} (ID: {me.id})")
+
+                        # Проверяем, не истёк ли токен (попытка получить информацию)
+                        try:
+                            await self.client.get_me()
+                            logger.info("✅ Токен сессии действителен")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Токен сессии может быть недействителен: {e}")
+                            # Помечаем сессию как неавторизованную
+                            self._client_initialized = False
+                            await self.client.disconnect()
+                            raise
+                    except Exception as me_err:
+                        logger.error(f"❌ Ошибка получения информации о пользователе: {me_err}")
+                        # Сессия повреждена - удаляем
+                        import os
+                        session_file = f"{session_name}.session"
+                        if os.path.exists(session_file):
+                            os.remove(session_file)
+                            logger.info(f"🗑️ Файл сессии {session_file} удалён")
                         self._client_initialized = False
                         await self.client.disconnect()
                         raise
 
             except Exception as e:
+                error_str = str(e)
                 logger.error(f"❌ Ошибка подключения к Telegram: {type(e).__name__}: {e}")
-                # Пробуем пересоздать клиент с чистой сессией
-                logger.info("🔄 Попытка пересоздать сессию...")
-                await self.client.disconnect()
-                # Удаляем файл сессии
-                import os
-                session_file = f"{session_name}.session"
-                if os.path.exists(session_file):
-                    os.remove(session_file)
-                    logger.info(f"🗑️ Сессия {session_file} удалена")
-                # Пересоздаём клиент
-                self.client = TelegramClient(
-                    session_name,
-                    api_id=settings.api_id,
-                    api_hash=settings.api_hash,
-                    connection_retries=3,
-                    retry_delay=1,
-                    timeout=30,
-                    use_ipv6=False,
-                    flood_sleep_threshold=60,
-                    auto_reconnect=True,
-                    proxy=proxy,
-                    device_model="Desktop",
-                    system_version="10",
-                    app_version="1.0.0",
-                )
-                await self.client.connect()
-                logger.info("✅ Подключение установлено после пересоздания сессии")
-                self._client_initialized = True
+
+                # Проверяем на ошибку SQLite
+                if 'no such table' in error_str or 'database disk image is malformed' in error_str:
+                    logger.error("🗄️ Обнаружено повреждение базы данных сессии!")
+                    logger.error("   Причина: Файл сессии повреждён (возможно, из-за сетевого диска)")
+
+                    # Удаляем все файлы сессии
+                    import os
+                    session_file = f"{session_name}.session"
+                    session_journal = f"{session_name}.session-journal"
+                    for f in [session_file, session_journal]:
+                        if os.path.exists(f):
+                            try:
+                                os.remove(f)
+                                logger.info(f"🗑️ Удалён файл: {f}")
+                            except Exception as remove_err:
+                                logger.warning(f"⚠️ Не удалось удалить {f}: {remove_err}")
+
+                    logger.info("🔄 Пересоздание клиента с чистой сессией...")
+                    # Пересоздаём клиент
+                    self.client = TelegramClient(
+                        session_name,
+                        api_id=settings.api_id,
+                        api_hash=settings.api_hash,
+                        connection_retries=3,
+                        retry_delay=1,
+                        timeout=30,
+                        use_ipv6=use_ipv6,
+                        flood_sleep_threshold=60,
+                        auto_reconnect=True,
+                        proxy=proxy,
+                        device_model="Desktop",
+                        system_version="10",
+                        app_version="1.0.0",
+                    )
+                    await self.client.connect()
+                    logger.info("✅ Подключение установлено после пересоздания сессии")
+                    self._client_initialized = True
+                else:
+                    # Другие ошибки подключения
+                    logger.info("🔄 Попытка пересоздать сессию...")
+                    await self.client.disconnect()
+                    # Удаляем файл сессии
+                    import os
+                    session_file = f"{session_name}.session"
+                    if os.path.exists(session_file):
+                        os.remove(session_file)
+                        logger.info(f"🗑️ Сессия {session_file} удалена")
+                    # Пересоздаём клиент
+                    self.client = TelegramClient(
+                        session_name,
+                        api_id=settings.api_id,
+                        api_hash=settings.api_hash,
+                        connection_retries=3,
+                        retry_delay=1,
+                        timeout=30,
+                        use_ipv6=False,
+                        flood_sleep_threshold=60,
+                        auto_reconnect=True,
+                        proxy=proxy,
+                        device_model="Desktop",
+                        system_version="10",
+                        app_version="1.0.0",
+                    )
+                    await self.client.connect()
+                    logger.info("✅ Подключение установлено после пересоздания сессии")
+                    self._client_initialized = True
 
             # Проверяем, есть ли строка сессии в окружении (для Docker/production)
             if settings.telegram_session_string:
@@ -329,14 +432,31 @@ class ListenerBot:
 
             if not await self.client.is_user_authorized():
                 logger.warning("⚠️ Требуется авторизация!")
-                logger.info("📝 Используйте консольный ввод для авторизации (безопасный метод)")
+                logger.info("📝 Для авторизации:")
+                logger.info("   1. Откройте веб-админку: http://localhost:8001/console")
+                logger.info("   2. Нажмите кнопку 'Telegram'")
+                logger.info("   3. Введите код из Telegram в модальном окне")
+                logger.info("")
+                logger.info("   ИЛИ введите код в этой консоли (ожидание 10 сек)...")
 
-                # Используем только консольную авторизацию
-                # Telegram блокирует передачу кодов ботам как нарушение безопасности
-                await self._console_auth()
+                # Запускаем авторизацию в фоне, чтобы не блокировать инициализацию
+                # Это позволяет веб-интерфейсу "перехватить" процесс авторизации
+                asyncio.create_task(self._console_auth())
 
-            me = await self.client.get_me()
-            logger.info(f"✅ UserBot авторизован: @{me.username} (ID: {me.id})")
+                # Возвращаем сразу - не пытаемся получить me на неавторизованном клиенте
+                # Веб-интерфейс или консоль завершат авторизацию
+                logger.info("ℹ️ ListenerBot готов к авторизации - следите за уведомлениями")
+                return
+
+            # Получаем информацию о пользователе
+            try:
+                me = await self.client.get_me()
+                if me:
+                    logger.info(f"✅ UserBot авторизован: @{me.username} (ID: {me.id})")
+                else:
+                    logger.warning("⚠️ get_me() вернул None - возможна проблема с авторизацией")
+            except Exception as e:
+                logger.warning(f"⚠️ Не удалось получить информацию о пользователе: {e}")
 
             # Сохраняем строку сессии для будущего использования (опционально)
             # session_str = self.client.session.save()
@@ -401,29 +521,231 @@ class ListenerBot:
 
     async def _console_auth(self) -> None:
         """
-        Авторизация через консольный ввод.
+        Авторизация через консольный ввод или веб-интерфейс.
 
-        Использует стандартный подход Telethon: input() для кода и пароля.
+        Поддерживает ввод кода и пароля:
+        - Через консоль (input())
+        - Через веб-интерфейс (браузер)
         """
         logger.info("🔐 АВТОРИЗАЦИЯ TELEGRAM")
         logger.info("📱 Код будет отправлен в ваше приложение Telegram")
-        logger.info("⚠️ Не пересылайте код никому — введите в консоль!")
+        logger.info("💻 Введите код в консоли ИЛИ в веб-интерфейсе (Админка → Консоль)")
 
         # Запрашиваем код
-        await self.client.send_code_request(settings.phone_number)
+        sent = await self.client.send_code_request(settings.phone_number)
+        phone_code_hash = sent.phone_code_hash
 
-        # Ввод кода через input() (как в Telethon)
-        code = input('Код из Telegram: ')
+        # Ждем код из консоли или браузера
+        code = await self._wait_for_code(phone_code_hash)
+        if not code:
+            logger.error("❌ Авторизация отменена: код не получен")
+            return
 
         try:
-            await self.client.sign_in(settings.phone_number, code)
+            await self.client.sign_in(settings.phone_number, code, phone_code_hash=phone_code_hash)
         except SessionPasswordNeededError:
             logger.warning("🔒 Требуется облачный пароль Telegram")
-            logger.warning("⚠️ Введите пароль (символы будут видны в консоли):")
-            password = input('Облачный пароль: ')
+            logger.warning("💻 Введите пароль в консоли ИЛИ в веб-интерфейсе")
+
+            # Ждем пароль из консоли или браузера
+            password = await self._wait_for_password()
+            if not password:
+                logger.error("❌ Авторизация отменена: пароль не получен")
+                return
+
             await self.client.sign_in(password=password)
 
         logger.info("✅ АВТОРИЗАЦИЯ УСПЕШНА")
+
+    async def _wait_for_code(self, phone_code_hash: str) -> Optional[str]:
+        """
+        Ждать ввод кода из консоли или браузера.
+
+        Args:
+            phone_code_hash: Хэш кода подтверждения от Telegram
+
+        Returns:
+            Код подтверждения или None
+        """
+        # Запускаем задачу ожидания из браузера
+        browser_task = asyncio.create_task(
+            self._get_code_from_browser(phone_code_hash)
+        )
+
+        # Запускаем задачу ожидания из консоли
+        console_task = asyncio.create_task(
+            self._get_code_from_console()
+        )
+
+        # Ждем первый результат
+        done, pending = await asyncio.wait(
+            [browser_task, console_task],
+            return_when=asyncio.FIRST_COMPLETED
+        )
+
+        # Отменяем оставшуюся задачу
+        for task in pending:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        # Возвращаем первый полученный код
+        for task in done:
+            try:
+                code = task.result()
+                if code:
+                    return code
+            except Exception as e:
+                logger.debug(f"Ошибка получения кода: {e}")
+
+        return None
+
+    async def _get_code_from_browser(self, phone_code_hash: str) -> Optional[str]:
+        """
+        Ждать ввод кода из браузера.
+
+        Returns:
+            Код подтверждения или None
+        """
+        try:
+            from services.web_admin.routes.listener_auth import wait_for_code
+            logger.info("🌐 Ожидание кода из браузера...")
+            code = await wait_for_code()
+            if code:
+                logger.info(f"✅ Код получен из браузера")
+            return code
+        except Exception as e:
+            logger.debug(f"Ошибка ожидания кода из браузера: {e}")
+            return None
+
+    async def _get_code_from_console(self) -> Optional[str]:
+        """
+        Ждать ввод кода из консоли с таймаутом.
+
+        Returns:
+            Код подтверждения или None
+        """
+        try:
+            logger.info("⌨️  Ожидание кода из консоли (таймаут 10 сек)...")
+            import sys
+            loop = asyncio.get_event_loop()
+
+            def read_input():
+                print('Код из Telegram: ', end='', flush=True)
+                try:
+                    return sys.stdin.readline().strip()
+                except Exception:
+                    return None
+
+            # Таймаут 10 секунд на ввод кода из консоли
+            # Если код не введён, даём шанс браузеру
+            try:
+                code = await asyncio.wait_for(
+                    loop.run_in_executor(None, read_input),
+                    timeout=10.0
+                )
+                if code:
+                    logger.info(f"✅ Код получен из консоли")
+                    return code
+            except asyncio.TimeoutError:
+                logger.debug("⏰ Таймаут ожидания кода из консоли")
+                return None
+        except Exception as e:
+            logger.debug(f"Ошибка ожидания кода из консоли: {e}")
+            return None
+
+    async def _wait_for_password(self) -> Optional[str]:
+        """
+        Ждать ввод облачного пароля из консоли или браузера.
+
+        Returns:
+            Пароль или None
+        """
+        # Запускаем задачу ожидания из браузера
+        browser_task = asyncio.create_task(self._get_password_from_browser())
+
+        # Запускаем задачу ожидания из консоли
+        console_task = asyncio.create_task(self._get_password_from_console())
+
+        # Ждем первый результат
+        done, pending = await asyncio.wait(
+            [browser_task, console_task],
+            return_when=asyncio.FIRST_COMPLETED
+        )
+
+        # Отменяем оставшуюся задачу
+        for task in pending:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        # Возвращаем первый полученный пароль
+        for task in done:
+            try:
+                password = task.result()
+                if password:
+                    return password
+            except Exception as e:
+                logger.debug(f"Ошибка получения пароля: {e}")
+
+        return None
+
+    async def _get_password_from_browser(self) -> Optional[str]:
+        """
+        Ждать ввод пароля из браузера.
+
+        Returns:
+            Пароль или None
+        """
+        try:
+            from services.web_admin.routes.listener_auth import wait_for_password
+            logger.info("🌐 Ожидание пароля из браузера...")
+            password = await wait_for_password()
+            if password:
+                logger.info(f"✅ Пароль получен из браузера")
+            return password
+        except Exception as e:
+            logger.debug(f"Ошибка ожидания пароля из браузера: {e}")
+            return None
+
+    async def _get_password_from_console(self) -> Optional[str]:
+        """
+        Ждать ввод пароля из консоли с таймаутом.
+
+        Returns:
+            Пароль или None
+        """
+        try:
+            logger.info("⌨️  Ожидание пароля из консоли (таймаут 10 сек)...")
+            import sys
+            loop = asyncio.get_event_loop()
+
+            def read_input():
+                print('Облачный пароль: ', end='', flush=True)
+                try:
+                    return sys.stdin.readline().strip()
+                except Exception:
+                    return None
+
+            # Таймаут 10 секунд на ввод пароля из консоли
+            try:
+                password = await asyncio.wait_for(
+                    loop.run_in_executor(None, read_input),
+                    timeout=10.0
+                )
+                if password:
+                    logger.info(f"✅ Пароль получен из консоли")
+                    return password
+            except asyncio.TimeoutError:
+                logger.debug("⏰ Таймаут ожидания пароля из консоли")
+                return None
+        except Exception as e:
+            logger.debug(f"Ошибка ожидания пароля из консоли: {e}")
+            return None
 
 
     async def start(self) -> None:
@@ -435,6 +757,12 @@ class ListenerBot:
         # Инициализируем клиент если нужно
         if not self._client_initialized:
             await self.initialize()
+
+        # Проверяем, подключен ли клиент (может быть отключен после stop())
+        if self.client and not self.client.is_connected():
+            logger.info("🔄 Клиент отключен, подключаем заново...")
+            await self.client.connect()
+            self._client_initialized = True
 
         # Инициализация сервисов
         self._init_services()
@@ -492,7 +820,52 @@ class ListenerBot:
             logger.info("⌨️ UserBot получил KeyboardInterrupt")
             raise
         except Exception as e:
-            logger.error(f"❌ Ошибка UserBot: {type(e).__name__}: {e}")
+            error_msg = str(e)
+            error_type = type(e).__name__
+
+            # Проверяем на ошибку сессии AuthKeyUnregisteredError
+            if 'AuthKeyUnregistered' in error_type or 'AuthKeyUnregistered' in error_msg:
+                logger.error("❌ Сессия Telegram недействительна (AuthKeyUnregisteredError)!")
+                logger.error("   Причина: Ключ сессии удалён на сервере Telegram")
+
+                # Автоматически удаляем файл сессии
+                import os
+                session_file = "userbot.session"
+                session_file_data = "userbot.session-journal"
+
+                if os.path.exists(session_file):
+                    try:
+                        os.remove(session_file)
+                        logger.info(f"🗑️ Файл сессии {session_file} удалён")
+                    except Exception as remove_err:
+                        logger.error(f"❌ Не удалось удалить сессию: {remove_err}")
+
+                if os.path.exists(session_file_data):
+                    try:
+                        os.remove(session_file_data)
+                        logger.info(f"🗑️ Файл {session_file_data} удалён")
+                    except Exception as remove_err:
+                        logger.error(f"❌ Не удалось удалить журнал сессии: {remove_err}")
+
+                logger.error("   Решение: Перезапустите ListenerBot для новой авторизации")
+                logger.error("   Откройте веб-админку: http://localhost:8001/console → Telegram")
+
+                # Останавливаем клиент
+                try:
+                    await self.client.disconnect()
+                except Exception:
+                    pass
+
+                # Не выбрасываем ошибку дальше - позволяем сервису продолжить работу
+                # (без мониторинга каналов до новой авторизации)
+                logger.warning("⚠️ ListenerBot остановлен до новой авторизации")
+                return
+
+            elif 'session' in error_msg.lower():
+                logger.error("❌ Ошибка сессии Telegram!")
+                logger.error("   Решение: Удалите файл userbot.session и перезапустите ListenerBot")
+            else:
+                logger.error(f"❌ Ошибка UserBot: {error_type}: {e}")
             raise
 
     async def stop(self) -> None:
@@ -556,12 +929,34 @@ class ListenerBot:
                     try:
                         await self.client._session.flush()
                         logger.debug("✅ Сессия Telethon синхронизирована")
-                    except Exception as e:
-                        logger.debug(f"⚠️ Ошибка синхронизации сессии Telethon: {e}")
+                    except Exception as flush_err:
+                        error_str = str(flush_err)
+                        # Игнорируем ошибки SQLite - сессия может быть повреждена
+                        if 'no such table' in error_str or 'database disk image is malformed' in error_str:
+                            logger.debug(f"⚠️ Сессия повреждена, пропускаем синхронизацию")
+                        else:
+                            logger.debug(f"⚠️ Ошибка синхронизации сессии Telethon: {flush_err}")
+
                 await self.client.disconnect()
                 logger.info("✅ Telegram клиент отключён")
             except Exception as e:
-                logger.error(f"❌ Ошибка отключения Telegram клиента: {e}")
+                error_str = str(e)
+                # Игнорируем ошибки SQLite - сессия может быть повреждена
+                if 'no such table' in error_str or 'database disk image is malformed' in error_str:
+                    logger.warning(f"⚠️ Сессия SQLite повреждена - будет пересоздана при следующем запуске")
+                    # Удаляем повреждённые файлы сессии
+                    import os
+                    session_file = "userbot.session"
+                    session_journal = "userbot.session-journal"
+                    for f in [session_file, session_journal]:
+                        if os.path.exists(f):
+                            try:
+                                os.remove(f)
+                                logger.info(f"🗑️ Удалён повреждённый файл: {f}")
+                            except Exception as remove_err:
+                                logger.warning(f"⚠️ Не удалось удалить {f}: {remove_err}")
+                else:
+                    logger.error(f"❌ Ошибка отключения Telegram клиента: {e}")
 
         # 6. Закрываем сессию БД
         if hasattr(self, '_db_session') and self._db_session:

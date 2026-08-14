@@ -137,7 +137,7 @@ class TestNewsGenerationService:
         """Тест возврата None при ошибке."""
         with patch('services.news.generation.EditorAgent') as MockEditor:
             mock_editor = AsyncMock()
-            mock_editor.generate = AsyncMock(side_effect=Exception("AI error"))
+            mock_editor.generate_news = AsyncMock(side_effect=Exception("AI error"))
             MockEditor.return_value = mock_editor
 
             news_id = await generation_service.generate_news(

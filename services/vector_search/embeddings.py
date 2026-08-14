@@ -4,6 +4,7 @@ Embedding Service — генерация векторных эмбеддинго
 
 import asyncio
 import logging
+import warnings
 from functools import lru_cache
 from typing import Optional
 
@@ -12,6 +13,14 @@ from sentence_transformers import SentenceTransformer
 from services.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+# Подавляем предупреждение transformers о clean_up_tokenization_spaces
+warnings.filterwarnings(
+    'ignore',
+    message='.*clean_up_tokenization_spaces.*',
+    category=FutureWarning,
+    module='transformers'
+)
 
 # Модель для русскоязычных текстов (paraphrase-multilingual работает с русским)
 DEFAULT_MODEL_NAME = 'paraphrase-multilingual-MiniLM-L12-v2'

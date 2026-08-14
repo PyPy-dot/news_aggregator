@@ -40,10 +40,11 @@ class TestCategorizationTask:
 class TestCategorizationQueue:
     """Тесты для CategorizationQueue."""
 
-    def test_stop(self):
+    @pytest.mark.asyncio
+    async def test_stop(self):
         """Тест остановки очереди."""
         queue = CategorizationQueue()
-        queue.stop()
+        await queue.stop()
         assert queue._running is False
 
 

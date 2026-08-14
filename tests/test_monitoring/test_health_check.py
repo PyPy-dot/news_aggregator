@@ -286,11 +286,20 @@ class TestBuiltInChecks:
         from services.database import IDatabaseService
         from services.database.enums import DatabaseType
 
-        mock_db_service = AsyncMock()
+        mock_db_service = MagicMock()
         mock_db_service.db_type = DatabaseType.SQLITE
+
+        # Правильная настройка async context manager с async-coroutine mocks
         mock_session = AsyncMock()
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        async def async_enter():
+            return mock_session
+
+        async def async_exit(*args):
+            return None
+
+        mock_session.__aenter__ = async_enter
+        mock_session.__aexit__ = async_exit
         mock_db_service.session_factory.return_value = mock_session
 
         with patch('services.database.get_database_service', return_value=mock_db_service):
@@ -342,10 +351,19 @@ class TestBuiltInChecks:
     @pytest.mark.asyncio
     async def test_check_scheduler_health_mock(self):
         """Тест: проверка планировщика (mock)."""
-        mock_db_service = AsyncMock()
+        mock_db_service = MagicMock()
+
+        # Правильная настройка async context manager с async-coroutine mocks
         mock_session = AsyncMock()
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        async def async_enter():
+            return mock_session
+
+        async def async_exit(*args):
+            return None
+
+        mock_session.__aenter__ = async_enter
+        mock_session.__aexit__ = async_exit
         mock_db_service.session_factory.return_value = mock_session
 
         mock_result = MagicMock()

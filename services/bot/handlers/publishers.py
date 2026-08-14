@@ -6,7 +6,7 @@
 
 import logging
 from aiogram import Router, F, types
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 
@@ -14,6 +14,7 @@ from services.database import get_database_service
 from database import RepositoryFactory
 from services.bot.handlers.keyboards import (
     publishers_menu_kb,
+    publishers_menu_inline_kb,
     publishers_list_view_kb,
     create_publisher_action_kb,
     create_publishers_choice_kb,
@@ -32,43 +33,58 @@ router = Router()
 
 # === Команда /publishers ===
 @router.message(F.text == '📢 Каналы публикации')
-async def cmd_publishers(message: Message):
+async def cmd_publishers(message: Message, state: FSMContext):
     """Показать меню управления каналами публикации."""
     if not await check_admin_access(message):
         return
+
+    # Сбрасываем состояние чтобы inline кнопки работали
+    await state.clear()
 
     await message.answer(
         "📢 **Управление каналами публикации**\n\n"
         "Здесь вы можете добавлять и управлять Telegram-каналами, "
         "в которые будут публиковаться новости.\n\n"
         "Выберите действие:",
-        reply_markup=publishers_menu_kb,
+        reply_markup=publishers_menu_inline_kb,
+        parse_mode='Markdown'
     )
 
 
-# === Список каналов публикации (reply kb кнопка) ===
-@router.message(F.text == '📋 Список каналов')
-async def list_publishers(message: Message):
+# === Список каналов публикации (callback) ===
+@router.callback_query(F.data == 'publishers_list')
+async def cb_list_publishers(callback: CallbackQuery):
     """Показать список всех каналов публикации с кнопками управления."""
-    if not await check_admin_access(message):
+    if not await check_admin_access(callback):
         return
+
+    await callback.answer('')
 
     async with get_database_service().session_context() as session:
         factory = RepositoryFactory(session)
         publishers = await factory.publishers().get_all(active_only=False)
 
     if not publishers:
-        await message.answer(
-            "📭 Пока нет добавленных каналов публикации.\n\n"
-            "Используйте кнопку '➕ Добавить канал', чтобы добавить первый.",
-            reply_markup=publishers_menu_kb,
-        )
+        try:
+            await callback.message.edit_text(
+                "📭 Пока нет добавленных каналов публикации.\n\n"
+                "Используйте кнопку '➕ Добавить канал', чтобы добавить первый.",
+                reply_markup=publishers_menu_inline_kb,
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logger.debug(f"Не удалось отредактировать сообщение: {e}")
+            await callback.message.answer(
+                "📭 Пока нет добавленных каналов публикации.\n\n"
+                "Используйте кнопку '➕ Добавить канал', чтобы добавить первый.",
+                reply_markup=publishers_menu_inline_kb,
+                parse_mode='Markdown'
+            )
         return
 
     text = "📢 **Каналы публикации:**\n\n"
 
     # Создаём inline-клавиатуру с кнопками для каждого канала
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     inline_buttons = []
 
     for pub in publishers:
@@ -83,7 +99,6 @@ async def list_publishers(message: Message):
         )
 
         # Добавляем кнопку удаления с названием канала
-        # Обрезаем название если слишком длинное (max 30 символов для кнопки)
         short_title = pub.title[:28] + '...' if len(pub.title) > 30 else pub.title
         inline_buttons.append([
             InlineKeyboardButton(
@@ -99,24 +114,41 @@ async def list_publishers(message: Message):
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=inline_buttons)
 
-    await message.answer(text, reply_markup=keyboard)
+    try:
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode='Markdown')
+    except Exception as e:
+        logger.debug(f"Не удалось отредактировать сообщение: {e}")
+        await callback.message.answer(text, reply_markup=keyboard, parse_mode='Markdown')
 
 
-# === Добавить канал публикации (через reply KB) ===
-@router.message(F.text == '➕ Добавить канал')
-async def add_publisher_start(message: Message, state: FSMContext):
+# === Добавить канал публикации (callback) ===
+@router.callback_query(F.data == 'publishers_add')
+async def cb_add_publisher_start(callback: CallbackQuery, state: FSMContext):
     """Начать процесс добавления канала публикации через выбор канала."""
-    if not await check_admin_access(message):
+    if not await check_admin_access(callback):
         return
 
+    await callback.answer('')
     await state.set_state(PublisherStates.waiting_for_channel)
-    await message.answer(
-        "➕ **Добавление канала публикации**\n\n"
-        "Нажмите кнопку ниже и выберите канал, в который хотите публиковать новости.\n"
-        "Бот автоматически получит название и описание канала.\n\n"
-        "Для отмены нажмите /cancel",
-        reply_markup=add_publisher_kb,
-    )
+    try:
+        await callback.message.edit_text(
+            "➕ **Добавление канала публикации**\n\n"
+            "Нажмите кнопку ниже и выберите канал, в который хотите публиковать новости.\n"
+            "Бот автоматически получит название и описание канала.\n\n"
+            "Для отмены нажмите '🔙 Назад в меню каналов' или /cancel",
+            reply_markup=add_publisher_kb,
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        logger.debug(f"Не удалось отредактировать сообщение: {e}")
+        await callback.message.answer(
+            "➕ **Добавление канала публикации**\n\n"
+            "Нажмите кнопку ниже и выберите канал, в который хотите публиковать новости.\n"
+            "Бот автоматически получит название и описание канала.\n\n"
+            "Для отмены нажмите '🔙 Назад в меню каналов' или /cancel",
+            reply_markup=add_publisher_kb,
+            parse_mode='Markdown'
+        )
 
 
 @router.message(StateFilter(PublisherStates.waiting_for_channel), F.chat_shared)
@@ -136,6 +168,60 @@ async def handle_channel_shared(message: Message, state: FSMContext):
     # ChatShared не имеет description, используем пустую строку
     description = ""
 
+    # === ПРОВЕРКА ПРАВ БОТА В КАНАЛЕ ===
+    # Проверяем, является ли бот администратором/владельцем канала с правом публикации
+    try:
+        from services.bot.bot import get_bot_instance_async
+        from aiogram.types import ChatMemberAdministrator, ChatMemberOwner
+
+        bot = await get_bot_instance_async()
+        member = await bot.get_chat_member(chat_id=channel_id, user_id=bot.id)
+
+        # Проверяем права
+        has_post_rights = False
+
+        if isinstance(member, ChatMemberOwner):
+            # Владелец всегда имеет все права
+            has_post_rights = True
+            logger.info(f"✅ Бот является владельцем канала {title}")
+        elif isinstance(member, ChatMemberAdministrator):
+            # Администратор — проверяем право публикации
+            has_post_rights = member.can_post_messages
+            logger.info(f"✅ Бот является администратором канала {title}, can_post_messages={has_post_rights}")
+        else:
+            # Бот не администратор и не владелец
+            logger.warning(f"⚠️ Бот не является администратором/владельцем канала {title} (статус: {member.status})")
+
+        if not has_post_rights:
+            bot_username = (await bot.get_me()).username
+            await message.answer(
+                f"❌ **Бот не имеет прав для публикации**\n\n"
+                f"📢 {title}\n\n"
+                f"Для добавления канала публикации бот должен быть:\n"
+                f"• **Владельцем** канала, ИЛИ\n"
+                f"• **Администратором** с правом 'Публикация сообщений'\n\n"
+                f"**Как исправить:**\n"
+                f"1. Откройте настройки канала\n"
+                f"2. Добавьте @{bot_username} как администратора\n"
+                f"3. Дайте право 'Публикация сообщений'\n"
+                f"4. Попробуйте добавить канал снова",
+                parse_mode='Markdown'
+            )
+            await state.clear()
+            return
+    except Exception as e:
+        logger.error(f"Ошибка проверки прав бота в канале {channel_id}: {type(e).__name__}: {e}")
+        await message.answer(
+            f"❌ **Ошибка проверки прав**\n\n"
+            f"Не удалось проверить права бота в канале.\n\n"
+            f"Убедитесь что:\n"
+            f"• Бот добавлен в канал\n"
+            f"• Бот является администратором с правом публикации",
+            parse_mode='Markdown'
+        )
+        await state.clear()
+        return
+
     # === ПРОВЕРКА НА ДУБЛИКАТ (до выбора категории) ===
     async with get_database_service().session_context() as session:
         factory = RepositoryFactory(session)
@@ -149,7 +235,8 @@ async def handle_channel_shared(message: Message, state: FSMContext):
                 f"• Название: {existing.title}\n"
                 f"• Категория: {existing.category or 'не указана'}\n\n"
                 "Если нужно обновить категорию, сначала удалите старый канал.",
-                reply_markup=publishers_menu_kb,
+                reply_markup=publishers_menu_inline_kb,
+                parse_mode='Markdown'
             )
             await state.clear()
             return
@@ -220,7 +307,8 @@ async def save_publisher_without_category(
         f"📝 Описание: {description[:100] if description else 'Нет'}\n"
         f"📁 Категория: не указана\n\n"
         "Теперь вы можете выбирать этот канал для публикации новостей.",
-        reply_markup=publishers_menu_kb,
+        reply_markup=publishers_menu_inline_kb,
+        parse_mode='Markdown'
     )
 
     await state.clear()
@@ -253,14 +341,27 @@ async def handle_category_selected(callback: CallbackQuery, state: FSMContext):
 
         if existing:
             await callback.answer('⚠️ Канал уже существует', show_alert=True)
-            await callback.message.answer(
-                f"⚠️ **Канал уже существует!**\n\n"
-                f"📢 Канал с ID `{channel_id}` уже добавлен:\n"
-                f"• Название: {existing.title}\n"
-                f"• Категория: {existing.category or 'не указана'}\n\n"
-                "Если нужно обновить категорию, сначала удалите старый канал.",
-                reply_markup=publishers_menu_kb,
-            )
+            try:
+                await callback.message.edit_text(
+                    f"⚠️ **Канал уже существует!**\n\n"
+                    f"📢 Канал с ID `{channel_id}` уже добавлен:\n"
+                    f"• Название: {existing.title}\n"
+                    f"• Категория: {existing.category or 'не указана'}\n\n"
+                    "Если нужно обновить категорию, сначала удалите старый канал.",
+                    reply_markup=publishers_menu_inline_kb,
+                    parse_mode='Markdown'
+                )
+            except Exception as e:
+                logger.debug(f"Не удалось отредактировать сообщение: {e}")
+                await callback.message.answer(
+                    f"⚠️ **Канал уже существует!**\n\n"
+                    f"📢 Канал с ID `{channel_id}` уже добавлен:\n"
+                    f"• Название: {existing.title}\n"
+                    f"• Категория: {existing.category or 'не указана'}\n\n"
+                    "Если нужно обновить категорию, сначала удалите старый канал.",
+                    reply_markup=publishers_menu_inline_kb,
+                    parse_mode='Markdown'
+                )
             await state.clear()
             return
 
@@ -272,15 +373,29 @@ async def handle_category_selected(callback: CallbackQuery, state: FSMContext):
             category=category_name,
         )
 
-    await callback.message.answer(
-        f"✅ **Канал добавлен!**\n\n"
-        f"📢 Название: {title}\n"
-        f"🆔 ID: `{channel_id}`\n"
-        f"📁 Категория: **{category_name}**\n"
-        f"📝 Описание: {description[:100] if description else 'Нет'}\n\n"
-        "Теперь вы можете выбирать этот канал для публикации новостей.",
-        reply_markup=publishers_menu_kb,
-    )
+    try:
+        await callback.message.edit_text(
+            f"✅ **Канал добавлен!**\n\n"
+            f"📢 Название: {title}\n"
+            f"🆔 ID: `{channel_id}`\n"
+            f"📁 Категория: **{category_name}**\n"
+            f"📝 Описание: {description[:100] if description else 'Нет'}\n\n"
+            "Теперь вы можете выбирать этот канал для публикации новостей.",
+            reply_markup=publishers_menu_inline_kb,
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        logger.debug(f"Не удалось отредактировать сообщение: {e}")
+        await callback.message.answer(
+            f"✅ **Канал добавлен!**\n\n"
+            f"📢 Название: {title}\n"
+            f"🆔 ID: `{channel_id}`\n"
+            f"📁 Категория: **{category_name}**\n"
+            f"📝 Описание: {description[:100] if description else 'Нет'}\n\n"
+            "Теперь вы можете выбирать этот канал для публикации новостей.",
+            reply_markup=publishers_menu_inline_kb,
+            parse_mode='Markdown'
+        )
     logger.info(f"✅ Добавлен канал публикации: {title} (категория: {category_name})")
 
     await callback.answer()
@@ -294,10 +409,17 @@ async def cancel_add_publisher(callback: CallbackQuery, state: FSMContext):
         return
 
     await state.clear()
-    await callback.message.answer(
-        "❌ Добавление канала отменено.",
-        reply_markup=publishers_menu_kb,
-    )
+    try:
+        await callback.message.edit_text(
+            "❌ Добавление канала отменено.",
+            reply_markup=publishers_menu_inline_kb
+        )
+    except Exception as e:
+        logger.debug(f"Не удалось отредактировать сообщение: {e}")
+        await callback.message.answer(
+            "❌ Добавление канала отменено.",
+            reply_markup=publishers_menu_inline_kb
+        )
     await callback.answer()
 
 
@@ -311,8 +433,9 @@ async def handle_other_input(message: Message, state: FSMContext):
     if message.text in ('🔙 Назад', '🔙 Назад в меню каналов'):
         await state.clear()
         await message.answer(
-            "🔙 Возврат в меню управления каналами.",
-            reply_markup=publishers_menu_kb,
+            "🔙 Возврат в меню управления каналами.\n\nВыберите действие:",
+            reply_markup=publishers_menu_inline_kb,
+            parse_mode='Markdown'
         )
         return
 
@@ -445,11 +568,24 @@ async def cb_delete_publisher(callback: CallbackQuery):
         publishers = await factory.publishers().get_all(active_only=False)
 
     if not publishers:
-        await callback.message.edit_text(
-            "📢 **Каналы публикации**\n\n"
-            "📭 Пока нет добавленных каналов.\n\n"
-            "Используйте кнопку '➕ Добавить канал', чтобы добавить первый.",
-        )
+        # Нет каналов — показываем меню с кнопкой добавления
+        try:
+            await callback.message.edit_text(
+                "📢 **Каналы публикации**\n\n"
+                "📭 Пока нет добавленных каналов.\n\n"
+                "Используйте кнопку ниже, чтобы добавить первый канал:",
+                reply_markup=publishers_menu_inline_kb,
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logger.debug(f"Не удалось отредактировать сообщение: {e}")
+            await callback.message.answer(
+                "📢 **Каналы публикации**\n\n"
+                "📭 Пока нет добавленных каналов.\n\n"
+                "Используйте кнопку ниже, чтобы добавить первый канал:",
+                reply_markup=publishers_menu_inline_kb,
+                parse_mode='Markdown'
+            )
         return
 
     text = "📢 **Каналы публикации:**\n\n"
@@ -496,17 +632,29 @@ async def cb_delete_publisher(callback: CallbackQuery):
 
 # === Назад в меню publisher'ов из списка ===
 @router.callback_query(F.data == 'back_to_publishers_menu')
-async def cb_back_to_publishers_menu(callback: CallbackQuery):
+async def cb_back_to_publishers_menu(callback: CallbackQuery, state: FSMContext):
     """Вернуться в меню publisher'ов из списка каналов."""
     if not await check_admin_access(callback):
         return
 
-    await callback.answer()
-    await callback.message.answer(
-        "📢 **Управление каналами публикации**\n\n"
-        "Выберите действие:",
-        reply_markup=publishers_menu_kb,
-    )
+    await callback.answer('')
+    # Сбрасываем состояние
+    await state.clear()
+    try:
+        await callback.message.edit_text(
+            "📢 **Управление каналами публикации**\n\n"
+            "Выберите действие:",
+            reply_markup=publishers_menu_inline_kb,
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        logger.debug(f"Не удалось отредактировать сообщение: {e}")
+        await callback.message.answer(
+            "📢 **Управление каналами публикации**\n\n"
+            "Выберите действие:",
+            reply_markup=publishers_menu_inline_kb,
+            parse_mode='Markdown'
+        )
 
 
 # === Публикация в выбранный канал ===
@@ -564,16 +712,42 @@ async def cb_cancel_publish(callback: CallbackQuery):
     await callback.message.answer("❌ Публикация отменена.", reply_markup=publishers_list_view_kb)
 
 
-# === Назад в главное меню ===
+# === Назад в главное меню (callback) ===
+@router.callback_query(F.data == 'back_to_admin_menu')
+async def cb_back_to_admin_menu(callback: CallbackQuery, state: FSMContext):
+    """Вернуться в главное меню из меню publisher'ов."""
+    if not await check_admin_access(callback):
+        return
+
+    await callback.answer('')
+    await state.clear()
+    from services.bot.handlers.keyboards import admin_kb
+    try:
+        await callback.message.edit_text(
+            "🔙 **Возврат в главное меню администратора**",
+            reply_markup=admin_kb,
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        logger.debug(f"Не удалось отредактировать сообщение: {e}")
+        await callback.message.answer(
+            "🔙 **Возврат в главное меню администратора**",
+            reply_markup=admin_kb,
+            parse_mode='Markdown'
+        )
+
+
+# === Назад в главное меню (reply keyboard - для совместимости) ===
 @router.message(F.text == '🔙 Назад в главное меню')
 async def back_to_main_menu_from_publishers(message: Message, state: FSMContext):
-    """Вернуться в главное меню из меню publisher'ов."""
-    from services.bot.handlers.keyboards import kb1
+    """Вернуться в главное меню из меню publisher'ов (устаревший хендлер)."""
+    from services.bot.handlers.keyboards import admin_kb
 
     await state.clear()
     await message.answer(
-        "🔙 Возврат в главное меню.",
-        reply_markup=kb1,
+        "🔙 **Возврат в главное меню администратора**",
+        reply_markup=admin_kb,
+        parse_mode='Markdown'
     )
 
 

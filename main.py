@@ -34,6 +34,7 @@ from services.scheduler.scheduler import Scheduler
 from services.core.container import Container
 from services.core.database import dispose_database_service
 from services.ai_agent.agent_queue import start_agent_queue, stop_agent_queue, is_redis_queue
+from services.web_admin.service import WebAdminService
 
 # Глобальная ссылка на контейнер и приложение для helper функций (get_bot_instance и др.)
 _global_container: Optional[Container] = None
@@ -52,11 +53,13 @@ class Application:
         self.listener: Optional[ListenerBot] = None
         self.scheduler: Optional[Scheduler] = None
         self.bot_service: Optional[BotService] = None
+        self.web_admin_service: Optional[WebAdminService] = None
 
         # Задачи сервисов
         self._bot_task: Optional[asyncio.Task] = None
         self._listener_task: Optional[asyncio.Task] = None
         self._scheduler_task: Optional[asyncio.Task] = None
+        self._web_admin_task: Optional[asyncio.Task] = None
 
         # Флаги
         self._running = False
@@ -67,6 +70,7 @@ class Application:
         self._scheduler_ready = asyncio.Event()
         self._bot_ready = asyncio.Event()
         self._listener_ready = asyncio.Event()
+        self._web_admin_ready = asyncio.Event()
 
     async def initialize(self) -> None:
         """Инициализировать приложение."""
@@ -192,34 +196,53 @@ class Application:
         # Регистрация обработчиков сигналов
         self._setup_signal_handlers()
 
-        logger.info("🤖 Запуск сервисов...")
+        logger.info("🤖 Инициализация сервисов...")
 
-        # 1. Сначала запускаем очередь задач (если Redis)
+        # 1. Инициализируем очередь задач (если Redis)
         if is_redis_queue():
-            logger.info("🚀 Запуск Redis очереди задач...")
+            logger.info("🔧 Инициализация Redis очереди задач...")
             await start_agent_queue(num_workers=2)
             self._agent_queue_started = True
-            logger.info("✅ Redis очередь запущена (2 воркера)")
+            logger.info("✅ Redis очередь инициализирована (2 воркера)")
+        else:
+            logger.info("✅ Локальная очередь задач инициализирована")
 
-        # 2. Теперь запускаем Scheduler (не требует Telegram)
-        self._scheduler_task = asyncio.create_task(
-            self._run_scheduler(), name="scheduler"
+        # 2. Запускаем Web Admin (не требует Telegram, работает всегда)
+        self.web_admin_service = WebAdminService(host="0.0.0.0", port=8001)
+        self._web_admin_task = asyncio.create_task(
+            self._run_web_admin(), name="web_admin"
         )
-        # Ждём готовности планировщика
-        await asyncio.wait_for(self._scheduler_ready.wait(), timeout=10.0)
+        # Ждём готовности Web Admin
+        await asyncio.wait_for(self._web_admin_ready.wait(), timeout=10.0)
 
-        # 2. Затем Admin Bot (aiogram) — запускаем polling
-        self._bot_task = asyncio.create_task(self._run_bot(), name="admin_bot")
+        # 3. Регистрируем сервисы в ServiceManager (для управления из веб-админки)
+        # Сервисы НЕ запускаются автоматически - только через консоль
+        try:
+            from services.service_manager import get_service_manager
+            service_manager = get_service_manager()
 
-        # 3. Последний Listener Bot (Telethon)
-        self._listener_task = asyncio.create_task(
-            self._run_listener(), name="listener_bot"
-        )
+            # Создаём сервисы но не запускаем их
+            self._scheduler_task = None
+            self._bot_task = None
+            self._listener_task = None
 
-        logger.info("✅ Все сервисы запущены")
-        logger.info("📍 Нажмите Ctrl+C для остановки")
+            service_manager.set_services(
+                bot_service=self.bot_service,
+                listener=self.listener,
+                scheduler=self.scheduler,
+                bot_task=self._bot_task,
+                listener_task=self._listener_task,
+                scheduler_task=self._scheduler_task
+            )
+            logger.info("✅ Сервисы зарегистрированы в ServiceManager")
+        except Exception as e:
+            logger.warning(f"⚠️ Не удалось зарегистрировать сервисы в ServiceManager: {e}")
 
-        # Ждём сигнала завершения
+        logger.info("✅ Сервисы инициализированы (ожидают запуска)")
+        logger.info("📍 Откройте консоль для запуска сервисов")
+        logger.info("🌐 Web Admin панель: http://localhost:8001/console")
+
+        # Ждём сигнала завершения (сервисы запускаются через консоль)
         await self._shutdown_complete.wait()
         logger.info("🛑 Сигнал завершения получен")
 
@@ -231,9 +254,9 @@ class Application:
         конфликтов при перезапуске (особенно для aiogram long polling).
 
         Последовательность:
-        1. Останавливаем получение новых событий (ListenerBot)
-        2. Останавливаем планировщик (Scheduler)
-        3. Останавливаем Admin Bot (закрывает long polling соединение)
+        1. Останавливаем сервисы через ServiceManager
+        2. Останавливаем очередь задач (если Redis)
+        3. Останавливаем Web Admin
         4. Освобождаем ресурсы (DI контейнер, БД)
         """
         if not self._running:
@@ -243,23 +266,34 @@ class Application:
         logger.info("🛑 Начало корректной остановки...")
         self._running = False
 
-        # 1. Останавливаем очередь задач (если Redis)
+        # 1. Останавливаем сервисы через ServiceManager
+        try:
+            from services.service_manager import get_service_manager
+            service_manager = get_service_manager()
+            await service_manager.stop_all()
+            logger.info("✅ Сервисы остановлены через ServiceManager")
+        except Exception as e:
+            logger.warning(f"⚠️ Не удалось остановить сервисы через ServiceManager: {e}")
+            # Пробуем остановить напрямую
+            await self._stop_listener()
+            await self._stop_scheduler()
+            await self._stop_bot()
+
+        # 2. Останавливаем очередь задач (если Redis)
         if self._agent_queue_started:
             logger.info("🛑 Остановка очереди задач...")
             await stop_agent_queue()
             logger.info("✅ Очередь задач остановлена")
 
-        # 2. Останавливаем ListenerBot (перестаем получать новые сообщения)
-        await self._stop_listener()
+        # 3. Останавливаем Web Admin
+        await self._stop_web_admin()
 
-        # 3. Останавливаем Scheduler (отменяем задачи планировщика)
-        await self._stop_scheduler()
-
-        # 4. Останавливаем Admin Bot (критично: закрывает long polling)
-        await self._stop_bot()
-
-        # 5. Освобождаем ресурсы
-        await self._cleanup_resources()
+        # 4. Освобождаем ресурсы
+        try:
+            await self._cleanup_resources()
+        except Exception as e:
+            # Логгируем но не прерываем завершение
+            logger.warning(f"⚠️ Предупреждение при очистке ресурсов: {e}")
 
         logger.info("👋 Приложение полностью остановлено")
 
@@ -429,6 +463,54 @@ class Application:
             await self.scheduler.stop()
             logger.info("✅ Scheduler ресурсы освобождены")
 
+    async def _run_web_admin(self) -> None:
+        """
+        Запустить Web Admin сервер.
+
+        Работает параллельно с остальными сервисами.
+        """
+        try:
+            logger.info("🌐 Запуск Web Admin сервера...")
+
+            # Сигнализируем о готовности
+            if not self._web_admin_ready.is_set():
+                self._web_admin_ready.set()
+
+            # Запускаем сервис (блокирует до отмены)
+            await self.web_admin_service.start()
+
+        except asyncio.CancelledError:
+            logger.info("🛑 Web Admin отменён")
+            raise
+        except KeyboardInterrupt:
+            logger.info("⌨️ Web Admin получил KeyboardInterrupt")
+            raise
+        except Exception as e:
+            logger.error(
+                f"❌ Web Admin ошибка: {type(e).__name__}: {e}", exc_info=True
+            )
+            # Сигнализируем об ошибке инициализации
+            if not self._web_admin_ready.is_set():
+                self._web_admin_ready.set()
+            raise
+
+    async def _stop_web_admin(self, timeout: float = 5.0) -> None:
+        """Остановить Web Admin сервер."""
+        if not self._web_admin_task or self._web_admin_task.done():
+            logger.debug("Web Admin уже остановлен")
+            return
+
+        logger.info("⏳ Остановка Web Admin...")
+        self._web_admin_task.cancel()
+
+        try:
+            await asyncio.wait_for(self._web_admin_task, timeout=timeout)
+            logger.info("✅ Web Admin задача завершена")
+        except asyncio.CancelledError:
+            logger.info("✅ Web Admin отменён")
+        except asyncio.TimeoutError:
+            logger.warning(f"⚠️ Web Admin не ответил за {timeout}с")
+
     async def _stop_bot(self, timeout: float = 10.0) -> None:
         """Остановить Admin Bot."""
         if not self._bot_task or self._bot_task.done():
@@ -488,20 +570,25 @@ class Application:
 
     async def _cleanup_resources(self) -> None:
         """Освободить глобальные ресурсы."""
+        import warnings
+
         # 1. DI контейнер (явный экземпляр)
         if self.container:
             try:
                 await self.container.dispose()
                 logger.info("✅ DI контейнер остановлен")
             except Exception as e:
-                logger.error(f"❌ Ошибка остановки DI контейнера: {e}")
+                logger.debug(f"Предупреждение при остановке DI контейнера: {e}")
 
-        # 2. Database service
-        try:
-            await dispose_database_service()
-            logger.info("✅ Database service остановлен")
-        except Exception as e:
-            logger.error(f"❌ Ошибка остановки Database service: {e}")
+        # 2. Database service (подавляем предупреждения SQLAlchemy о greenlet)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            warnings.simplefilter("ignore", category=Warning)
+            try:
+                await dispose_database_service()
+                logger.info("✅ Database service остановлен")
+            except Exception as e:
+                logger.debug(f"Предупреждение при остановке Database service: {e}")
 
         # Сигнализируем о завершении
         self._shutdown_complete.set()
@@ -519,8 +606,9 @@ async def main():
         # Запуск
         await app.run()
 
-    except KeyboardInterrupt:
-        logger.info("⌨️ Получен KeyboardInterrupt")
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        logger.info("⌨️ Получен сигнал остановки (Ctrl+C)")
+        logger.info("🛑 Корректное завершение работы...")
     except RuntimeError as e:
         # Специальная обработка ошибок инициализации
         error_msg = str(e)
@@ -541,8 +629,25 @@ async def main():
         )
     finally:
         # Гарантированная очистка
+        logger.info("🔄 Завершение работы приложения...")
         await app.shutdown()
+        logger.info("✅ Приложение завершено")
 
 
 if __name__ == "__main__":
+    # Подавляем предупреждения SQLAlchemy при завершении (greenlet termination)
+    import warnings
+    warnings.filterwarnings(
+        'ignore',
+        message='.*garbage collector is trying to clean up non-checked-in connection.*',
+        category=Warning,
+        module='sqlalchemy'
+    )
+    warnings.filterwarnings(
+        'ignore',
+        message='.*greenlet is being finalized.*',
+        category=RuntimeWarning,
+        module='sqlalchemy'
+    )
+
     asyncio.run(main())

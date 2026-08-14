@@ -36,14 +36,12 @@ async def on_startup_db():
     await db_service.init_db()
 
 
-async def on_shutdown_db():
-    """Очистка ресурсов БД при остановке бота."""
-    db_service = get_database_service()
-    await db_service.dispose()
-
+# ВАЖНО: НЕ регистрируем on_shutdown_db!
+# БД живёт дольше чем бот - она используется веб-админкой и другими сервисами.
+# При остановке бота НЕ утилизируем БД, иначе при перезапуске
+# будет ошибка "DatabaseService not initialized".
 
 dp.startup.register(on_startup_db)
-dp.shutdown.register(on_shutdown_db)
 
 
 # Глобальный обработчик ошибок для всех хендлеров

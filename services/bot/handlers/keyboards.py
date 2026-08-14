@@ -54,7 +54,6 @@ admin_kb = ReplyKeyboardMarkup(
         [KeyboardButton(text='✍️ Прямая генерация новости')],
         [KeyboardButton(text='Получить ID фото')],
         [KeyboardButton(text='Работа с каналами')],
-        [KeyboardButton(text='Работа с сайтами')],
         [KeyboardButton(text='📝 Задачи')],
         [KeyboardButton(text='👤 Меню пользователя')],
     ],
@@ -126,6 +125,15 @@ publishers_menu_kb = ReplyKeyboardMarkup(keyboard=[
     [KeyboardButton(text='🔙 Назад в главное меню')]
 ], resize_keyboard=True, one_time_keyboard=True)
 
+# Inline KB для главного меню publisher'ов (для навигации)
+publishers_menu_inline_kb = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text='📋 Список каналов', callback_data='publishers_list')],
+        [InlineKeyboardButton(text='➕ Добавить канал', callback_data='publishers_add')],
+        [InlineKeyboardButton(text='🔙 Назад в главное меню', callback_data='back_to_admin_menu')]
+    ]
+)
+
 # Reply KB для просмотра списка каналов (с кнопкой возврата)
 publishers_list_view_kb = ReplyKeyboardMarkup(keyboard=[
     [KeyboardButton(text='➕ Добавить канал')],
@@ -148,6 +156,13 @@ add_publisher_kb = ReplyKeyboardMarkup(keyboard=[
     )],
     [KeyboardButton(text='🔙 Назад в меню каналов')]
 ], resize_keyboard=True, one_time_keyboard=True)
+
+# Inline KB для добавления канала (кнопка "Назад")
+add_publisher_inline_kb = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text='🔙 Назад в меню каналов', callback_data='back_to_publishers_menu')]
+    ]
+)
 
 # Inline KB для прямой генерации новости (этап ввода описания)
 def create_direct_news_description_inline_kb() -> InlineKeyboardMarkup:

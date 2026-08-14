@@ -40,11 +40,18 @@ async def add_channel(callback: CallbackQuery, state: FSMContext):
         return
 
     await callback.answer('')
-    await callback.message.delete()
     await state.set_state(AddChannel.add_channel)
 
     from services.bot.handlers.keyboards import choose_chat_kb
-    await callback.message.answer('Нажми кнопку и выбери чат:', reply_markup=choose_chat_kb)
+    try:
+        await callback.message.edit_text(
+            'Нажми кнопку и выбери чат:',
+            reply_markup=choose_chat_kb
+        )
+    except Exception as e:
+        # Если не удалось отредактировать (сообщение слишком старое), отправляем новое
+        logger.debug(f"Не удалось отредактировать сообщение: {e}")
+        await callback.message.answer('Нажми кнопку и выбери чат:', reply_markup=choose_chat_kb)
 
 
 @admin.callback_query(F.data == 'delete_channel')
@@ -54,18 +61,25 @@ async def delete_channel(callback: CallbackQuery, state: FSMContext):
         return
 
     await callback.answer('')
-    await callback.message.delete()
 
     async with get_database_service().session_context() as session:
         factory = RepositoryFactory(session)
         channels = await factory.channels().get_all_channels()
 
     if not channels:
-        await callback.message.answer(
-            '📭 В базе данных нет каналов для удаления.\n\n'
-            'Сначала добавьте каналы через "Работа с каналами" → "Добавить".',
-            reply_markup=ikb1
-        )
+        try:
+            await callback.message.edit_text(
+                '📭 В базе данных нет каналов для удаления.\n\n'
+                'Сначала добавьте каналы через "Работа с каналами" → "Добавить".',
+                reply_markup=ikb1
+            )
+        except Exception as e:
+            logger.debug(f"Не удалось отредактировать сообщение: {e}")
+            await callback.message.answer(
+                '📭 В базе данных нет каналов для удаления.\n\n'
+                'Сначала добавьте каналы через "Работа с каналами" → "Добавить".',
+                reply_markup=ikb1
+            )
         await state.clear()
         return
 
@@ -73,13 +87,23 @@ async def delete_channel(callback: CallbackQuery, state: FSMContext):
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
 
     await state.set_state(DeleteChannel.delete_channel)
-    await callback.message.answer(
-        '🗑️ **Удаление канала**\n\n'
-        'Выберите канал из списка, чтобы удалить его из базы данных:\n\n'
-        f'Всего каналов в БД: **{len(channels)}**',
-        reply_markup=keyboard,
-        parse_mode='Markdown'
-    )
+    try:
+        await callback.message.edit_text(
+            '🗑️ **Удаление канала**\n\n'
+            'Выберите канал из списка, чтобы удалить его из базы данных:\n\n'
+            f'Всего каналов в БД: **{len(channels)}**',
+            reply_markup=keyboard,
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        logger.debug(f"Не удалось отредактировать сообщение: {e}")
+        await callback.message.answer(
+            '🗑️ **Удаление канала**\n\n'
+            'Выберите канал из списка, чтобы удалить его из базы данных:\n\n'
+            f'Всего каналов в БД: **{len(channels)}**',
+            reply_markup=keyboard,
+            parse_mode='Markdown'
+        )
 
 
 @admin.callback_query(F.data.startswith('delete_channel_'))
@@ -126,18 +150,25 @@ async def trusted_channels_menu(callback: CallbackQuery, state: FSMContext):
         return
 
     await callback.answer('')
-    await callback.message.delete()
 
     async with get_database_service().session_context() as session:
         factory = RepositoryFactory(session)
         channels = await factory.channels().get_all_channels()
 
     if not channels:
-        await callback.message.answer(
-            '📭 В базе данных нет каналов.\n\n'
-            'Сначала добавьте каналы через "Работа с каналами" → "Добавить".',
-            reply_markup=ikb1
-        )
+        try:
+            await callback.message.edit_text(
+                '📭 В базе данных нет каналов.\n\n'
+                'Сначала добавьте каналы через "Работа с каналами" → "Добавить".',
+                reply_markup=ikb1
+            )
+        except Exception as e:
+            logger.debug(f"Не удалось отредактировать сообщение: {e}")
+            await callback.message.answer(
+                '📭 В базе данных нет каналов.\n\n'
+                'Сначала добавьте каналы через "Работа с каналами" → "Добавить".',
+                reply_markup=ikb1
+            )
         await state.clear()
         return
 
@@ -145,15 +176,27 @@ async def trusted_channels_menu(callback: CallbackQuery, state: FSMContext):
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
 
     await state.set_state(TrustedChannel.select_channel)
-    await callback.message.answer(
-        '✅ **Доверенные источники**\n\n'
-        'Нажмите на канал, чтобы сделать его доверенным или снять доверие.\n\n'
-        '✅ — доверенный источник (новости имеют рейтинг 100)\n'
-        '⬜ — обычный источник\n\n'
-        f'Всего каналов в БД: **{len(channels)}**',
-        reply_markup=keyboard,
-        parse_mode='Markdown'
-    )
+    try:
+        await callback.message.edit_text(
+            '✅ **Доверенные источники**\n\n'
+            'Нажмите на канал, чтобы сделать его доверенным или снять доверие.\n\n'
+            '✅ — доверенный источник (новости имеют рейтинг 100)\n'
+            '⬜ — обычный источник\n\n'
+            f'Всего каналов в БД: **{len(channels)}**',
+            reply_markup=keyboard,
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        logger.debug(f"Не удалось отредактировать сообщение: {e}")
+        await callback.message.answer(
+            '✅ **Доверенные источники**\n\n'
+            'Нажмите на канал, чтобы сделать его доверенным или снять доверие.\n\n'
+            '✅ — доверенный источник (новости имеют рейтинг 100)\n'
+            '⬜ — обычный источник\n\n'
+            f'Всего каналов в БД: **{len(channels)}**',
+            reply_markup=keyboard,
+            parse_mode='Markdown'
+        )
 
 
 @admin.callback_query(F.data.startswith('toggle_trusted_'))
@@ -208,17 +251,23 @@ async def make_trusted(callback: CallbackQuery, state: FSMContext):
         return
 
     await callback.answer('')
-    await callback.message.delete()
 
     async with get_database_service().session_context() as session:
         factory = RepositoryFactory(session)
         channels = await factory.channels().get_all_channels()
 
     if not channels:
-        await callback.message.answer(
-            '📭 В базе данных нет каналов.',
-            reply_markup=ikb1
-        )
+        try:
+            await callback.message.edit_text(
+                '📭 В базе данных нет каналов.',
+                reply_markup=ikb1
+            )
+        except Exception as e:
+            logger.debug(f"Не удалось отредактировать сообщение: {e}")
+            await callback.message.answer(
+                '📭 В базе данных нет каналов.',
+                reply_markup=ikb1
+            )
         await state.clear()
         return
 
@@ -226,10 +275,17 @@ async def make_trusted(callback: CallbackQuery, state: FSMContext):
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
 
     await state.set_state(TrustedChannel.select_channel)
-    await callback.message.answer(
-        'Выберите канал, чтобы сделать его доверенным (новости будут иметь рейтинг 100):',
-        reply_markup=keyboard
-    )
+    try:
+        await callback.message.edit_text(
+            'Выберите канал, чтобы сделать его доверенным (новости будут иметь рейтинг 100):',
+            reply_markup=keyboard
+        )
+    except Exception as e:
+        logger.debug(f"Не удалось отредактировать сообщение: {e}")
+        await callback.message.answer(
+            'Выберите канал, чтобы сделать его доверенным (новости будут иметь рейтинг 100):',
+            reply_markup=keyboard
+        )
 
 
 @admin.callback_query(F.data == 'remove_trusted')
@@ -239,17 +295,23 @@ async def remove_trusted(callback: CallbackQuery, state: FSMContext):
         return
 
     await callback.answer('')
-    await callback.message.delete()
 
     async with get_database_service().session_context() as session:
         factory = RepositoryFactory(session)
         channels = await factory.channels().get_all_channels()
 
     if not channels:
-        await callback.message.answer(
-            '📭 В базе данных нет каналов.',
-            reply_markup=ikb1
-        )
+        try:
+            await callback.message.edit_text(
+                '📭 В базе данных нет каналов.',
+                reply_markup=ikb1
+            )
+        except Exception as e:
+            logger.debug(f"Не удалось отредактировать сообщение: {e}")
+            await callback.message.answer(
+                '📭 В базе данных нет каналов.',
+                reply_markup=ikb1
+            )
         await state.clear()
         return
 
@@ -257,10 +319,17 @@ async def remove_trusted(callback: CallbackQuery, state: FSMContext):
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
 
     await state.set_state(TrustedChannel.select_channel)
-    await callback.message.answer(
-        'Выберите канал, чтобы снять с него доверие:',
-        reply_markup=keyboard
-    )
+    try:
+        await callback.message.edit_text(
+            'Выберите канал, чтобы снять с него доверие:',
+            reply_markup=keyboard
+        )
+    except Exception as e:
+        logger.debug(f"Не удалось отредактировать сообщение: {e}")
+        await callback.message.answer(
+            'Выберите канал, чтобы снять с него доверие:',
+            reply_markup=keyboard
+        )
 
 
 @admin.callback_query(F.data.startswith('make_trusted_'))
@@ -465,12 +534,20 @@ async def back_to_channels_menu(callback: CallbackQuery, state: FSMContext):
         return
 
     await callback.answer('')
-    await callback.message.delete()
 
     # Показываем меню работы с каналами
-    await callback.message.answer(
-        '📢 **Работа с каналами**\n\n'
-        'Выберите действие:',
-        reply_markup=ikb1,
-        parse_mode='Markdown'
-    )
+    try:
+        await callback.message.edit_text(
+            '📢 **Работа с каналами**\n\n'
+            'Выберите действие:',
+            reply_markup=ikb1,
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        logger.debug(f"Не удалось отредактировать сообщение: {e}")
+        await callback.message.answer(
+            '📢 **Работа с каналами**\n\n'
+            'Выберите действие:',
+            reply_markup=ikb1,
+            parse_mode='Markdown'
+        )
