@@ -5,11 +5,32 @@ Web Admin Service — сервис для запуска админ-панели
 для администрирования системы.
 """
 
+import asyncio
 import logging
 import uvicorn
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+
+class UvicornCancelledErrorFilter(logging.Filter):
+    """Фильтр для подавления CancelledError traceback от uvicorn lifespan.
+
+    При graceful shutdown uvicorn логирует CancelledError как ERROR с traceback
+    (lifespan/on.py:97). Это ожидаемое поведение — приложение завершается.
+    """
+
+    def filter(self, record):
+        try:
+            msg = record.getMessage()
+            if "CancelledError" in msg and "lifespan" in msg:
+                return False
+        except Exception:
+            pass
+        # Также проверяем exc_info напрямую
+        if record.exc_info and isinstance(record.exc_info[1], asyncio.CancelledError):
+            return False
+        return True
 
 
 class WebAdminService:
@@ -74,9 +95,14 @@ class WebAdminService:
             reload=self.reload,
             log_level=self.log_level,
             access_log=True,
-            lifespan="off",  # отключаем lifespan — не используем startup/shutdown хуки,
-                              # а при отмене uvicorn логирует CancelledError как ERROR
-                              # с traceback (lifespan/on.py:97, exc_info=exc)
+            lifespan="auto",
+        )
+
+        # Подавляем CancelledError traceback от uvicorn lifespan при
+        # graceful shutdown (lifespan/on.py:97 — logger.error(exc_info=exc)).
+        # Приложение корректно завершается, это косметический шум.
+        logging.getLogger("uvicorn.error").addFilter(
+            UvicornCancelledErrorFilter()
         )
 
         # Создаём сервер
