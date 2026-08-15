@@ -170,8 +170,6 @@ class Scheduler:
             except Exception as e:
                 logger.error(f"❌ Ошибка закрытия сессии БД: {e}")
             self._session = None
-
-        self._initialized = False
         logger.info("👋 Планировщик полностью остановлен")
 
     async def _run_task_processor(self) -> None:

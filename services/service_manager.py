@@ -246,11 +246,6 @@ class ServiceManager:
         if self._scheduler is None:
             raise RuntimeError("Scheduler не создан")
 
-        # Инициализируем scheduler если ещё не инициализирован
-        if not hasattr(self._scheduler, '_initialized') or not self._scheduler._initialized:
-            await self._scheduler.start()  # Это инициализирует компоненты
-            self._scheduler._initialized = True
-
         self._scheduler_should_run = True
 
         # Создаём новую задачу для запуска scheduler
