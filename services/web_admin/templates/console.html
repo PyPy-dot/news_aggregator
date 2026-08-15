@@ -292,9 +292,10 @@
                                 <!-- Поле ввода команд -->
                                 <div class="mt-4 flex items-center space-x-3 flex-shrink-0">
                                     <span class="text-gray-500 font-mono">$</span>
-                                    <input type="text" id="command-input" class="command-input flex-1 px-4 py-3 rounded-lg text-sm"
+                                    <input type="search" id="command-input" class="command-input flex-1 px-4 py-3 rounded-lg text-sm"
                                            placeholder="Введите команду (help для списка команд)..."
-                                           autocomplete="new-password"
+                                           name="console_cmd"
+                                           autocomplete="off"
                                           autocorrect="off" autocapitalize="off" spellcheck="false">
                                     <button onclick="executeCommand()" class="px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 text-sm font-medium">
                                         <i class="fas fa-play mr-2"></i>Выполнить
@@ -308,21 +309,17 @@
                             <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
                                 <div class="flex items-center space-x-3 mb-4 p-4 bg-white rounded-lg shadow-sm flex-shrink-0">
                                     <select id="log-level" class="px-4 py-2 border border-gray-300 rounded-lg text-sm">
+                                        <option value="ALL" selected>ALL (все)</option>
                                         <option value="DEBUG">DEBUG</option>
-                                        <option value="INFO" selected>INFO</option>
+                                        <option value="INFO">INFO</option>
                                         <option value="WARNING">WARNING</option>
                                         <option value="ERROR">ERROR</option>
                                         <option value="CRITICAL">CRITICAL</option>
                                     </select>
                                     <select id="log-source" class="px-4 py-2 border border-gray-300 rounded-lg text-sm">
                                         <option value="all">Все источники</option>
-                                        <option value="main">main</option>
-                                        <option value="bot">bot</option>
-                                        <option value="listener">listener</option>
-                                        <option value="scheduler">scheduler</option>
-                                        <option value="web_admin">web_admin</option>
-                                        <option value="ai_agent">ai_agent</option>
                                     </select>
+                                    <span id="log-source-count" class="text-xs text-gray-400" title="Всего записей"></span>
                                     <button onclick="loadLogs()" class="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm font-medium">
                                         <i class="fas fa-sync mr-2"></i>Обновить
                                     </button>
@@ -657,6 +654,41 @@
             document.getElementById('sql-output').innerHTML = '';
         }
 
+        // Загрузка списка источников (динамически из API)
+        async function loadLogSources() {
+            try {
+                const response = await fetch('/console/api/logs/sources');
+                const result = await response.json();
+
+                if (result.success && Array.isArray(result.sources)) {
+                    const select = document.getElementById('log-source');
+                    const current = select.value;
+
+                    // Сохраняем «Все источники», остальное пересоздаём
+                    select.innerHTML = '<option value="all">Все источники</option>';
+                    result.sources.forEach(s => {
+                        const opt = document.createElement('option');
+                        opt.value = s;
+                        opt.textContent = s;
+                        select.appendChild(opt);
+                    });
+
+                    // Восстанавливаем выбранный источник если он ещё есть
+                    const exists = [...select.options].some(o => o.value === current);
+                    if (exists) select.value = current;
+
+                    // Счётчик записей по выбранному источнику
+                    const countSpan = document.getElementById('log-source-count');
+                    if (countSpan) {
+                        const count = result.counts[current] || result.counts['all'] || 0;
+                        countSpan.textContent = `(${count} записей)`;
+                    }
+                }
+            } catch (e) {
+                // Тихо — источники подгрузятся при следующем цикле
+            }
+        }
+
         // Загрузка логов
         async function loadLogs() {
             const level = document.getElementById('log-level').value;
@@ -664,11 +696,31 @@
             const container = document.getElementById('logs-container');
 
             try {
-                const params = new URLSearchParams({ level, source, limit: 200 });
+                const params = new URLSearchParams({ level, source, limit: 500 });
                 const response = await fetch(`/console/api/logs?${params}`);
                 const result = await response.json();
 
+                // Обновить список источников (фон)
+                loadLogSources();
+
                 if (result.success && Array.isArray(result.logs)) {
+                    if (result.logs.length === 0) {
+                        // Не стираем предыдущие логи — показываем подсказку
+                        if (!container.querySelector('.no-logs-hint')) {
+                            const hint = document.createElement('div');
+                            hint.className = 'no-logs-hint text-gray-500 text-center py-4';
+                            if (source !== 'all')
+                                hint.textContent = `Нет логов для источника «${source}» — попробуйте «Все источники»`;
+                            else
+                                hint.textContent = 'Нет логов — дождитесь активности приложения';
+                            container.prepend(hint);
+                        }
+                        return;
+                    }
+
+                    const hint = container.querySelector('.no-logs-hint');
+                    if (hint) hint.remove();
+
                     // Проверяем, проскроллил ли пользователь вверх
                     const wasScrolledUp = container.scrollHeight - container.scrollTop - container.clientHeight > 50;
 
@@ -684,7 +736,6 @@
                         return `<div class="${levelClass} mb-1">[${log.timestamp}] [${log.source}] ${escapeHtml(log.message)}</div>`;
                     }).join('');
 
-                    // Автопрокрутка вниз только если пользователь не изучает старые логи
                     if (!wasScrolledUp) {
                         container.scrollTop = container.scrollHeight;
                     }
@@ -757,6 +808,21 @@
                 if (e.key === 'Enter') {
                     executeCommand();
                 }
+            });
+
+            // Мгновенная перезагрузка логов при смене фильтра
+            document.getElementById('log-level').addEventListener('change', () => {
+                // Убрать подсказку «Нет логов» при смене фильтра
+                const container = document.getElementById('logs-container');
+                const hint = container.querySelector('.no-logs-hint');
+                if (hint) hint.remove();
+                loadLogs();
+            });
+            document.getElementById('log-source').addEventListener('change', () => {
+                const container = document.getElementById('logs-container');
+                const hint = container.querySelector('.no-logs-hint');
+                if (hint) hint.remove();
+                loadLogs();
             });
 
             // Обновление статусов каждые 5 секунд

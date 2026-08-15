@@ -37,10 +37,12 @@
             </label>
             <input
                 type="text"
+                inputmode="numeric"
                 id="la-auth-code"
                 placeholder="12345"
                 maxlength="10"
-                autocomplete="off"
+                name="la_tg_auth_code"
+                autocomplete="one-time-code"
                 class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-center text-xl tracking-widest font-mono"
             />
             <p class="text-xs text-gray-500 mt-2 text-center">
@@ -58,7 +60,8 @@
                 type="password"
                 id="la-auth-password"
                 placeholder="Облачный пароль Telegram"
-                autocomplete="off"
+                name="la_tg_cloud_password"
+                autocomplete="new-password"
                 class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all text-center"
             />
             <p class="text-xs text-gray-500 mt-2 text-center">

@@ -213,30 +213,45 @@ class BotService:
         Используется при аварийном завершении для немедленного
         освобождения long polling соединения.
         """
-        if not self.bot:
-            logger.debug("Bot не инициализирован, force_close пропускается")
-            return
-
         logger.debug("🔒 Принудительное закрытие соединений бота...")
 
+        # Закрываем aiohttp сессию (даже если бота нет — это спасает
+        # от "Unclosed client session" при аварийном завершении)
+        if self._session:
+            try:
+                await self._session.close()
+                logger.debug("✅ aiohttp сессия закрыта (force)")
+            except Exception as e:
+                logger.debug(f"⚠️ Ошибка закрытия aiohttp сессии (force): {e}")
+            self._session = None
+
         # Закрываем сессию бота (принудительно)
-        try:
-            await self.bot.session.close()
-            logger.debug("✅ Сессия бота закрыта (force)")
-        except Exception as e:
-            logger.debug(f"⚠️ Ошибка закрытия сессии бота (force): {e}")
+        if self.bot:
+            try:
+                await self.bot.session.close()
+                logger.debug("✅ Сессия бота закрыта (force)")
+            except Exception as e:
+                logger.debug(f"⚠️ Ошибка закрытия сессии бота (force): {e}")
 
     async def shutdown(self) -> None:
         """
         Корректно завершить работу бота и освободить ресурсы.
 
         Последовательность:
-        1. Останавливаем polling (если запущен)
-        2. Закрываем сессию бота (освобождает long polling соединение)
-        3. Закрываем бота
-        4. Закрываем aiohttp сессию
+        1. Закрываем сессию бота (освобождает long polling соединение)
+        2. Закрываем бота (с защитой от Telegram Flood control)
+        3. Закрываем aiohttp сессию
+        4. Вызываем shutdown Dispatcher'а (очищает внутренние очереди)
         """
         if not self.bot:
+            # Бота нет, но сессия может быть — закрываем её, чтобы избежать
+            # "Unclosed client session" при аварийном завершении процесса.
+            if self._session:
+                try:
+                    await self._session.close()
+                except Exception:
+                    pass
+                self._session = None
             logger.debug("Bot не инициализирован, shutdown пропускается")
             return
 
@@ -247,23 +262,40 @@ class BotService:
             await self.bot.session.close()
             logger.debug("✅ Сессия бота закрыта")
         except Exception as e:
-            logger.error(f"❌ Ошибка закрытия сессии бота: {e}")
+            logger.debug(f"⚠️ Ошибка закрытия сессии бота: {e}")
 
-        # 3. Закрываем бота
+        # 2. Закрываем бота — с защитой от Telegram Flood control.
+        #    Telegram rate-limits метод close(): «Too Many Requests: retry after N».
+        #    Игнорируем — бот и так остановлен, это косметический call.
         try:
             await self.bot.close()
             logger.debug("✅ Бот закрыт")
         except Exception as e:
-            logger.error(f"❌ Ошибка закрытия бота: {e}")
+            error_str = str(e).lower()
+            if 'flood' in error_str or 'too many requests' in error_str:
+                logger.warning(
+                    f"⚠️ Telegram Flood control на close() — пропущено: {e}"
+                )
+            else:
+                logger.debug(f"⚠️ Ошибка закрытия бота: {e}")
 
-        # 4. Закрываем aiohttp сессию
+        # 3. Закрываем aiohttp сессию
         if self._session:
             try:
                 await self._session.close()
                 logger.debug("✅ aiohttp сессия закрыта")
             except Exception as e:
-                logger.error(f"❌ Ошибка закрытия aiohttp сессии: {e}")
+                logger.debug(f"⚠️ Ошибка закрытия aiohttp сессии: {e}")
             self._session = None
+
+        # 4. Очищаем состояние Dispatcher'а — он глобальный singleton,
+        #    и при рестарте должен быть чистым (иначе стартовое событие
+        #    и внутренние очереди могут конфликтовать)
+        try:
+            await dp.shutdown(self.bot)
+            logger.debug("✅ Dispatcher shutdown завершён")
+        except Exception as e:
+            logger.debug(f"⚠️ Ошибка shutdown Dispatcher'а: {e}")
 
         self.bot = None
         logger.info("✅ Admin Bot полностью остановлен")

@@ -186,7 +186,25 @@ class ServiceManager:
     async def restart_service(self, service: str) -> Dict[str, Any]:
         """Перезапустить сервис."""
         await self.stop_service(service)
-        await asyncio.sleep(1)
+
+        if service == "bot":
+            # Для бота: ждём пока старый task полностью завершится (dp.start_polling
+            # делает retry с sleep после CancelledError — задача может жить
+            # дольше чем timeout). После этого даём Telegram время освободить
+            # сессию getUpdates на сервере.
+            if self._bot_task and not self._bot_task.done():
+                logger.info("⏳ Ожидание полного завершения задачи бота...")
+                try:
+                    await asyncio.wait_for(self._bot_task, timeout=15.0)
+                except asyncio.TimeoutError:
+                    logger.warning("⚠️ Задача бота не завершилась за 15 сек, форсирую")
+                except asyncio.CancelledError:
+                    pass
+
+            # Дополнительная пауза чтобы Telegram сервер отпустил сессию
+            logger.info("⏳ Пауза перед запуском нового polling (Telegram session cleanup)...")
+            await asyncio.sleep(5)
+
         return await self.start_service(service)
 
     async def start_all(self) -> Dict[str, Any]:
@@ -264,6 +282,12 @@ class ServiceManager:
         if self._bot_service is None:
             raise RuntimeError("BotService не инициализирован")
 
+        # Если бот был остановлен (self.bot is None), нужно перезайнициализировать
+        if self._bot_service.bot is None:
+            logger.info("🔄 Бот не инициализирован, выполняю initialize()...")
+            await self._bot_service.initialize()
+            logger.info("✅ Бот перезайнициализирован")
+
         self._bot_should_run = True
 
         # Запускаем polling в новой задаче
@@ -292,7 +316,35 @@ class ServiceManager:
 
         logger.info("🛑 Остановка BotService...")
 
-        # 1. Сначала вызываем shutdown() для корректной остановки polling
+        # 0. Сигнализируем Dispatcher'у остановить polling (GRACEFUL shutdown).
+        #    dp.stop_polling() устанавливает _stop_signal → asyncio.wait()
+        #    завершается → pending polling tasks отменяются → finally блок
+        #    закрывает сессии. Это КРИТИЧНО для избежания TelegramConflictError.
+        try:
+            from services.bot.bot import dp
+            if dp._running_lock.locked():
+                logger.info("   Сигнал остановки polling (dp.stop_polling)...")
+                await dp.stop_polling()
+                logger.info("   ✅ Polling остановлен через dp.stop_polling()")
+        except RuntimeError:
+            # Polling не запущен (ещё не старттовал или уже остановлен)
+            logger.debug("   Polling не запущен, dp.stop_polling() пропущен")
+        except Exception as e:
+            logger.warning(f"⚠️ Ошибка dp.stop_polling(): {e}")
+
+        # 1. Отменяем задачу — если dp.stop_polling() не сработал
+        if self._bot_task and not self._bot_task.done():
+            logger.info("   Отмена задачи бота...")
+            self._bot_task.cancel()
+            try:
+                await asyncio.wait_for(self._bot_task, timeout=5.0)
+                logger.info("   ✅ Задача отменена")
+            except asyncio.CancelledError:
+                logger.info("   ✅ Задача отменена (CancelledError)")
+            except asyncio.TimeoutError:
+                logger.warning("   ⚠️ Задача не ответила за 5 сек")
+
+        # 2. Вызываем shutdown() для закрытия сессии бота и освобождения соединений
         if self._bot_service:
             try:
                 logger.info("   Вызов bot_service.shutdown()...")
@@ -300,18 +352,6 @@ class ServiceManager:
                 logger.info("   ✅ shutdown() завершён")
             except Exception as e:
                 logger.warning(f"⚠️ Ошибка при shutdown(): {e}")
-
-        # 2. Отменяем задачу, если она ещё выполняется
-        if self._bot_task and not self._bot_task.done():
-            logger.info("   Отмена задачи бота...")
-            self._bot_task.cancel()
-            try:
-                await asyncio.wait_for(self._bot_task, timeout=3.0)
-                logger.info("   ✅ Задача отменена")
-            except asyncio.CancelledError:
-                logger.info("   ✅ Задача отменена (CancelledError)")
-            except asyncio.TimeoutError:
-                logger.warning("   ⚠️ Задача не ответила за 3 сек")
 
         # 3. Дополнительное принудительное закрытие на всякий случай
         if self._bot_service:

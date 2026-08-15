@@ -454,9 +454,9 @@ async def get_status(user: Optional[dict] = Depends(get_optional_user)):
 @router.get("/api/logs")
 async def get_logs(
     request: Request,
-    level: str = "INFO",
+    level: str = "ALL",
     source: str = "all",
-    limit: int = 100,
+    limit: int = 200,
     user: Optional[dict] = Depends(get_optional_user)
 ):
     """Получить логи из буфера."""
@@ -480,6 +480,33 @@ async def get_logs(
             "success": False,
             "error": str(e),
             "logs": []
+        })
+
+
+@router.get("/api/logs/sources")
+async def get_log_sources(
+    request: Request,
+    user: Optional[dict] = Depends(get_optional_user)
+):
+    """Получить список доступных источников логов."""
+    try:
+        from services.web_admin.log_handler import get_log_handler
+        handler = get_log_handler()
+
+        sources = handler.get_sources()
+        counts = {s: len(handler._buffers.get(s, [])) for s in sources}
+
+        return JSONResponse(content={
+            "success": True,
+            "sources": sources,
+            "counts": counts,
+        })
+    except Exception as e:
+        logger.error(f"Ошибка получения источников: {e}")
+        return JSONResponse(content={
+            "success": False,
+            "sources": [],
+            "counts": {},
         })
 
 

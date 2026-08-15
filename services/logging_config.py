@@ -41,9 +41,9 @@ FILE_FORMAT = logging.Formatter(
 # Уровни логирования по умолчанию
 DEFAULT_LEVEL = logging.INFO
 LOGGERS_LEVELS = {
-    '__main__': logging.INFO,
-    'services': logging.INFO,
-    'database': logging.INFO,
+    '__main__': logging.DEBUG,
+    'services': logging.DEBUG,
+    'database': logging.DEBUG,
     'sqlalchemy': logging.WARNING,
     'sqlalchemy.engine': logging.ERROR,
     'sqlalchemy.pool': logging.WARNING,

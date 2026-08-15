@@ -1,21 +1,27 @@
 """
 Log Handler для трансляции логов в веб-админку.
 
-Перехватывает логи приложения и сохраняет их в буфер для отображения в консоли.
+Перехватывает логи приложения и сохраняет их в буферы по источникам
+для отображения в консоли.
 """
 
 import logging
 import asyncio
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from collections import deque
+
+
+# Размер буфера **на каждый источник**
+_PER_SOURCE_LIMIT = 300
 
 
 class WebAdminLogHandler(logging.Handler):
     """
     Лог handler для веб-админки.
 
-    Сохраняет логи в кольцевой буфер для отображения в консоли.
+    Каждый источник (main, bot, listener, scheduler и т.д.) хранит логи
+    в своём кольцевом буфере — буферы не конкурируют друг с другом.
     """
 
     _instance = None
@@ -29,10 +35,11 @@ class WebAdminLogHandler(logging.Handler):
     def __init__(self):
         if self._initialized:
             return
-        super().__init__(level=logging.INFO)
+        # Принимаем всё от DEBUG до CRITICAL — фильтрация в get_logs()
+        super().__init__(level=logging.DEBUG)
 
-        # Кольцевой буфер для логов (последние 500 записей)
-        self._buffer: deque = deque(maxlen=500)
+        # Буфер **на каждый источник** (lazily создается в emit)
+        self._buffers: Dict[str, deque] = {}
 
         # Подписчики (веб-сокеты или polling запросы)
         self._subscribers: List[asyncio.Queue] = []
@@ -40,14 +47,12 @@ class WebAdminLogHandler(logging.Handler):
         # Блокировка для потокобезопасности
         self._lock = asyncio.Lock()
 
-        # Фильтры
-        self._min_level = logging.INFO
-        self._sources: set = set()  # Пустое = все источники
-
         self._initialized = True
 
         # Маппинг имён логгеров на понятные имена
+        # ВАЖНО: 'services' — catch-all, должен быть ПОСЛЕ подпрефиксов
         self._source_names = {
+            '__main__': 'main',
             'main': 'main',
             'services.bot': 'bot',
             'services.listener': 'listener',
@@ -58,45 +63,36 @@ class WebAdminLogHandler(logging.Handler):
             'services.vector_search': 'vector',
             'services.categorization': 'categorization',
             'services.database': 'database',
+            'services': 'main',
         }
 
+    # ------------------------------------------------------------------
+    # logging.Handler interface
+    # ------------------------------------------------------------------
     def emit(self, record: logging.LogRecord) -> None:
-        """Обработать лог запись."""
-        # Проверяем уровень
-        if record.levelno < self._min_level:
-            return
-
-        # Проверяем источник
-        if self._sources:
-            source = self._get_source(record.name)
-            if source not in self._sources:
-                return
-
-        # Форматируем запись
+        """Обработать лог запись — положить в буфер нужного источника."""
         log_entry = self._format_record(record)
+        source = log_entry['source']
 
-        # Добавляем в буфер
-        self._buffer.append(log_entry)
+        # Lazily создаём буфер для источника
+        buf = self._buffers.get(source)
+        if buf is None:
+            buf = deque(maxlen=_PER_SOURCE_LIMIT)
+            self._buffers[source] = buf
 
-        # Уведомляем подписчиков
+        buf.append(log_entry)
         self._notify_subscribers(log_entry)
 
+    # ------------------------------------------------------------------
+    # Internal
+    # ------------------------------------------------------------------
     def _format_record(self, record: logging.LogRecord) -> Dict[str, Any]:
         """Форматировать лог запись."""
-        # Определяем источник
-        source = self._get_source(record.name)
-
-        # Определяем уровень
-        level = record.levelname
-
-        # Форматируем сообщение
-        message = record.getMessage()
-
         return {
             'timestamp': datetime.fromtimestamp(record.created).isoformat(),
-            'level': level,
-            'source': source,
-            'message': message,
+            'level': record.levelname,
+            'source': self._get_source(record.name),
+            'message': record.getMessage(),
         }
 
     def _get_source(self, logger_name: str) -> str:
@@ -104,90 +100,89 @@ class WebAdminLogHandler(logging.Handler):
         for prefix, name in self._source_names.items():
             if logger_name.startswith(prefix):
                 return name
-        # Возвращаем последнюю часть имени логгера
         return logger_name.split('.')[-1]
 
     def _notify_subscribers(self, log_entry: Dict[str, Any]) -> None:
-        """Уведомить подписчиков о новой лог записи."""
         for queue in self._subscribers:
             try:
                 queue.put_nowait(log_entry)
             except asyncio.QueueFull:
-                # Буфер переполнен — пропускаем
                 pass
 
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
     def add_subscriber(self, queue: asyncio.Queue) -> None:
-        """Добавить подписчика."""
         self._subscribers.append(queue)
 
     def remove_subscriber(self, queue: asyncio.Queue) -> None:
-        """Удалить подписчика."""
         if queue in self._subscribers:
             self._subscribers.remove(queue)
 
+    def get_sources(self) -> List[str]:
+        """Возвращает список всех источников, у которых есть логи."""
+        return sorted(self._buffers.keys())
+
     def get_logs(
         self,
-        limit: int = 100,
-        level: str = None,
-        source: str = None
+        limit: int = 200,
+        level: Optional[str] = None,
+        source: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
-        Получить логи из буфера.
+        Получить логи.
 
         Args:
-            limit: Максимальное количество записей
-            level: Минимальный уровень (DEBUG, INFO, WARNING, ERROR)
-            source: Фильтр по источнику
-
-        Returns:
-            Список лог записей
+            limit: макс. записей (для конкретного источника)
+            level: ALL / DEBUG / INFO / WARNING / ERROR / CRITICAL
+                   ALL или None = без фильтра по уровню
+            source: конкретный источник или 'all' — собрать из всех
         """
-        logs = list(self._buffer)
+        # --- выбрать буфер(и) ------------------------------------------------
+        if source and source != 'all':
+            buf = self._buffers.get(source)
+            if buf is None:
+                return []
+            logs = list(buf)
+        else:
+            # 'all' — собрать из всех буферов, отсортировать по времени
+            all_logs: List[Dict[str, Any]] = []
+            for buf in self._buffers.values():
+                all_logs.extend(buf)
+            all_logs.sort(key=lambda e: e['timestamp'])
+            logs = all_logs
 
-        # Фильтр по уровню
-        if level:
+        # --- фильтр по уровню ------------------------------------------------
+        if level and level.upper() != 'ALL':
             level_map = {
                 'DEBUG': logging.DEBUG,
                 'INFO': logging.INFO,
                 'WARNING': logging.WARNING,
                 'ERROR': logging.ERROR,
+                'CRITICAL': logging.CRITICAL,
             }
-            min_level = level_map.get(level.upper(), logging.INFO)
+            min_level = level_map.get(level.upper(), 0)
             logs = [
                 log for log in logs
-                if logging.getLevelName(log['level']) >= min_level
+                if level_map.get(log['level'], 0) >= min_level
             ]
 
-        # Фильтр по источнику
-        if source and source != 'all':
-            logs = [log for log in logs if log['source'] == source]
-
-        # Возвращаем последние N записей
+        # --- вернуть последние N ---------------------------------------------
         return logs[-limit:] if limit else logs
 
     def clear(self) -> None:
-        """Очистить буфер."""
-        self._buffer.clear()
+        """Очистить все буферы."""
+        for buf in self._buffers.values():
+            buf.clear()
 
 
 def get_log_handler() -> WebAdminLogHandler:
-    """Получить экземпляр лог handler."""
     return WebAdminLogHandler()
 
 
 def setup_web_admin_logging() -> None:
-    """
-    Настроить логирование для веб-админки.
-
-    Добавляет WebAdminLogHandler к корневому логгеру.
-    ВАЖНО: Добавляем только к корневому логгеру, чтобы избежать дублирования.
-    Дочерние логгеры наследуют handlers от родительского.
-    """
+    """Добавляет WebAdminLogHandler к корневому логгеру."""
     handler = get_log_handler()
-
-    # Добавляем handler только к корневому логгеру
     root_logger = logging.getLogger()
-
-    # Проверяем, не добавлен ли уже такой handler
     if not any(isinstance(h, WebAdminLogHandler) for h in root_logger.handlers):
         root_logger.addHandler(handler)
