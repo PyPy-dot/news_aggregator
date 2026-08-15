@@ -45,3 +45,8 @@ coverage.xml
 # Temporary files
 *.tmp
 *.bak
+
+# JetBrains Qodana artifacts
+index.html
+script.js
+styles.css
