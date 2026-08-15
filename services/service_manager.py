@@ -345,6 +345,12 @@ class ServiceManager:
                 logger.info("   Сигнал остановки polling (dp.stop_polling)...")
                 await dp.stop_polling()
                 logger.info("   ✅ Polling остановлен через dp.stop_polling()")
+
+                # Очищаем workflow_data dispatcher'а — он удерживает ссылки
+                # на старые сессии, которые при рестарте попадают в GC
+                # с предупреждением "Unclosed client session".
+                if hasattr(dp, 'workflow_data'):
+                    dp.workflow_data.clear()
         except RuntimeError:
             # Polling не запущен (ещё не старттовал или уже остановлен)
             logger.debug("   Polling не запущен, dp.stop_polling() пропущен")
@@ -379,6 +385,12 @@ class ServiceManager:
                 logger.info("   ✅ force_close() завершён")
             except Exception as e:
                 logger.warning(f"⚠️ Ошибка при force_close(): {e}")
+
+        # 4. Принудительная сборка мусора — чтобы старые сессии и коннекторы
+        #    были освобождены до нового initialize() (иначе GC жалуется
+        #    "Unclosed client session" асинхронно).
+        import gc
+        gc.collect()
 
         logger.info("🛑 Bot остановлен")
 
