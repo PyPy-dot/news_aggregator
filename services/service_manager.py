@@ -12,6 +12,8 @@ Service Manager — глобальный менеджер управления �
 
 import asyncio
 import logging
+import time
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from enum import Enum
 
@@ -51,6 +53,13 @@ class ServiceManager:
             "bot": ServiceState.STOPPED,
             "listener": ServiceState.STOPPED,
             "scheduler": ServiceState.STOPPED,
+        }
+
+        # Время начала работы каждого сервиса (эпоха) — для расчёта uptime
+        self._started_at: Dict[str, float] = {
+            "bot": 0.0,
+            "listener": 0.0,
+            "scheduler": 0.0,
         }
 
         # Ссылки на сервисы (устанавливаются из main.py)
@@ -104,16 +113,76 @@ class ServiceManager:
         return self._states.get(service, ServiceState.STOPPED)
 
     def is_running(self, service: str) -> bool:
-        """Проверить, запущен ли сервис."""
+        """Проверить, запущен ли сервис (по флагу, без проверки реальности)."""
         return self._states.get(service) == ServiceState.RUNNING
 
+    def _get_service(self, name: str):
+        """Получить ссылку на сервис по имени."""
+        if name == "bot":
+            return self._bot_service
+        elif name == "listener":
+            return self._listener
+        elif name == "scheduler":
+            return self._scheduler
+
     def get_all_states(self) -> Dict[str, bool]:
-        """Получить состояния всех сервисов (для API)."""
-        return {
-            "bot": self.is_running("bot"),
-            "listener": self.is_running("listener"),
-            "scheduler": self.is_running("scheduler"),
-        }
+        """
+        Получить состояния всех сервисов (для обратной совместимости).
+
+        ДЕПРЕКИРОВАН — используйте get_all_statuses()
+        """
+        statuses = self.get_all_statuses()
+        return {name: s["state"] == "running" for name, s in statuses.items()}
+
+    def get_all_statuses(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Получить богатый статус всех сервисов с реальной проверкой жизненности.
+
+        Каждый статус содержит:
+        - state: running | stopped | starting | stopping | crashed
+        - healthy: bool — сервис жив и работает
+        - uptime_sec: int — секунд с момента старта
+        - started_at: str | None — ISO-время старта
+        - last_error: str | None — последняя критическая ошибка
+        """
+        result: Dict[str, Dict[str, Any]] = {}
+
+        for name in ("bot", "listener", "scheduler"):
+            svc = self._get_service(name)
+            state = self._states.get(name, ServiceState.STOPPED).value
+
+            # --- Реальная проверка жизненности ---------------------------
+            if state == ServiceState.RUNNING.value:
+                alive = getattr(svc, 'is_alive', None)
+                if callable(alive) and not alive():
+                    # Сервис «думал» что работает, но на деле мёртв
+                    state = "crashed"
+
+            # --- Uptime ---------------------------------------------------
+            started = self._started_at.get(name, 0.0)
+            uptime = int(time.time() - started) if started else 0
+            started_iso = (
+                datetime.fromtimestamp(started, tz=timezone.utc).isoformat()
+                if started else None
+            )
+
+            # --- last_error -----------------------------------------------
+            last_error = None
+            if svc is not None:
+                last_error = getattr(svc, '_last_error', None)
+
+            # --- healthy --------------------------------------------------
+            healthy = state == "running" and last_error is None
+
+            result[name] = {
+                "state": state,
+                "healthy": healthy,
+                "uptime_sec": uptime,
+                "started_at": started_iso,
+                "last_error": last_error,
+            }
+
+        return result
 
     async def start_service(self, service: str) -> Dict[str, Any]:
         """
@@ -141,11 +210,15 @@ class ServiceManager:
                     await self._start_listener()
 
                 self._states[service] = ServiceState.RUNNING
+                self._started_at[service] = time.time()
                 logger.info(f"✅ Сервис {service} запущен")
                 return {"success": True, "message": f"{service} запущен"}
 
             except Exception as e:
                 self._states[service] = ServiceState.STOPPED
+                svc = self._get_service(service)
+                if svc is not None:
+                    svc._last_error = str(e)
                 logger.error(f"❌ Ошибка запуска {service}: {e}", exc_info=True)
                 return {"success": False, "error": str(e)}
 
@@ -175,6 +248,7 @@ class ServiceManager:
                     await self._stop_listener()
 
                 self._states[service] = ServiceState.STOPPED
+                self._started_at[service] = 0.0
                 logger.info(f"✅ Сервис {service} остановлен")
                 return {"success": True, "message": f"{service} остановлен"}
 
@@ -204,6 +278,21 @@ class ServiceManager:
             # Дополнительная пауза чтобы Telegram сервер отпустил сессию
             logger.info("⏳ Пауза перед запуском нового polling (Telegram session cleanup)...")
             await asyncio.sleep(5)
+
+        if service == "listener":
+            # Listener тоже использует Telegram (Telethon) — нужно дать время
+            # на освобождение соединений и GC старых aiohttp сессий.
+            if self._listener_task and not self._listener_task.done():
+                logger.info("⏳ Ожидание полного завершения задачи Listener...")
+                try:
+                    await asyncio.wait_for(self._listener_task, timeout=10.0)
+                except asyncio.TimeoutError:
+                    logger.warning("⚠️ Задача Listener не завершилась за 10 сек, форсирую")
+                except asyncio.CancelledError:
+                    pass
+
+            logger.info("⏳ Пауза перед запуском Listener (release MT connections)...")
+            await asyncio.sleep(3)
 
         return await self.start_service(service)
 
@@ -431,20 +520,26 @@ class ServiceManager:
 
         if self._listener:
             try:
-                # Отменяем задачу, если она есть
+                # Отменяем задачу — внутри finally run_listener()
+                # автоматически вызовет self._listener.stop()
                 if self._listener_task and not self._listener_task.done():
                     self._listener_task.cancel()
                     try:
                         await asyncio.wait_for(self._listener_task, timeout=5.0)
-                    except (asyncio.CancelledError, asyncio.TimeoutError):
-                        pass
+                        logger.info("   ✅ Listener задача завершена")
+                    except asyncio.CancelledError:
+                        logger.info("   ✅ Listener задача отменена")
+                    except asyncio.TimeoutError:
+                        logger.warning("   ⚠️ Listener задача не завершилась за 5 сек")
+                        # Дополнительный stop на случай если finally не сработал
+                        try:
+                            await self._listener.stop()
+                        except Exception:
+                            pass
 
-                # Останавливаем клиент
-                await self._listener.stop()
                 logger.info("🛑 Listener остановлен")
             except Exception as e:
                 logger.error(f"❌ Ошибка остановки Listener: {e}")
-                raise
 
 
 # Глобальный экземпляр

@@ -110,6 +110,8 @@ async def health_check_full(
     """
     health = await check_system_health(timeout=timeout)
 
+    from datetime import datetime, timezone
+
     components = [
         ComponentHealthResponse(
             name=c.name,
@@ -118,15 +120,20 @@ async def health_check_full(
             message=c.message,
             latency_ms=c.latency_ms,
             details=c.details,
-            checked_at=c.checked_at,
+            checked_at=datetime.fromtimestamp(c.checked_at, tz=timezone.utc).isoformat()
+                if isinstance(c.checked_at, (int, float)) else c.checked_at,
         )
         for c in health.components
     ]
 
+    checked_at_main = health.checked_at
+    if isinstance(checked_at_main, (int, float)):
+        checked_at_main = datetime.fromtimestamp(checked_at_main, tz=timezone.utc).isoformat()
+
     return FullHealthResponse(
         status=health.status.value,
         version=health.version,
-        checked_at=health.checked_at,
+        checked_at=checked_at_main,
         summary={
             "total_components": len(health.components),
             "healthy": health.healthy_components,
@@ -167,7 +174,13 @@ async def health_check_component(
             },
         )
 
+    from datetime import datetime as _dt, timezone as _tz
+
     result = await checker.check_component(component_name)
+
+    ca = result.checked_at
+    if isinstance(ca, (int, float)):
+        ca = _dt.fromtimestamp(ca, tz=_tz.utc).isoformat()
 
     return ComponentHealthResponse(
         name=result.name,
@@ -176,7 +189,7 @@ async def health_check_component(
         message=result.message,
         latency_ms=result.latency_ms,
         details=result.details,
-        checked_at=result.checked_at,
+        checked_at=ca,
     )
 
 

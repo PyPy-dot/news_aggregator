@@ -79,8 +79,17 @@ class CategorizationQueue:
         Args:
             task: Задача на категоризацию
         """
+        # Всегда пишем в локальную очередь — потребитель читает из неё
+        async with self._lock:
+            self._queue.append(task)
+            self._not_empty.set()
+            logger.debug(
+                f"📊 Добавлена задача категоризации. "
+                f"В очереди: {len(self._queue)} задач"
+            )
+
+        # Дополнительно дублируем в Redis (если настроен) для распределённых воркеров
         if self._use_redis:
-            # Используем Redis
             try:
                 if self._redis_queue is None:
                     from services.core.redis_queue import RedisTaskQueue
@@ -90,7 +99,6 @@ class CategorizationQueue:
                     self._redis_queue = RedisTaskQueue(redis_url=redis_url, prefix='categorization_queue')
                     await self._redis_queue.connect()
 
-                # Добавляем задачу в Redis
                 await self._redis_queue.add_task(
                     agent_name='Categorizer',
                     method_name='categorize',
@@ -100,21 +108,11 @@ class CategorizationQueue:
                     title=task.title,
                     desc=task.desc,
                 )
-                logger.debug(f"📊 Добавлена задача категоризации в Redis")
-                return  # Успешно добавлено в Redis
             except Exception as e:
-                # Fallback на локальную очередь при ошибке Redis
-                logger.warning(f"⚠️ Ошибка Redis, используем локальную очередь: {e}")
-                self._use_redis = False  # Переключаемся на локальную очередь
-
-        # Локальная очередь (или fallback после ошибки Redis)
-        async with self._lock:
-            self._queue.append(task)
-            self._not_empty.set()
-            logger.debug(
-                f"📊 Добавлена задача категоризации. "
-                f"В очереди: {len(self._queue)} задач"
-            )
+                # Redis недоступен — задачи всё равно в локальной очереди
+                if self._use_redis:
+                    logger.warning(f"Redis недоступен для категоризации: {e} (локальная очередь работает)")
+                    self._use_redis = False
 
     async def get(self) -> Optional[CategorizationTask]:
         """
@@ -125,10 +123,9 @@ class CategorizationQueue:
         Returns:
             Задача или None если остановлена
         """
-        # Redis очередь не поддерживает get() напрямую — используем локальную очередь
-        if self._use_redis:
-            logger.warning("⚠️ Redis очередь не поддерживает get(), используем локальную очередь")
-            self._use_redis = False  # Переключаемся на локальную очередь
+        # Redis-очередь не поддерживается в get() — потребитель читает из локальной
+        # (Redis используется как дублирующий бэкэнд в add() для распределённых воркеров)
+        self._use_redis = False
 
         # Локальная очередь
         while self._running:

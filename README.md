@@ -4,38 +4,11 @@
 
 **Источники новостей:**
 - Telegram-каналы (мониторинг через UserBot)
-- RSS/Atom ленты (feedparser, 20+ лент)
+- RSS/Atom ленты (feedparser)
 - Web-сайты (requests + BeautifulSoup4)
 
-**Версия:** 4.0.0  
-**Последнее обновление:** 2026-08-11
-
----
-
-### 📢 Новое в версии 4.0.0 (2026-08-11)
-
-- ✅ **Глубокий рефакторинг архитектуры** — NewsOrchestrator, стратегии обработки, Event Bus
-- ✅ **Listener Bot (Telethon)** — выделен в отдельный сервис, мониторинг Telegram
-- ✅ **Модульная категоризация** — `services/telegram/categorization.py`
-- ✅ **Улучшенная векторная поиск** — оптимизированный ChromaDB клиент, автопереиндексация
-- ✅ **Расширенное тестирование** — тесты orchestrator, notification, direct news
-- ✅ **Очистка кодовой базы** — удалены мёртвые файлы, упрощена структура
-
-### 📢 Новое в версии 3.9.0 (2026-08-10)
-
-- ✅ **Распределённая очередь (Redis/Celery)** — горизонтальное масштабирование, персистентность задач
-- ✅ **Интеграционные тесты** — 70+ тестов с Ollama и ChromaDB, GitHub Actions CI/CD
-- ✅ **Prometheus + Grafana** — полный мониторинг, 3 дашборда, 30+ алертов
-- ✅ **AI-агенты микросервис** — отдельный сервис с HTTP API и automatic fallback
-
-### 📢 Новое в версии 3.5.0 (2026-08-09)
-
-- ✅ **2FA авторизация (TOTP)** — безопасность администраторов (Google Authenticator / Authy)
-- ✅ **Учёт регистра тэгов** — case-insensitive поиск, нормализация к lowercase
-- ✅ **RSS парсинг** — парсинг RSS/Atom лент (feedparser, 20+ лент, каждые 5 мин)
-- ✅ **Web парсинг** — парсинг сайтов через requests + bs4
-- ✅ **Web админка** — FastAPI + JWT + Tailwind CSS (базовая реализация)
-- ✅ **Docker контейнеризация** — 7 сервисов, docker-compose для dev и prod
+**Версия:** 4.0.0
+**Последнее обновление:** 2026-08-16
 
 ---
 
@@ -48,6 +21,7 @@
 - [Конфигурация](#конфигурация)
 - [AI Агенты](#ai-агенты)
 - [Логика обработки](#логика-обработки)
+- [Web админка](#web-админка)
 - [Документация](#документация)
 - [Тестирование](#тестирование)
 
@@ -58,14 +32,15 @@
 **News Aggregator** — это система для:
 - Мониторинга Telegram-каналов в реальном времени
 - Автоматической категоризации и оценки срочности новостей (1-5)
-- Генерации сводных новостей через AI-агентов (Analyst → Editor → Archivist)
+- Генерации сводных новостей через AI-агентов (Categorizer → Analyst → Editor → Archivist)
 - Векторного поиска похожих событий (ChromaDB + sentence-transformers)
 - Публикации в Telegram-каналы
-- **Парсинга RSS/Atom лент** с автопроверкой каждые 5 минут
-- **Парсинга веб-сайтов** через requests + BeautifulSoup4
-- Web интерфейса администрирования (FastAPI)
-- Управления подписками и платежами
-- **2FA аутентификации** (TOTP) для администраторов
+- Парсинга RSS/Atom лент с автопроверкой каждые 5 минут
+- Парсинга веб-сайтов через requests + BeautifulSoup4
+- Web интерфейса администрирования (FastAPI + 52 endpoint'а)
+- Управления подписками и платежами (Telegram Stars)
+- 2FA аутентификации (TOTP) для администраторов
+- Health check и мониторинга состояния всех компонентов
 
 ### Ключевые возможности
 
@@ -75,14 +50,29 @@
 | **Категоризация** | AI-классификация новостей по категориям и срочности (1-5) |
 | **Срочные новости** | Обработка новостей срочностью 4-5 немедленно |
 | **Доверенные источники** | Публикация без модерации от проверенных каналов |
-| **RSS парсинг** | Парсинг RSS/Atom лент (20+ лент, каждые 5 мин) |
+| **RSS парсинг** | Парсинг RSS/Atom лент (каждые 5 мин) |
 | **Web парсинг** | Парсинг сайтов через requests + bs4 |
-| **Векторный поиск** | Поиск похожих событий через ChromaDB |
+| **Векторный поиск** | Поиск похожих событий через ChromaDB (HNSW) |
 | **AI-агенты** | 4 агента: Categorizer, Analyst, Editor, Archivist |
 | **Подписки** | Платные подписки для пользователей (Telegram Stars) |
 | **Прямая генерация** | Генерация новостей админом без источника |
 | **2FA** | TOTP-аутентификация для администраторов |
-| **Web админка** | FastAPI интерфейс с JWT + 2FA |
+| **Web админка** | FastAPI + JWT — главная панель, консоль, задачи, настройки |
+| **Service Manager** | Управление сервисами (старт/стоп/рестарт) через веб-консоль |
+| **Health Check** | Проверка здоровья всех компонентов (БД, Ollama, ChromaDB, бот) |
+| **Уведомления** | Панель уведомлений о сбоях сервисов |
+
+### Статистика проекта
+
+| Метрика | Значение |
+|---------|----------|
+| **Строк кода (services)** | ~34 500 |
+| **Строк кода (database)** | ~5 100 |
+| **Файлов тестов** | 63 |
+| **API endpoint'ов** | 52 |
+| **Страниц веб-админки** | 7 (главная, консоль, настройки, новости, каналы, пользователи, задачи, RSS, web) |
+| **Модулей** | 16 |
+| **Репозиториев** | 11 |
 
 ---
 
@@ -91,59 +81,54 @@
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                         main.py                                  │
-│                    (точка входа, lifecycle)                       │
+│              (Application — lifecycle, сигналы)                   │
 └─────────────────────────────────────────────────────────────────┘
                               │
-        ┌─────────────────────┼─────────────────────┐
-        │                     │                     │
-        ▼                     ▼                     ▼
-┌───────────────┐   ┌─────────────────┐   ┌───────────────┐
-│  Admin Bot    │   │   Listener Bot  │   │   Scheduler   │
-│  (aiogram)    │   │   (Telethon)    │   │  + RSS парсер │
-│  + Web Admin  │   │   + RSS/Web     │   │  + Web парсер │
-└───────────────┘   └─────────────────┘   └───────────────┘
-                           │                      │
-        ┌──────────────────┴──────────────────────┘
-        │
-        ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    NewsOrchestrator                              │
-│           (делегирует обработку стратегиям)                      │
-└─────────────────────────────────────────────────────────────────┘
-        │
-        ├─────────────────┬─────────────────┬─────────────────────┐
-        │                 │                 │                     │
-        ▼                 ▼                 ▼                     ▼
-┌───────────────┐ ┌───────────────┐ ┌───────────────┐   ┌──────────────┐
-│   Urgent      │ │  Scheduled    │ │   Trusted     │   │  Event Bus   │
-│   Strategy    │ │  Strategy     │ │   Strategy    │   │  (priority)  │
-└───────────────┘ └───────────────┘ └───────────────┘   └──────────────┘
-                                                          │
-                        ┌─────────────────────────────────┘
-                        │
-        ┌───────────────┼─────────────────┬───────────────┐
-        ▼               ▼                 ▼               ▼
-┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-│ Categorization│ │    News      │ │   Vector     │ │  LLM Provider│
-│   Module     │ │   Module     │ │   Search     │ │  (Ollama)    │
-└──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘
+              ┌───────────────┼───────────────┐
+              │               │               │
+              ▼               ▼               ▼
+   ┌───────────────┐ ┌───────────────┐ ┌─────────────────┐
+   │ ServiceManager│ │  Web Admin    │ │  AgentTaskQueue │
+   │ (lazy start)  │ │  (FastAPI)    │ │  (+ Redis)      │
+   └───────┬───────┘ └───────────────┘ └─────────────────┘
+           │
+    ┌──────┼──────────┬───────────┐
+    ▼      ▼          ▼           ▼
+┌───────┐ ┌────────┐  ┌─────────┐  ┌────────────┐
+│  Bot  │ │ Listener│  │Scheduler│  │ Health     │
+│(aiogram│ │(Telethon│  │ (+ RSS) │  │ Check      │
+│ )     │ │ )      │  │         │  │            │
+└───────┘ └────────┘  └─────────┘  └────────────┘
+           │
+           ▼
+   ┌─────────────────────────────────────────────────┐
+   │              NewsOrchestrator                    │
+   │         (Strategy pattern + EventBus)            │
+   └─────────────────────────────────────────────────┘
+           │
+    ┌──────┼───────────┬───────────┬────────────────┐
+    ▼      ▼           ▼           ▼                ▼
+┌───────┐ ┌─────────┐ ┌─────────┐ ┌──────────┐ ┌────────┐
+│ Urgent│ │Scheduled│ │ Trusted │ │ Categoriz│ │ Vector │
+│News   │ │News     │ │ Source  │ │ ation    │ │ Search │
+└───────┘ └─────────┘ └─────────┘ └──────────┘ └────────┘
 ```
 
-### Стек технологий v3.9.0
+### Стек технологий
 
 | Категория | Технология |
 |-----------|-----------|
 | **Telegram** | aiogram 3.x, Telethon 1.30+ |
-| **Backend** | Python 3.12, FastAPI |
-| **Web Admin** | FastAPI + JWT + Tailwind CSS |
+| **Backend** | Python 3.12, FastAPI, uvicorn |
+| **Web Admin** | FastAPI + JWT + Tailwind CSS + Jinja2 |
 | **ORM** | SQLAlchemy 2.0 + Alembic |
-| **Database** | SQLite / PostgreSQL |
-| **LLM** | Ollama (qwen2.5:7b), OpenAI (GPT-4o), Anthropic (Claude) |
-| **Vector DB** | ChromaDB + sentence-transformers |
-| **AI Agents** | Categorizer, Analyst, Editor, Archivist (+ микросервис) |
-| **Queue** | Redis + Celery |
+| **Database** | SQLite (dev) / PostgreSQL (prod) |
+| **LLM** | Ollama (qwen2.5:7b), OpenAI (GPT-4o-mini), Anthropic (Claude) |
+| **Vector DB** | ChromaDB + sentence-transformers (HNSW) |
+| **AI Agents** | Categorizer, Analyst, Editor, Archivist |
+| **Queue** | Redis + Celery (опционально) |
 | **Container** | Docker + Docker Compose |
-| **Monitoring** | Prometheus + Grafana |
+| **Monitoring** | Prometheus + Grafana + Health Check API |
 | **CI/CD** | GitHub Actions |
 
 ---
@@ -190,12 +175,11 @@ docker-compose exec ollama ollama pull qwen2.5:7b
 | Основное приложение | http://localhost | 8000 |
 | Web админка | http://localhost:8001 | 8001 |
 | PostgreSQL | localhost | 5432 |
-| ChromaDB | http://localhost:8002 | 8002 |
+| ChromaDB | http://localhost:8000 | 8000 |
 | Ollama | http://localhost:11434 | 11434 |
-| **Redis** | **localhost** | **6379** |
-| **Prometheus** | **http://localhost:9090** | **9090** |
-| **Grafana** | **http://localhost:3000** | **3000** |
-| **AI Agent Service** | **http://localhost:8003** | **8002** |
+| Redis | localhost | 6379 |
+| Prometheus | http://localhost:9090 | 9090 |
+| Grafana | http://localhost:3000 | 3000 |
 
 ### Production
 
@@ -216,7 +200,6 @@ docker-compose -f docker-compose.prod.yml up -d
 ### Установка
 
 ```bash
-git clone <repository-url>
 cd news_aggregator
 
 python -m venv .venv
@@ -235,23 +218,34 @@ ollama pull qwen2.5:7b
 python main.py
 ```
 
+### Локальный запуск
+
+После запуска открывается Web Admin панель: `http://localhost:8001`
+
+Сервисы (Bot, Listener, Scheduler) запускаются **лениво** через консоль админки — не автоматически.
+
 ---
 
 ## Конфигурация
 
 ### Переменные окружения
 
-| Переменная | Описание | Пример |
-|------------|----------|--------|
-| `TELEGRAM_BOT_TOKEN` | Токен Telegram бота | `123456:ABC-DEF1234...` |
-| `TELEGRAM_API_ID` | Telegram API ID | `12345678` |
-| `TELEGRAM_API_HASH` | Telegram API hash | `abcdef123456...` |
-| `ADMIN_ID` | Telegram ID администратора | `123456789` |
-| `ENCRYPTION_KEY` | Ключ шифрования (32+ символа) | `your-secret-key...` |
-| `DATABASE_URL` | PostgreSQL URL (опционально) | `postgresql+asyncpg://...` |
-| `JWT_SECRET` | JWT секрет (для Web админки) | `openssl rand -hex 32` |
+| Переменная | Описание | Обязательно |
+|------------|----------|:-----------:|
+| `TELEGRAM_BOT_TOKEN` | Токен Telegram бота | ✅ |
+| `TELEGRAM_API_ID` | Telegram API ID | ✅ |
+| `TELEGRAM_API_HASH` | Telegram API hash | ✅ |
+| `TELEGRAM_PHONE_NUMBER` | Номер для Listener Bot | ✅ |
+| `ADMIN_ID` | Telegram ID администратора | ✅ |
+| `WEB_ADMIN_JWT_SECRET` | JWT секрет для веб-админки | ✅ |
+| `ENCRYPTION_KEY` | Ключ шифрования (32+ символа) | ✅ |
+| `DATABASE_URL` | PostgreSQL URL (опционально) | — |
+| `REDIS_URL` | Redis URL (опционально) | — |
+| `LLM_PRIMARY_PROVIDER` | Основной LLM провайдер | — |
+| `OLLAMA_HOST` | URL Ollama API | — |
+| `OLLAMA_MODEL` | Модель Ollama | — |
 
-### Настройки ключей
+### Основные настройки
 
 | Настройка | По умолчанию | Описание |
 |-----------|--------------|----------|
@@ -259,6 +253,7 @@ python main.py
 | `agent_model` | `qwen2.5:7b` | Модель для AI агентов |
 | `channel_trust_window_size` | 100 | Окно для расчёта рейтинга канала |
 | `payment_provider` | `test` | Платёжный провайдер |
+| `categorization_queue_maxlen` | 10 | Макс. размер очереди категоризации |
 
 ---
 
@@ -271,8 +266,12 @@ python main.py
 | **Editor** | Генерация новости в журналистском стиле | `prompts/editor.txt` |
 | **Archivist** | Структурирование контекста для векторного поиска | `prompts/archivist.txt` |
 
-### Модель
-- **Основная:** `qwen2.5:7b` (Ollama)
+### LLM провайдеры
+
+- **Основной:** Ollama (`qwen2.5:7b`)
+- **Fallback:** OpenAI (GPT-4o-mini), Anthropic (Claude Sonnet)
+- **Circuit Breaker** защищает от каскадных сбоев
+- **LLM Cache** кэширует повторяющиеся запросы
 
 ---
 
@@ -280,30 +279,90 @@ python main.py
 
 ### Срочность 4-5 (срочные)
 ```
-1. Пост получен
-2. Проверка: is_trusted?
-   ├─ Да → TrustedSourceStrategy → Analyst → Публикация
-   └─ Нет → UrgentNewsStrategy → Analyst → EventBus → Editor → Archivist → Модерация
+Пост → Categorization → UrgentNewsStrategy
+    → Analyst → EventBus → Editor → Archivist → Модерация
 ```
 
-### Срочность 1-3 (несрочные)
+### Срочность 1-3 (плановые)
 ```
-1. Пост получен
-2. CategorizationProcessor → AnalystAgent
-3. ScheduledNewsStrategy → БД (checked_at=false)
-4. Планировщик (задачи в БД, время из scheduled_at)
+Пост → Categorization → Analyst (дуэт с Categorizer)
+    → ScheduledNewsStrategy → БД (checked_at=false)
+    → Scheduler (задачи в БД) → Editor → Archivist → Модерация
+```
+
+### Доверенный источник
+```
+Пост → Categorization → Analyst → TrustedSourceStrategy
+    → Публикация → Уведомление подписчикам
 ```
 
 ### RSS и Web парсинг
 ```
 RSS/Web Parser → БД (rss_news / web_news)
-    │
-    ▼
-AI Категоризация → Post (checked_at=false)
-    │
-    ▼
-Планировщик → Editor → Archivist → Модерация
+    → AI категоризация → Post (checked_at=false)
+    → Планировщик → Editor → Archivist → Модерация
 ```
+
+---
+
+## Web админка
+
+Веб-интерфейс администрирования на FastAPI + Tailwind CSS + Jinja2. Запускается на порту `8001`.
+
+### Страницы
+
+| Страница | URL | Описание |
+|----------|-----|----------|
+| **Главная** | `/` | Дашборд: статистика, статус сервисов, health check, быстрые действия |
+| **Консоль** | `/console` | Управление сервисами (старт/стоп/рестарт), выполнение SQL/Python, логи |
+| **Настройки** | `/settings` | Редактирование `.env` переменных, горячее применение |
+| **Новости** | `/news` | Список новостей, модерация |
+| **Каналы** | `/channels` | Управление каналами-источниками |
+| **Пользователи** | `/users` | Список пользователей, подписки |
+| **Задачи** | `/tasks` | Управление задачами планировщика |
+| **RSS ленты** | `/rss` | Управление RSS источниками |
+| **Web парсинг** | `/web` | Управление web источниками |
+
+### API endpoint'ы (52)
+
+| Группа | Endpoint'ы | Описание |
+|--------|-----------|----------|
+| **Health** | `/health`, `/health/full`, `/health/{component}` | Проверка здоровья компонентов |
+| **Сервисы** | `/api/services/status`, `/api/notifications/read` | Статус сервисов, уведомления |
+| **Консоль** | `/api/execute`, `/api/python`, `/api/sql`, `/api/logs`, `/api/{service}/start` | Выполнение команд, управление сервисами |
+| **Задачи** | `/tasks/*` (12 endpoint'ов) | CRUD задач, планирование |
+| **Новости** | `/api/news/recent`, `/api/news/generate` | Последние новости, генерация |
+| **Каналы** | `/api/channels`, `/channels` | Управление каналами |
+| **Настройки** | `/api/env`, `/api/env/restart` | Чтение/запись настроек |
+| **Listener** | `/api/listener/auth/*` (6 endpoint'ов) + WebSocket | Авторизация ListenerBot |
+| **Аутентификация** | `/auth/login`, `/auth/logout` | Вход/выход в веб-админку |
+
+### Управление сервисами (ServiceManager)
+
+Сервисы запускаются **лениво** — не автоматически при старте приложения, а через веб-консоль:
+
+- **Admin Bot** — Telegram бот (aiogram)
+- **Listener Bot** — мониторинг каналов (Telethon)
+- **Scheduler** — планировщик задач + RSS парсинг
+
+Поддерживаются операции: старт, стоп, рестарт, проверка здоровья.
+
+### Health Check
+
+Проверяет здоровье 7 компонентов:
+
+| Компонент | Критичность | Что проверяет |
+|-----------|------------|---------------|
+| **database** | CRITICAL | Подключение к БД, `SELECT 1` |
+| **telegram_bot** | CRITICAL | `getMe` через Telegram API |
+| **ollama** | HIGH | `/api/tags` — доступность Ollama |
+| **llm_fallback** | HIGH | Fallback провайдер (все LLM) |
+| **vector_search** | HIGH | ChromaDB подключение |
+| **circuit_breakers** | MEDIUM | Состояние circuit breaker'ов |
+| **scheduler** | MEDIUM | Подсчёт задач по статусам |
+| **categorization_queue** | MEDIUM | Статус очереди категоризации |
+
+Статусы обновляются автоматически каждые 10 секунд.
 
 ---
 
@@ -314,37 +373,45 @@ AI Категоризация → Post (checked_at=false)
 | Документ | Описание |
 |----------|----------|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Детальная архитектура системы |
-| [docs/DOCKER_SETUP_2026_08_09.md](docs/DOCKER_SETUP_2026_08_09.md) | Docker контейнеризация |
-| [docs/CHANGELOG.md](docs/CHANGELOG.md) | История изменений проекта |
+| [docs/WEB_ADMIN_GUIDE.md](docs/WEB_ADMIN_GUIDE.md) | Руководство по веб-админке |
+| [docs/CHANGELOG.md](docs/CHANGELOG.md) | История изменений |
+| [docs/RUNBOOK.md](docs/RUNBOOK.md) | Операционное руководство |
+| [docs/CONSOLE_GUIDE.md](docs/CONSOLE_GUIDE.md) | Консоль управления |
 
-### v3.9.0 — Новые функции (2026-08-10)
+### Архитектура и компоненты
 
 | Документ | Описание |
 |----------|----------|
-| [docs/REDIS_QUEUE_SETUP.md](docs/REDIS_QUEUE_SETUP.md) | Распределённая очередь Redis/Celery |
-| [docs/CI_CD_SETUP.md](docs/CI_CD_SETUP.md) | Интеграционные тесты и CI/CD |
-| [docs/PROMETHEUS_GRAFANA_SETUP.md](docs/PROMETHEUS_GRAFANA_SETUP.md) | Мониторинг и алерты |
+| [docs/HEALTH_CHECK_SETUP.md](docs/HEALTH_CHECK_SETUP.md) | Health check компонентов |
+| [docs/REDIS_QUEUE_SETUP.md](docs/REDIS_QUEUE_SETUP.md) | Распределённая очередь Redis |
+| [docs/CELERY_WORKER_SETUP.md](docs/CELERY_WORKER_SETUP.md) | Celery воркер |
+| [docs/CIRCUIT_BREAKER_SETUP.md](docs/CIRCUIT_BREAKER_SETUP.md) | Circuit Breaker |
+| [docs/LLM_FALLBACK_SETUP.md](docs/LLM_FALLBACK_SETUP.md) | Fallback LLM провайдер |
+| [docs/LLM_CACHE_IMPLEMENTATION.md](docs/LLM_CACHE_IMPLEMENTATION.md) | Кэширование LLM |
+| [docs/HNSW_VECTOR_SEARCH_OPTIMIZATION.md](docs/HNSW_VECTOR_SEARCH_OPTIMIZATION.md) | Оптимизация HNSW |
+| [docs/AUTO_REINDEX_IMPLEMENTATION.md](docs/AUTO_REINDEX_IMPLEMENTATION.md) | Автопереиндексация |
+| [docs/DATABASE_ABSTRACTION_LAYER.md](docs/DATABASE_ABSTRACTION_LAYER.md) | Абстрактный слой БД |
 | [docs/AI_AGENT_MICROSERVICE.md](docs/AI_AGENT_MICROSERVICE.md) | AI-агенты микросервис |
 
-### v3.5.0 — Новые функции
+### Инфраструктура
 
 | Документ | Описание |
 |----------|----------|
-| [docs/2FA_IMPLEMENTATION_2026_08_09.md](docs/2FA_IMPLEMENTATION_2026_08_09.md) | 2FA авторизация (TOTP) |
-| [docs/TAGS_CASE_INSENSITIVE_2026_08_09.md](docs/TAGS_CASE_INSENSITIVE_2026_08_09.md) | Учёт регистра тэгов |
-| [docs/RSS_PARSING_IMPLEMENTATION_2026_08_09.md](docs/RSS_PARSING_IMPLEMENTATION_2026_08_09.md) | RSS парсинг |
-| [docs/WEB_PARSING_BASE_2026_08_09.md](docs/WEB_PARSING_BASE_2026_08_09.md) | Web парсинг |
-| [docs/WEB_ADMIN_BASE_2026_08_09.md](docs/WEB_ADMIN_BASE_2026_08_09.md) | Web админка |
+| [docs/DOCKER_SETUP_2026_08_09.md](docs/DOCKER_SETUP_2026_08_09.md) | Docker контейнеризация |
+| [docs/POSTGRESQL_SETUP.md](docs/POSTGRESQL_SETUP.md) | PostgreSQL |
+| [docs/POSTGRESQL_PRODUCTION_SETUP.md](docs/POSTGRESQL_PRODUCTION_SETUP.md) | PostgreSQL production |
+| [docs/ALEMBIC_SETUP.md](docs/ALEMBIC_SETUP.md) | Миграции БД |
+| [docs/PROMETHEUS_GRAFANA_SETUP.md](docs/PROMETHEUS_GRAFANA_SETUP.md) | Мониторинг |
+| [docs/CI_CD_SETUP.md](docs/CI_CD_SETUP.md) | CI/CD |
+| [docs/PROXY_SETUP.md](docs/PROXY_SETUP.md) | Настройка прокси |
 
-### Миграции и инфраструктура
+### Безопасность
 
 | Документ | Описание |
 |----------|----------|
-| [docs/POSTGRESQL_SETUP.md](docs/POSTGRESQL_SETUP.md) | Настройка PostgreSQL |
-| [docs/ALEMBIC_SETUP.md](docs/ALEMBIC_SETUP.md) | Руководство по миграциям БД |
-| [docs/LLM_CACHE_IMPLEMENTATION.md](docs/LLM_CACHE_IMPLEMENTATION.md) | Кэширование LLM |
-| [docs/AUTO_REINDEX_IMPLEMENTATION.md](docs/AUTO_REINDEX_IMPLEMENTATION.md) | Автопереиндексация |
-| [docs/MICROSERVICES_ARCHITECTURE.md](docs/MICROSERVICES_ARCHITECTURE.md) | Микросервисы (проект) |
+| [docs/2FA_IMPLEMENTATION_2026_08_09.md](docs/2FA_IMPLEMENTATION_2026_08_09.md) | 2FA авторизация |
+| [docs/WEB_ADMIN_AUTH.md](docs/WEB_ADMIN_AUTH.md) | Аутентификация в веб-админке |
+| [docs/AUTH_GUIDE.md](docs/AUTH_GUIDE.md) | Руководство по аутентификации |
 
 ---
 
@@ -357,33 +424,26 @@ pytest tests/ -v
 # С покрытием
 pytest tests/ -v --cov=services --cov=database
 
-# Репозитории
-pytest tests/test_repositories/ -v
-
-# AI-агенты
-pytest tests/test_agents/ -v
-
-# RSS парсер
-pytest tests/test_rss/ -v
-
-# 2FA
-pytest tests/test_auth/ -v
+# По категориям
+pytest tests/test_repositories/ -v   # Репозитории
+pytest tests/test_agents/ -v         # AI агенты
+pytest tests/test_categorization/ -v # Категоризация
+pytest tests/test_news/ -v           # Обработка новостей
+pytest tests/test_rss/ -v           # RSS парсер
+pytest tests/test_auth/ -v          # 2FA
+pytest tests/services/ -v           # Сервисы
 ```
 
 ### Статистика тестов
 
-| Категория | Тестов | Покрытие |
-|-----------|--------|----------|
-| **Всего тестов** | 237+ | ~90% |
-| **Unit тесты** | 147 | 90% |
-| **Интеграционные** | 70+ | 85% |
-| **Микросервис** | 20+ | 85% |
-| **Репозитории** | 29 | 90% |
-| **2FA** | 17 | 100% |
-| **Case-insensitive** | 15 | 100% |
-| **RSS парсер** | 11 | 100% |
-| **AI агенты** | 10+ | 85% |
-| **Сервисы** | 50+ | 90% |
+| Категория | Файлов | Строк |
+|-----------|--------|-------|
+| **Всего** | 63 | ~11 600 |
+| Репозитории | 4 | — |
+| AI агенты | 3 | — |
+| Категоризация | 2 | — |
+| Сервисы | 10 | — |
+| Интеграционные | 5 | — |
 
 ---
 

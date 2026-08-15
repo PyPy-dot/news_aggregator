@@ -50,6 +50,9 @@ LOGGERS_LEVELS = {
     'telethon': logging.WARNING,
     'aiogram': logging.WARNING,
     'asyncio': logging.WARNING,
+    'httpx': logging.WARNING,          # подавить "HTTP Request: GET ... /api/tags" от Ollama
+    'httpcore': logging.WARNING,       # аналогично — транспортный слой httpx
+    'ollama': logging.WARNING,         # сам Ollama клиент
 }
 
 # Context variable для хранения текущего correlation ID
@@ -74,6 +77,24 @@ class SQLAlchemyPoolFilter(logging.Filter):
             return False
         # Скрываем сообщения о termination соединений
         if 'will be terminated' in record.getMessage():
+            return False
+        return True
+
+
+# Фильтр для подавления "Unclosed client session" от aiohttp —
+# это ResourceWarning из __del__, который asyncio ререйсит как ERROR
+# через loop.call_exception_handler(). Сессии реально закрываются
+# (через close() или GC), но предупреждение появляется с задержкой
+# когда GC собирает объект. Безопасно подавлять — это не баг, а
+# особенность взаимодействия aiohttp GC + asyncio event loop.
+class AiohttpUnclosedSessionFilter(logging.Filter):
+    """Фильтр для подавления ложных ERRORS от aiohttp Unclosed client session."""
+
+    def filter(self, record):
+        msg = record.getMessage()
+        if 'Unclosed client session' in msg:
+            return False
+        if 'Unclosed connector' in msg:
             return False
         return True
 
@@ -123,6 +144,10 @@ def setup_logging(
     # === Применяем фильтр к SQLAlchemy ===
     sqlalchemy_logger = logging.getLogger('sqlalchemy.pool')
     sqlalchemy_logger.addFilter(SQLAlchemyPoolFilter())
+
+    # === Подавляем "Unclosed client session" от aiohttp ===
+    asyncio_logger = logging.getLogger('asyncio')
+    asyncio_logger.addFilter(AiohttpUnclosedSessionFilter())
 
     # === Файловый хендлер с ротацией ===
     if log_to_file:

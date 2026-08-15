@@ -80,8 +80,10 @@ class BotService:
     def __init__(self) -> None:
         self.bot: Optional[Bot] = None
         self._session: Optional[aiohttp.ClientSession] = None
+        self._connector: Optional[aiohttp.TCPConnector] = None
         self._notification_service = None
         self._running = False
+        self._last_error: Optional[str] = None
 
     async def initialize(self) -> Bot:
         """
@@ -104,8 +106,11 @@ class BotService:
             sock_read=120
         )
 
+        # Закрываем старый connector если остался от предыдущего запуска
+        await self._close_connector()
+
         # Создаём connector с IPv4 для стабильности
-        connector = aiohttp.TCPConnector(
+        self._connector = aiohttp.TCPConnector(
             ssl=False,
             family=socket.AF_INET,
             limit=100,
@@ -115,9 +120,9 @@ class BotService:
 
         # Создаём aiohttp ClientSession
         self._session = aiohttp.ClientSession(
-            connector=connector,
+            connector=self._connector,
             timeout=timeout,
-            connector_owner=True,
+            connector_owner=False,  # Коннектор закрываем отдельно, не через сессию
         )
 
         # Создаём AiohttpSession и передаём ей aiohttp сессию
@@ -182,6 +187,7 @@ class BotService:
             raise RuntimeError("Bot not initialized. Call initialize() first.")
 
         self._running = True
+        self._last_error = None
 
         try:
             await dp.start_polling(
@@ -206,6 +212,26 @@ class BotService:
             self._running = False
             logger.info("🛑 Admin Bot polling остановлен")
 
+    def is_alive(self) -> bool:
+        """Проверить, действительно ли бот работает (polling активен)."""
+        if not self._running or self.bot is None:
+            return False
+        # dp._running_lock захвачен = polling запущен
+        try:
+            return dp._running_lock.locked()
+        except Exception:
+            return False
+
+    async def _close_connector(self) -> None:
+        """Безопасно закрыть TCPConnector, если он остался от предыдущего запуска."""
+        if self._connector and not self._connector.closed:
+            try:
+                await self._connector.close()
+                logger.debug("✅ TCPConnector закрыт")
+            except Exception as e:
+                logger.debug(f"⚠️ Ошибка закрытия TCPConnector: {e}")
+        self._connector = None
+
     async def force_close(self) -> None:
         """
         Принудительно закрыть соединения бота.
@@ -224,6 +250,9 @@ class BotService:
             except Exception as e:
                 logger.debug(f"⚠️ Ошибка закрытия aiohttp сессии (force): {e}")
             self._session = None
+
+        # Закрываем коннектор отдельно
+        await self._close_connector()
 
         # Закрываем сессию бота (принудительно)
         if self.bot:
@@ -252,6 +281,7 @@ class BotService:
                 except Exception:
                     pass
                 self._session = None
+            await self._close_connector()
             logger.debug("Bot не инициализирован, shutdown пропускается")
             return
 
@@ -287,6 +317,11 @@ class BotService:
             except Exception as e:
                 logger.debug(f"⚠️ Ошибка закрытия aiohttp сессии: {e}")
             self._session = None
+
+        # 3.1 Закрываем TCPConnector отдельно — иначе при рестарте
+        # старый коннектор остаётся с активными TCP-соединениями
+        # и GC жалуется "Unclosed connector".
+        await self._close_connector()
 
         # 4. Очищаем состояние Dispatcher'а — он глобальный singleton,
         #    и при рестарте должен быть чистым (иначе стартовое событие
@@ -343,20 +378,22 @@ async def get_bot_instance_async(wait: bool = True, timeout: float = 10.0) -> Op
     # Если BotService не зарегистрирован — ждём
     if _bot_service_ref is None:
         if wait:
-            logger.warning("⏳ BotService не зарегистрирован, ожидаем...")
+            logger.debug("⏳ BotService не зарегистрирован (бот не запущен через ServiceManager), ожидаю...")
             await asyncio.sleep(min(timeout, 1.0))
         if _bot_service_ref is None:
-            logger.error("❌ BotService не зарегистрирован после ожидания")
+            # Бот не запущен — это не ошибка, а легитимное состояние
+            # (сервисы стартуют лениво через консоль админки)
+            logger.debug("BotService не зарегистрирован — бот не запущен через консоль")
             return None
 
     # Проверяем, есть ли бот
     if _bot_service_ref.bot:
-        logger.info("✅ Bot найден в _bot_service_ref")
+        logger.debug("Bot найден в _bot_service_ref")
         return _bot_service_ref.bot
 
     # Бота нет, но BotService есть — ждём инициализации
     if wait:
-        logger.warning("⏳ Bot не инициализирован, ожидаем...")
+        logger.debug("⏳ Bot не инициализирован, ожидаю...")
         max_attempts = int(timeout * 2)
         for attempt in range(max_attempts):
             if _bot_service_ref.bot:
@@ -364,7 +401,7 @@ async def get_bot_instance_async(wait: bool = True, timeout: float = 10.0) -> Op
                 return _bot_service_ref.bot
             await asyncio.sleep(0.5)
 
-    logger.error("❌ Bot не инициализирован после ожидания")
+    logger.debug("Bot не инициализирован после ожидания")
     return None
 
 

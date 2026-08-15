@@ -4,6 +4,59 @@
 
 ---
 
+## 2026-08-16 — v4.0.0 (hotfix) — Health Check, ServiceManager, Web Admin
+
+### Health Check — проверка здоровья компонентов
+
+- ✅ Исправлен `check_database_health()` — добавлен import `get_database_service`, безопасный доступ к `db_type`
+- ✅ Исправлен `check_vector_search_health()` — кэширование ChromaDB клиента, исправлен путь к `_client`
+- ✅ Исправлен `check_ollama_health()` — кэширование провайдера
+- ✅ Исправлен `check_categorization_queue_health()` — кэширование очереди
+- ✅ Все health-компоненты кэшированы — не пересоздаются при каждом запросе
+
+### ServiceManager —统一管理 сервисов
+
+- ✅ Проверка жизненности (`is_alive()`) — сервисы с реальным статусом
+- ✅ Uptime для всех сервисов (uptime_sec, started_at)
+- ✅ last_error — отслеживание последних ошибок
+- ✅ Статусы: `stopped` → `starting` → `running` → `stopping` / `crashed`
+
+### Web Admin v2 — доработка интерфейса
+
+- ✅ Единый формат статусов на всех страницах (OK · 2ч 15м / Ошибка / Остановлен)
+- ✅ Глобальный статус в футере — исправлен баг с «Загрузка» (баг в замыкании `k`)
+- ✅ Health check обновляется каждые 10 сек через polling
+- ✅ Панель уведомлений — ошибки/предупреждения/инфо с фильтрами
+- ✅ Статус `crashed` добавлен на все страницы
+- ✅ Все страницы используют `d.statuses` (state + healthy) вместо `d.services` (bool)
+
+### Логирование
+
+- ✅ Добавлены исключения для httpx, httpcore, ollama — подавлен шум от health check запросов
+- ✅ Понижен уровень «Bot найден» с INFO до DEBUG
+- ✅ Понижен уровень «BotService не зарегистрирован» с ERROR до DEBUG
+
+### CategorizationQueue
+
+- ✅ Исправлен разрыв Redis/локальная очередь — `add()` теперь пишет сначала в локальную очередь
+- ✅ Redis используется как дублирующий бэкэнд, не основной
+- ✅ Убран warning-спам из `get()`
+
+### Web Admin — аутентификация
+
+- ✅ Исправлено имя переменной: `JWT_SECRET` → `WEB_ADMIN_JWT_SECRET`
+- ✅ `.env.example` и `routes/settings.py` обновлены
+- ✅ `SessionManager` загружает `.env` самостоятельно (pydantic не пишет неизвестные поля в os.environ)
+
+### Документация
+
+- ✅ README.md — полная актуализация
+- ✅ docs/ARCHITECTURE.md — полная актуализация (ServiceManager, Health Check, Web Admin)
+- ✅ docs/WEB_ADMIN_GUIDE.md — полная переработка (52 endpoint'а, 7+ страниц)
+- ✅ docs/CHANGELOG.md — добавлена запись за 2026-08-16
+
+---
+
 ## 2026-08-11 — v4.0.0 — Глубокий рефакторинг архитектуры и модульность
 
 ### Основные изменения

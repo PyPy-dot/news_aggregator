@@ -89,6 +89,14 @@ class SessionManager:
         Для production использовать из .env!
         """
         import os
+        # Гарантируем загрузку .env перед чтением (pydantic-settings
+        # не пишет неизвестные поля в os.environ)
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(str(PROJECT_ROOT / ".env"))
+        except Exception:
+            pass
+
         secret = os.getenv("WEB_ADMIN_JWT_SECRET")
         if not secret:
             # Генерируем случайный секрет для текущей сессии

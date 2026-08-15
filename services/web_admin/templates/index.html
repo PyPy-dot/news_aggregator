@@ -37,6 +37,16 @@
         .stat-card {
             transition: all 0.3s ease;
         }
+        /* Кнопки-фильтры уведомлений */
+        .notif-filter-btn {
+            color: #4B5563;
+            border-color: #E5E7EB;
+        }
+        .notif-filter-btn.active {
+            background: #EFF6FF;
+            border-color: #93C5FD;
+            color: #1D4ED8;
+        }
         /* Анимация появления */
         .fade-in {
             animation: fadeIn 0.5s ease-in;
@@ -137,9 +147,9 @@
                     </div>
                     <div class="flex items-center space-x-4">
                         <!-- Уведомления -->
-                        <button class="relative p-2 text-gray-400 hover:text-gray-600 transition-colors">
+                        <button onclick="openNotificationsModal()" class="relative p-2 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer" title="Уведомления">
                             <i class="fas fa-bell text-xl"></i>
-                            <span class="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+                            <span id="notification-badge" class="absolute -top-0.5 -right-0.5 px-1.5 min-w-[18px] h-[18px] text-[11px] font-bold bg-red-500 text-white rounded-full flex items-center justify-center hidden">0</span>
                         </button>
 
                         <!-- Профиль / Вход -->
@@ -247,7 +257,7 @@
                             Быстрые действия
                         </h3>
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <button onclick="location.href='/news'" class="flex items-center p-4 border border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all group">
+                            <button onclick="openQuickNewsModal()" class="flex items-center p-4 border border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all group cursor-pointer">
                                 <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-blue-200 transition-colors">
                                     <i class="fas fa-plus text-blue-500"></i>
                                 </div>
@@ -257,7 +267,7 @@
                                 </div>
                             </button>
 
-                            <button onclick="location.href='/channels'" class="flex items-center p-4 border border-gray-200 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition-all group">
+                            <button onclick="openQuickChannelModal()" class="flex items-center p-4 border border-gray-200 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition-all group cursor-pointer">
                                 <div class="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-purple-200 transition-colors">
                                     <i class="fas fa-plus text-purple-500"></i>
                                 </div>
@@ -305,7 +315,7 @@
                                     <i class="fas fa-server text-green-500 mr-2"></i>
                                     Статус сервисов
                                 </h3>
-                                <button onclick="loadServiceStatus()" class="text-xs text-blue-500 hover:text-blue-700">
+                                <button onclick="loadDashboardStatuses()" class="text-xs text-blue-500 hover:text-blue-700">
                                     <i class="fas fa-sync mr-1"></i>Обновить
                                 </button>
                             </div>
@@ -315,42 +325,42 @@
                                         <i class="fas fa-robot text-blue-500"></i>
                                         <span class="text-sm font-medium text-gray-700">Admin Bot</span>
                                     </div>
-                                    <span id="status-bot" class="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full">Загрузка...</span>
+                                    <span id="status-bot" class="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full">...</span>
                                 </div>
                                 <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                                     <div class="flex items-center space-x-3">
                                         <i class="fas fa-eye text-purple-500"></i>
                                         <span class="text-sm font-medium text-gray-700">Listener Bot</span>
                                     </div>
-                                    <span id="status-listener" class="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full">Загрузка...</span>
+                                    <span id="status-listener" class="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full">...</span>
                                 </div>
                                 <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                                     <div class="flex items-center space-x-3">
                                         <i class="fas fa-clock text-orange-500"></i>
                                         <span class="text-sm font-medium text-gray-700">Scheduler</span>
                                     </div>
-                                    <span id="status-scheduler" class="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full">Загрузка...</span>
+                                    <span id="status-scheduler" class="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full">...</span>
                                 </div>
                                 <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                                     <div class="flex items-center space-x-3">
                                         <i class="fas fa-brain text-pink-500"></i>
                                         <span class="text-sm font-medium text-gray-700">AI Агенты</span>
                                     </div>
-                                    <span id="status-ai_agent" class="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">Готовы</span>
+                                    <span id="status-ai_agent" class="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full">...</span>
                                 </div>
                                 <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                                     <div class="flex items-center space-x-3">
                                         <i class="fas fa-database text-indigo-500"></i>
                                         <span class="text-sm font-medium text-gray-700">База данных</span>
                                     </div>
-                                    <span class="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">Подключена</span>
+                                    <span id="status-database" class="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full">...</span>
                                 </div>
                                 <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                                     <div class="flex items-center space-x-3">
                                         <i class="fas fa-search text-cyan-500"></i>
                                         <span class="text-sm font-medium text-gray-700">ChromaDB</span>
                                     </div>
-                                    <span id="status-chromadb" class="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full">Ожидание</span>
+                                    <span id="status-chromadb" class="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full">...</span>
                                 </div>
                             </div>
                         </div>
@@ -389,41 +399,96 @@
     </div>
 
     {% include 'components/listener-auth-modal.html' %}
+    {% include 'components/notifications-modal.html' %}
+
+    <!-- Модальное окно: быстрая генерация новости -->
+    <div id="quick-news-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center">
+        <div class="fixed inset-0 bg-black/40 backdrop-blur-sm" onclick="closeQuickNewsModal()"></div>
+        <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                <div class="flex items-center space-x-3">
+                    <div class="w-9 h-9 bg-blue-100 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-newspaper text-blue-500"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-gray-800">Создать новость</h3>
+                </div>
+                <button onclick="closeQuickNewsModal()" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="px-6 py-5 space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Текст источника <span class="text-red-500">*</span></label>
+                    <textarea id="qnews-text" rows="4" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Вставьте текст новости или основное сообщение..."></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Категория</label>
+                    <select id="qnews-category" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                        <option value="">Автоопределение</option>
+                        <option value="Политика">Политика</option>
+                        <option value="Экономика">Экономика</option>
+                        <option value="Технологии">Технологии</option>
+                        <option value="Наука">Наука</option>
+                        <option value="Общество">Общество</option>
+                        <option value="Спорт">Спорт</option>
+                        <option value="Мир">Мир</option>
+                    </select>
+                </div>
+                <div id="qnews-output"></div>
+            </div>
+            <div class="flex items-center justify-end space-x-3 px-6 py-4 bg-gray-50 border-t border-gray-200">
+                <button onclick="closeQuickNewsModal()" class="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">Отмена</button>
+                <button id="qnews-submit" onclick="submitQuickNews()" class="px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 font-medium">
+                    <i class="fas fa-magic mr-1"></i>Сгенерировать
+                </button>
+                <span id="qnews-spinner" class="hidden text-blue-500"><i class="fas fa-spinner fa-spin"></i></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно: быстрое добавление канала -->
+    <div id="quick-channel-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center">
+        <div class="fixed inset-0 bg-black/40 backdrop-blur-sm" onclick="closeQuickChannelModal()"></div>
+        <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                <div class="flex items-center space-x-3">
+                    <div class="w-9 h-9 bg-purple-100 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-broadcast-tower text-purple-500"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-gray-800">Добавить канал</h3>
+                </div>
+                <button onclick="closeQuickChannelModal()" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="px-6 py-5 space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Telegram ID канала <span class="text-red-500">*</span></label>
+                    <input id="qch-id" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500" placeholder="-1001234567890">
+                    <p class="text-xs text-gray-400 mt-1">Отрицательное число, например: -1001234567890</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Название <span class="text-red-500">*</span></label>
+                    <input id="qch-title" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500" placeholder="Новости мира">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Описание</label>
+                    <textarea id="qch-desc" rows="2" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500" placeholder="Краткое описание канала..."></textarea>
+                </div>
+                <div id="qch-output"></div>
+            </div>
+            <div class="flex items-center justify-end space-x-3 px-6 py-4 bg-gray-50 border-t border-gray-200">
+                <button onclick="closeQuickChannelModal()" class="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">Отмена</button>
+                <button id="qch-submit" onclick="submitQuickChannel()" class="px-4 py-2 bg-purple-500 text-white text-sm rounded-lg hover:bg-purple-600 font-medium">
+                    <i class="fas fa-plus mr-1"></i>Добавить
+                </button>
+                <span id="qch-spinner" class="hidden text-purple-500"><i class="fas fa-spinner fa-spin"></i></span>
+            </div>
+        </div>
+    </div>
 
     <!-- Скрипт для загрузки данных -->
     <script>
-        // Статусы сервисов
-        const SERVICE_STATUS = {
-            true: { text: 'Работает', class: 'bg-green-100 text-green-700' },
-            false: { text: 'Остановлен', class: 'bg-red-100 text-red-700' }
-        };
-
-        // Загрузка статусов сервисов
-        async function loadServiceStatus() {
-            try {
-                const response = await fetch('/api/services/status');
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.success) {
-                        const services = data.services || {};
-
-                        // Обновляем статусы bot, listener, scheduler
-                        ['bot', 'listener', 'scheduler'].forEach(service => {
-                            const el = document.getElementById(`status-${service}`);
-                            if (el) {
-                                const isRunning = services[service] === true;
-                                const status = SERVICE_STATUS[isRunning];
-                                el.className = `px-2 py-1 text-xs rounded-full ${status.class}`;
-                                el.textContent = status.text;
-                            }
-                        });
-                    }
-                }
-            } catch (error) {
-                console.error('Ошибка загрузки статусов:', error);
-            }
-        }
-
         // Загрузка статистики
         async function loadStats() {
             try {
@@ -478,48 +543,237 @@
             }
         }
 
-        // Инициализация при загрузке
+        // =========================================================================
+        // Статусы на дашборде (полная загрузка + обновление)
+        // =========================================================================
+
+        async function loadDashboardStatuses() {
+            // 1. Service manager (bot, listener, scheduler)
+            try {
+                const resp = await fetch('/api/services/status');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.statuses) {
+                        renderServiceStatusesRich(data.statuses);
+                        updateSystemStatusFromData(data.statuses);
+                    }
+                    if (data.notifications) {
+                        _allNotifications = data.notifications.map(n => ({...n, timestamp: new Date().toISOString(), read: n.read ?? false}));
+                        const unread = _allNotifications.filter(n => !n.read).length;
+                        updateNotificationBadge(unread);
+                        // Добавить уведомления о сервис-ошибках если модалка открыта
+                        if (!document.getElementById('notifications-modal')?.classList.contains('hidden')) {
+                            renderNotifications();
+                        }
+                    }
+                }
+            } catch(e) { console.error('[Dashboard] services/status error:', e); }
+
+            // 2. Health check (ai_agent, database, chromadb)
+            try {
+                const resp = await fetch('/api/health/full?timeout=5');
+                if (!resp.ok) {
+                    console.error('[Dashboard] health check HTTP', resp.status);
+                } else if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.components) {
+                        renderHealthComponents(data.components);
+                    } else {
+                        console.warn('[Dashboard] health check returned no components:', data);
+                    }
+                }
+            } catch(e) { console.error('[Dashboard] health check error:', e); }
+        }
+
+        function renderHealthComponents(components) {
+            // Маппинг health-компонент → элементы дашборда
+            const mapping = {
+                'ollama':        { el: 'status-ai_agent',  fallback_label: 'AI Агенты'  },
+                'database':      { el: 'status-database',  fallback_label: 'База данных' },
+                'vector_search': { el: 'status-chromadb',  fallback_label: 'ChromaDB'    },
+            };
+
+            for (const [compName, target] of Object.entries(mapping)) {
+                const comp = components.find(c => c.name === compName);
+                const el = document.getElementById(target.el);
+                if (!el) continue;
+
+                if (!comp) {
+                    el.textContent = 'Не найден';
+                    el.className = 'px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded-full';
+                    continue;
+                }
+
+                const status = comp.status;
+                const latency = comp.latency_ms ? `· ${Math.round(comp.latency_ms)}мс` : '';
+                if (status === 'healthy') {
+                    el.textContent = `OK${latency}`;
+                    el.className = 'px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full';
+                } else if (status === 'degraded') {
+                    el.textContent = 'Частично';
+                    el.className = 'px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full';
+                    el.title = comp.message || '';
+                } else if (status === 'unhealthy') {
+                    el.textContent = 'Ошибка';
+                    el.className = 'px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full';
+                    el.title = comp.message || '';
+                } else {
+                    el.textContent = 'Неизвестно';
+                    el.className = 'px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded-full';
+                }
+            }
+        }
+
+        function updateSystemStatusFromData(statuses) {
+            const keys = ['bot', 'listener', 'scheduler'];
+
+            const anyCrashed = keys.some(k => (statuses[k] || {}).state === 'crashed');
+            const allStopped = keys.every(k => ((statuses[k] || {}).state || 'stopped') === 'stopped');
+            const allRunning = keys.every(k => {
+                const s = statuses[k];
+                return s && s.state === 'running' && s.healthy;
+            });
+
+            const ind = document.getElementById('system-status-indicator');
+            const txt = document.getElementById('system-status-text');
+
+            if (ind && txt) {
+                if (anyCrashed) {
+                    ind.className = 'w-2 h-2 rounded-full bg-red-500 animate-pulse';
+                    txt.textContent = 'Есть сбои';
+                } else if (allRunning) {
+                    ind.className = 'w-2 h-2 rounded-full bg-green-500 animate-pulse';
+                    txt.textContent = 'Система активна';
+                } else if (allStopped) {
+                    ind.className = 'w-2 h-2 rounded-full bg-gray-500';
+                    txt.textContent = 'Сервисы остановлены';
+                } else {
+                    ind.className = 'w-2 h-2 rounded-full bg-yellow-500';
+                    txt.textContent = 'Частичная работа';
+                }
+            }
+        }
+
+        // =========================================================================
+        // Модальное окно: быстрая генерация новости
+        // =========================================================================
+
+        function openQuickNewsModal() {
+            document.getElementById('quick-news-modal').classList.remove('hidden');
+        }
+        function closeQuickNewsModal() {
+            document.getElementById('quick-news-modal').classList.add('hidden');
+            // Очищаем форму
+            document.getElementById('qnews-text').value = '';
+            document.getElementById('qnews-category').value = '';
+            document.getElementById('qnews-output').innerHTML = '';
+            document.getElementById('qnews-submit').disabled = false;
+            document.getElementById('qnews-spinner').classList.add('hidden');
+        }
+
+        async function submitQuickNews() {
+            const text = document.getElementById('qnews-text').value.trim();
+            const category = document.getElementById('qnews-category').value;
+            if (!text) { alert('Введите текст новости'); return; }
+
+            const output = document.getElementById('qnews-output');
+            const btn = document.getElementById('qnews-submit');
+            const spinner = document.getElementById('qnews-spinner');
+
+            btn.disabled = true;
+            spinner.classList.remove('hidden');
+            output.innerHTML = '<span class="text-gray-400"><i class="fas fa-spinner fa-spin mr-2"></i>Генерация новости через AI...</span>';
+
+            try {
+                const resp = await fetch('/api/news/generate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ text, category })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    output.innerHTML = `<span class="text-green-600"><i class="fas fa-check mr-1"></i>Новость создана (ID: ${data.news_id || '?'})</span>`;
+                    document.getElementById('qnews-text').value = '';
+                } else {
+                    output.innerHTML = `<span class="text-red-600">Ошибка: ${data.error || 'Не удалось создать'}</span>`;
+                }
+            } catch(e) {
+                output.innerHTML = `<span class="text-red-600">Ошибка: ${e.message}</span>`;
+            } finally {
+                btn.disabled = false;
+                spinner.classList.add('hidden');
+            }
+        }
+
+        // =========================================================================
+        // Модальное окно: быстрое добавление канала
+        // =========================================================================
+
+        function openQuickChannelModal() {
+            document.getElementById('quick-channel-modal').classList.remove('hidden');
+        }
+        function closeQuickChannelModal() {
+            document.getElementById('quick-channel-modal').classList.add('hidden');
+            document.getElementById('qch-id').value = '';
+            document.getElementById('qch-title').value = '';
+            document.getElementById('qch-desc').value = '';
+            document.getElementById('qch-output').innerHTML = '';
+            document.getElementById('qch-submit').disabled = false;
+            document.getElementById('qch-spinner').classList.add('hidden');
+        }
+
+        async function submitQuickChannel() {
+            const channel_id = document.getElementById('qch-id').value.trim();
+            const title = document.getElementById('qch-title').value.trim();
+            const desc = document.getElementById('qch-desc').value.trim();
+            if (!channel_id || !title) { alert('Укажите ID и название канала'); return; }
+
+            const output = document.getElementById('qch-output');
+            const btn = document.getElementById('qch-submit');
+            const spinner = document.getElementById('qch-spinner');
+
+            btn.disabled = true;
+            spinner.classList.remove('hidden');
+            output.innerHTML = '<span class="text-gray-400"><i class="fas fa-spinner fa-spin mr-2"></i>Добавление канала...</span>';
+
+            try {
+                const resp = await fetch('/api/channels', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ channel_id: parseInt(channel_id), title, description: desc })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    output.innerHTML = `<span class="text-green-600"><i class="fas fa-check mr-1"></i>Канал «${title}» добавлен</span>`;
+                    document.getElementById('qch-id').value = '';
+                    document.getElementById('qch-title').value = '';
+                    document.getElementById('qch-desc').value = '';
+                } else {
+                    output.innerHTML = `<span class="text-red-600">Ошибка: ${data.error || 'Не удалось добавить'}</span>`;
+                }
+            } catch(e) {
+                output.innerHTML = `<span class="text-red-600">Ошибка: ${e.message}</span>`;
+            } finally {
+                btn.disabled = false;
+                spinner.classList.add('hidden');
+            }
+        }
+
+        // =========================================================================
+        // Инициализация
+        // =========================================================================
+
         document.addEventListener('DOMContentLoaded', () => {
             loadStats();
             loadRecentNews();
-            loadServiceStatus();
+            startNotificationPolling();
+            loadDashboardStatuses();
 
-            // Обновление каждые 30 секунд
             setInterval(() => {
                 loadStats();
                 loadRecentNews();
-                loadServiceStatus();
             }, 30000);
         });
-
-        // Обновление статуса системы (из футера)
-        (function() {
-            const SYSTEM_STATUS_CONFIG = {
-                allRunning: { text: 'Система активна', class: 'bg-green-500 animate-pulse' },
-                allStopped: { text: 'Система остановлена', class: 'bg-red-500' },
-                partial: { text: 'Частичная работа', class: 'bg-yellow-500' }
-            };
-
-            function updateSystemStatus() {
-                fetch('/api/services/status')
-                    .then(r => r.ok ? r.json() : null)
-                    .then(data => {
-                        if (data && data.success) {
-                            const s = data.services || {};
-                            const allRunning = ['bot','listener','scheduler'].every(x => s[x]===true);
-                            const allStopped = Object.values(s).every(x => !x);
-                            const status = allRunning ? SYSTEM_STATUS_CONFIG.allRunning : (allStopped ? SYSTEM_STATUS_CONFIG.allStopped : SYSTEM_STATUS_CONFIG.partial);
-                            const ind = document.getElementById('system-status-indicator');
-                            const txt = document.getElementById('system-status-text');
-                            if (ind) ind.className = `w-2 h-2 rounded-full ${status.class}`;
-                            if (txt) txt.textContent = status.text;
-                        }
-                    })
-                    .catch(e => console.error('Status error:', e));
-            }
-            updateSystemStatus();
-            setInterval(updateSystemStatus, 5000);
-        })();
     </script>
 </body>
 </html>

@@ -74,16 +74,16 @@
             border: 1px solid #3b4252;
             color: #cbccc6;
         }
-        /* Status indicators */
+        /* Status indicators — пульсирование прозрачностью, цвет задаётся через style */
         .status-running {
-            animation: pulse-green 2s infinite;
+            animation: status-pulse 2s infinite;
         }
         .status-stopped {
-            background-color: #bf616a !important;
+            /* цвет задаётся через style.backgroundColor */
         }
-        @keyframes pulse-green {
+        @keyframes status-pulse {
             0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+            50% { opacity: 0.4; }
         }
         /* Control buttons */
         .control-btn {
@@ -203,17 +203,20 @@
                     <div class="flex items-center space-x-4">
                         <!-- Статусы сервисов -->
                         <div class="flex items-center space-x-4 text-sm">
-                            <div class="flex items-center space-x-2">
+                            <div class="flex items-center space-x-2 group" id="bot-status-wrap">
                                 <span class="w-2 h-2 rounded-full status-running" id="bot-status" style="background-color: #a3be8c;"></span>
                                 <span class="text-gray-600">Бот</span>
+                                <span class="text-xs text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" id="bot-status-tip"></span>
                             </div>
-                            <div class="flex items-center space-x-2">
+                            <div class="flex items-center space-x-2 group" id="listener-status-wrap">
                                 <span class="w-2 h-2 rounded-full status-running" id="listener-status" style="background-color: #a3be8c;"></span>
                                 <span class="text-gray-600">Лисенер</span>
+                                <span class="text-xs text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" id="listener-status-tip"></span>
                             </div>
-                            <div class="flex items-center space-x-2">
+                            <div class="flex items-center space-x-2 group" id="scheduler-status-wrap">
                                 <span class="w-2 h-2 rounded-full status-running" id="scheduler-status" style="background-color: #a3be8c;"></span>
                                 <span class="text-gray-600">Шедулер</span>
+                                <span class="text-xs text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" id="scheduler-status-tip"></span>
                             </div>
                         </div>
                         {% if user and user.logged_in %}
@@ -680,8 +683,8 @@
                     // Счётчик записей по выбранному источнику
                     const countSpan = document.getElementById('log-source-count');
                     if (countSpan) {
-                        const count = result.counts[current] || result.counts['all'] || 0;
-                        countSpan.textContent = `(${count} записей)`;
+                        const total = Object.values(result.counts || {}).reduce((a, b) => a + b, 0);
+                        countSpan.textContent = `(${total} записей)`;
                     }
                 }
             } catch (e) {
@@ -689,8 +692,13 @@
             }
         }
 
+        // Флаг: true при явной смене фильтра (change-событие), false при автообновлении
+        let _logsForceRefresh = false;
+
         // Загрузка логов
-        async function loadLogs() {
+        async function loadLogs(forceRefresh /* boolean */ = false) {
+            if (forceRefresh) _logsForceRefresh = true;
+
             const level = document.getElementById('log-level').value;
             const source = document.getElementById('log-source').value;
             const container = document.getElementById('logs-container');
@@ -705,7 +713,12 @@
 
                 if (result.success && Array.isArray(result.logs)) {
                     if (result.logs.length === 0) {
-                        // Не стираем предыдущие логи — показываем подсказку
+                        // При явной смене фильтра — очистить старые логи
+                        if (_logsForceRefresh) {
+                            container.innerHTML = '';
+                        }
+
+                        // Показываем подсказку
                         if (!container.querySelector('.no-logs-hint')) {
                             const hint = document.createElement('div');
                             hint.className = 'no-logs-hint text-gray-500 text-center py-4';
@@ -715,11 +728,19 @@
                                 hint.textContent = 'Нет логов — дождитесь активности приложения';
                             container.prepend(hint);
                         }
+                        _logsForceRefresh = false;
                         return;
                     }
 
+                    // Убрать подсказку если логи появились
                     const hint = container.querySelector('.no-logs-hint');
                     if (hint) hint.remove();
+
+                    // При каждом обращении бэкенд возвращает все последние логи
+                    // (до limit=500), поэтому контейнер полностью перезаписывается.
+                    // _logsForceRefresh используется только в ветке logs.length===0
+                    // (см. выше), чтобы при смене фильтра стереть старые логи
+                    // до того как появится подсказка «Нет логов».
 
                     // Проверяем, проскроллил ли пользователь вверх
                     const wasScrolledUp = container.scrollHeight - container.scrollTop - container.clientHeight > 50;
@@ -742,8 +763,10 @@
                 } else {
                     container.innerHTML = '<span class="text-gray-500">Нет логов</span>';
                 }
+                _logsForceRefresh = false;
             } catch (error) {
                 container.innerHTML = `<span class="text-red-400">Ошибка загрузки: ${error.message}</span>`;
+                _logsForceRefresh = false;
             }
         }
 
@@ -764,7 +787,26 @@
             return div.innerHTML;
         }
 
-        // Обновление статусов сервисов
+        // Форматировать uptime в читаемый вид: "2ч 15м" / "45с"
+        function formatUptime(sec) {
+            if (sec <= 0) return '';
+            if (sec < 60) return `${sec}с`;
+            const h = Math.floor(sec / 3600);
+            const m = Math.floor((sec % 3600) / 60);
+            if (h > 0) return `${h}ч ${m}м`;
+            return `${m}м`;
+        }
+
+        // Цвета и анимация для каждого состояния
+        const STATUS_COLORS = {
+            running:   { bg: '#a3be8c', pulse: true  },   // зелёный пульс
+            starting:  { bg: '#ebcb8b', pulse: false },   // жёлтый
+            stopping:  { bg: '#ebcb8b', pulse: false },   // жёлтый
+            crashed:   { bg: '#d08770', pulse: true  },   // красно-оранжевый пульс
+            stopped:   { bg: '#bf616a', pulse: false },   // красный
+        };
+
+        // Обновление статусов сервисов — с реальной проверкой
         async function updateServiceStatus() {
             try {
                 const response = await fetch('/console/api/status');
@@ -772,25 +814,61 @@
 
                 if (result.success) {
                     const services = result.services || {};
+                    const anyRunning = false;
 
-                    // Обновляем индикаторы
-                    ['bot', 'listener', 'scheduler'].forEach(service => {
-                        const indicator = document.getElementById(`${service}-status`);
-                        if (indicator && services[service] !== undefined) {
-                            if (services[service]) {
-                                indicator.style.backgroundColor = '#a3be8c';
-                                indicator.classList.remove('status-stopped');
+                    ['bot', 'listener', 'scheduler'].forEach(name => {
+                        const info = services[name];
+                        if (!info) return;
+
+                        const indicator  = document.getElementById(`${name}-status`);
+                        const tip        = document.getElementById(`${name}-status-tip`);
+                        const wrap       = document.getElementById(`${name}-status-wrap`);
+                        const colorInfo  = STATUS_COLORS[info.state] || STATUS_COLORS.stopped;
+
+                        // Цвет + пульс
+                        if (indicator) {
+                            indicator.style.backgroundColor = colorInfo.bg;
+                            if (colorInfo.pulse) indicator.classList.add('status-running');
+                            else indicator.classList.remove('status-running');
+                            if (info.state === 'stopped') indicator.classList.add('status-stopped');
+                            else indicator.classList.remove('status-stopped');
+                        }
+
+                        // Тултип при наведении
+                        if (tip) {
+                            const parts = [];
+                            if (info.state === 'running') {
+                                parts.push(`● ${formatUptime(info.uptime_sec)}`);
+                            } else if (info.state === 'crashed') {
+                                parts.push('⚠ Упал');
+                            } else if (info.state === 'starting' || info.state === 'stopping') {
+                                parts.push(info.state === 'starting' ? 'Запуск...' : 'Остановка...');
                             } else {
-                                indicator.style.backgroundColor = '#bf616a';
-                                indicator.classList.add('status-stopped');
+                                parts.push('Остановлен');
+                            }
+                            if (info.last_error) {
+                                parts.push(info.last_error.substring(0, 60));
+                            }
+                            tip.textContent = parts.join(' · ');
+                        }
+
+                        // Подсвечивать wrap при crashed
+                        if (wrap) {
+                            if (info.state === 'crashed') {
+                                wrap.title = 'Сервис упал: ' + (info.last_error || '');
+                            } else {
+                                wrap.title = '';
                             }
                         }
                     });
 
-                    // Обновляем кнопки Старт/Стоп
-                    const allRunning = ['bot', 'listener', 'scheduler'].every(s => services[s]);
+                    // Кнопки Старт/Стоп — определяем по real states
+                    const states = ['bot', 'listener', 'scheduler']
+                        .map(n => (services[n] || {}).state);
+                    const allRunning = states.every(s => s === 'running');
+                    const someRunning = states.some(s => s === 'running' || s === 'starting');
                     document.getElementById('start-all-btn').disabled = allRunning;
-                    document.getElementById('stop-all-btn').disabled = allRunning === false && Object.values(services).some(s => s);
+                    document.getElementById('stop-all-btn').disabled = someRunning;
                 }
             } catch (error) {
                 console.error('Ошибка обновления статусов:', error);
@@ -810,19 +888,12 @@
                 }
             });
 
-            // Мгновенная перезагрузка логов при смене фильтра
+            // Мгновенная перезагрузка логов при смене фильтра (forceRefresh)
             document.getElementById('log-level').addEventListener('change', () => {
-                // Убрать подсказку «Нет логов» при смене фильтра
-                const container = document.getElementById('logs-container');
-                const hint = container.querySelector('.no-logs-hint');
-                if (hint) hint.remove();
-                loadLogs();
+                loadLogs(true);
             });
             document.getElementById('log-source').addEventListener('change', () => {
-                const container = document.getElementById('logs-container');
-                const hint = container.querySelector('.no-logs-hint');
-                if (hint) hint.remove();
-                loadLogs();
+                loadLogs(true);
             });
 
             // Обновление статусов каждые 5 секунд
@@ -835,23 +906,26 @@
         // Обновление статуса системы
         (function() {
             const STATUS = {
-                allRunning: { text: 'Система активна', class: 'bg-green-500 animate-pulse' },
-                allStopped: { text: 'Система остановлена', class: 'bg-red-500' },
-                partial: { text: 'Частичная работа', class: 'bg-yellow-500' }
+                crashed:    { text: 'Есть сбои',         class: 'bg-red-500 animate-pulse' },
+                allRunning: { text: 'Система активна',    class: 'bg-green-500 animate-pulse' },
+                allStopped: { text: 'Сервисы остановлены', class: 'bg-gray-500' },
+                partial:    { text: 'Частичная работа',   class: 'bg-yellow-500' }
             };
             function update() {
                 fetch('/api/services/status')
                     .then(r => r.ok ? r.json() : null)
                     .then(d => {
                         if (d && d.success) {
-                            const s = d.services || {};
-                            const allRun = ['bot','listener','scheduler'].every(x => s[x]===true);
-                            const allStop = Object.values(s).every(x => !x);
-                            const st = allRun ? STATUS.allRunning : (allStop ? STATUS.allStopped : STATUS.partial);
+                            const st = d.statuses || {};
+                            const keys = ['bot', 'listener', 'scheduler'];
+                            const anyCrashed = keys.some(k => (st[k] || {}).state === 'crashed');
+                            const allRunning = keys.every(k => { const s = st[k]; return s && s.state === 'running' && s.healthy; });
+                            const allStopped = keys.every(k => ((st[k] || {}).state || 'stopped') === 'stopped');
+                            const s = anyCrashed ? STATUS.crashed : (allRunning ? STATUS.allRunning : (allStopped ? STATUS.allStopped : STATUS.partial));
                             const i = document.getElementById('system-status-indicator');
                             const t = document.getElementById('system-status-text');
-                            if (i) i.className = `w-2 h-2 rounded-full ${st.class}`;
-                            if (t) t.textContent = st.text;
+                            if (i) i.className = `w-2 h-2 rounded-full ${s.class}`;
+                            if (t) t.textContent = s.text;
                         }
                     });
             }

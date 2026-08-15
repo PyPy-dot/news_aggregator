@@ -1,25 +1,38 @@
 # 🏗️ Архитектура News Aggregator
 
-**Версия:** 4.0.0  
-**Дата обновления:** 2026-08-11  
-**Статус:** ✅ Актуализирована под v4.0.0 (глубокий рефакторинг, NewsOrchestrator, EventBus)
+**Версия:** 4.0.0
+**Дата обновления:** 2026-08-16
+**Статус:** ✅ Актуализирована — ServiceManager, Health Check, Web Admin v2
 
 ---
 
 ## 📋 Обзор
 
-**News Aggregator** — модульная система сбора, анализа и публикации новостей с использованием AI-агентов. Источники новостей: Telegram-каналы (UserBot), RSS/Atom ленты, web-сайты.
+**News Aggregator** — модульная система сбора, анализа и публикации новостей с использованием AI-агентов. Источники: Telegram-каналы (UserBot), RSS/Atom ленты, web-сайты.
+
+### Статистика проекта
+
+| Метрика | Значение |
+|---------|----------|
+| Строк кода (services) | ~34 500 |
+| Строк кода (database) | ~5 100 |
+| Модулей | 16 |
+| API endpoint'ов | 52 |
+| Репозиториев | 11 |
+| Моделей БД | 11 |
+| Файлов тестов | 63 |
+| Строк тестов | ~11 600 |
 
 ### Архитектурные принципы
 
 | Принцип | Реализация |
 |---------|------------|
-| **Single Responsibility** | Каждый сервис имеет одну ответственность |
-| **Dependency Injection** | Зависимости через конструкторы |
-| **Repository Pattern** | Абстракция доступа к данным |
+| **Single Responsibility** | Каждый сервис — одна ответственность |
+| **Dependency Injection** | Зависимости через конструкторы (Container) |
+| **Repository Pattern** | Абстракция доступа к данным (11 репозиториев) |
 | **Strategy Pattern** | 3 стратегии обработки новостей |
 | **Event-Driven** | EventBus с приоритетами |
-| **Explicit Dependencies** | Минимум глобальных состояний |
+| **Lazy Startup** | Сервисы стартуют по запросу через ServiceManager |
 
 ---
 
@@ -27,68 +40,80 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                   PRESENTATION LAYER — СБОР НОВОСТЕЙ            │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌────────┐│
-│  │  Admin Bot  │  │  Listener   │  │  Scheduler  │  │ Web   ││
-│  │  (aiogram)  │  │  Bot        │  │  + RSS      │  │Admin  ││
-│  │             │  │  (Telethon) │  │  + Web      │  │FastAPI││
-│  └─────────────┘  └─────────────┘  └─────────────┘  └────────┘│
-│                                                                  │
-│  ┌──────────────┐ ┌───────────────┐ ┌──────────────────────┐  │
-│  │ RSS Parser   │ │  Web Parser   │ │  Payment Service     │  │
-│  │ (feedparser) │ │  (requests+   │ │  (Telegram Stars)    │  │
-│  │ 20+ лент     │ │  BeautifulSoup)│ │                      │  │
-│  └──────────────┘ └───────────────┘ └──────────────────────┘  │
+│                   PRESENTATION LAYER — УПРАВЛЕНИЕ                │
+│  ┌─────────────┐  ┌─────────────┐  ┌──────────────┐  ┌────────┐│
+│  │  Admin Bot  │  │  Listener   │  │  Scheduler   │  │ Web    ││
+│  │  (aiogram)  │  │  Bot        │  │  + RSS       │  │ Admin  ││
+│  │             │  │  (Telethon) │  │  + Web       │  │        ││
+│  └─────────────┘  └─────────────┘  └──────────────┘  │FastAPI ││
+│                                                         └───────┘│
+│  ┌──────────────┐ ┌───────────────┐ ┌──────────────────┐       │
+│  │ RSS Parser   │ │  Web Parser   │ │  ServiceManager  │       │
+│  │ (feedparser) │ │  (requests+   │ │  (lazy start/    │       │
+│  │              │ │  BeautifulSoup)│ │   stop/restart)  │       │
+│  └──────────────┘ └───────────────┘ └──────────────────┘       │
 └─────────────────────────────────────────────────────────────────┘
                               │
         ┌─────────────────────┴─────────────────────┐
         ▼                                           ▼
-┌─────────────────────────────────┐     ┌─────────────────────────┐
-│       APPLICATION LAYER         │     │    DOMAIN LAYER         │
-│  ┌───────────────────────────┐  │     │  ┌───────────────────┐  │
-│  │  NewsOrchestrator         │  │     │  │  Strategies       │  │
-│  │  (координация)            │  │     │  │  - Urgent         │  │
-│  └───────────────────────────┘  │     │  │  - Scheduled      │  │
-│  ┌───────────────────────────┐  │     │  │  - Trusted        │  │
-│  │  EventBus                 │  │     │  └───────────────────┘  │
-│  │  (события с приоритетами) │  │     └─────────────────────────┘
+┌─────────────────────────────────┐     ┌───────────────────────┐
+│       APPLICATION LAYER         │     │    DOMAIN LAYER       │
+│  ┌───────────────────────────┐  │     │  ┌─────────────────┐  │
+│  │  NewsOrchestrator         │  │     │  │  Strategies     │  │
+│  │  (координация)            │  │     │  │  - Urgent       │  │
+│  └───────────────────────────┘  │     │  │  - Scheduled    │  │
+│  ┌───────────────────────────┐  │     │  │  - Trusted      │  │
+│  │  EventBus                 │  │     │  └─────────────────┘  │
+│  │  (события с приоритетами) │  │     └───────────────────────┘
 │  └───────────────────────────┘  │
 │  ┌───────────────────────────┐  │
 │  │  AgentTaskQueue           │  │
 │  │  (очередь AI агентов)     │  │
 │  └───────────────────────────┘  │
 └─────────────────────────────────┘
-        │                                   │
-        ▼                                   ▼
+        │
+        ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                       SERVICE LAYER                              │
 │                                                                  │
-│  ┌──────────────────┐  ┌──────────────────┐  ┌───────────────┐ │
-│  │ Categorization   │  │ News             │  │ Notification  │ │
-│  │ ──────────────── │  │ ───────────────  │  │ ───────────── │ │
-│  │ • Queue          │  │ • Generation     │  │ • Service     │ │
-│  │ • Classifier     │  │ • Context        │  │               │ │
-│  │ • Saver          │  │ • Moderation     │  │               │ │
-│  │ • Processor      │  │ • Helpers        │  │               │ │
-│  └──────────────────┘  └──────────────────┘  └───────────────┘ │
+│  ┌──────────────────┐  ┌────────────────┐  ┌────────────────┐  │
+│  │ Categorization   │  │ News           │  │ Notification   │  │
+│  │ ──────────────── │  │ ────────────── │  │ ────────────── │  │
+│  │ • Queue          │  │ • Generation   │  │ • Service      │  │
+│  │ • Classifier     │  │ • Context      │  │                │  │
+│  │ • Saver          │  │ • Moderation   │  │                │  │
+│  │ • Processor      │  │ • Helpers      │  │                │  │
+│  └──────────────────┘  └────────────────┘  └────────────────┘  │
 │                                                                  │
-│  ┌──────────────────┐  ┌──────────────────┐  ┌───────────────┐ │
-│  │ Vector Search    │  │ Payment          │  │ LLM Provider  │ │
-│  │ ──────────────── │  │ ───────────────  │  │ ───────────── │ │
-│  │ • Embeddings     │  │ • Service        │  │ • Ollama      │ │
-│  │ • ChromaDB       │  │ • Stars Provider │  │ • qwen2.5:7b  │ │
-│  │ • Search Engine  │  │ • Test Provider  │  │               │ │
-│  └──────────────────┘  └──────────────────┘  └───────────────┘ │
+│  ┌──────────────────┐  ┌────────────────┐  ┌────────────────┐  │
+│  │ Vector Search    │  │ Payment        │  │ LLM Provider   │  │
+│  │ ──────────────── │  │ ────────────── │  │ ────────────── │  │
+│  │ • Embeddings     │  │ • Service      │  │ • Ollama       │  │
+│  │ • ChromaDB       │  │ • Stars        │  │ • Fallback     │  │
+│  │ • HNSW config    │  │ • Test         │  │ • CircuitBreak │  │
+│  │ • Auto-reindex   │  │                │  │ • Cache        │  │
+│  └──────────────────┘  └────────────────┘  └────────────────┘  │
+│                                                                  │
+│  ┌──────────────────┐  ┌────────────────┐  ┌────────────────┐  │
+│  │ Health Check     │  │ Monitoring     │  │ Logging        │  │
+│  │ ──────────────── │  │ ────────────── │  │ ────────────── │  │
+│  │ • 8 компонентов  │  │ • Prometheus   │  │ • RotatingFile │  │
+│  │ • API endpoints  │  │ • Grafana      │  │ • JSON format  │  │
+│  └──────────────────┘  └────────────────┘  └────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
         │
         ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                  INFRASTRUCTURE LAYER                            │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐            │
-│  │ Repository  │  │  Database   │  │   Vector    │            │
-│  │   Pattern   │  │  (SQLite)   │  │   Store     │            │
-│  │  (8 repos)  │  │             │  │  (ChromaDB) │            │
-│  └─────────────┘  └─────────────┘  └─────────────┘            │
+│  ┌─────────────┐  ┌──────────────┐  ┌─────────────┐           │
+│  │ Repository   │  │  Database    │  │   Vector    │           │
+│  │   Pattern    │  │  Abstraction │  │   Store     │           │
+│  │  (11 repos)  │  │  (SQLite/Pg) │  │  (ChromaDB) │           │
+│  └─────────────┘  └──────────────┘  └─────────────┘           │
+│  ┌─────────────┐  ┌──────────────┐  ┌─────────────┐           │
+│  │   Redis     │  │   Alembic    │  │  Celery     │           │
+│  │  (Queue)    │  │  (Migrations)│  │  (Workers)  │           │
+│  └─────────────┘  └──────────────┘  └─────────────┘           │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -96,24 +121,58 @@
 
 ## 📦 Модули
 
+### Main (точка входа)
+
+**`main.py`** — класс `Application`:
+- Инициализация DI контейнера и сервисов
+- Запуск Web Admin (единственный сервис, стартующий автоматически)
+- Регистрация сервисов в ServiceManager
+- Обработка сигналов (SIGINT, SIGTERM)
+- Корректное завершение (graceful shutdown)
+
+**Порядок запуска:**
+1. `Application.initialize()` — DI контейнер, сервисы
+2. `Application.run()` — Web Admin + регистрация в ServiceManager
+3. Сервисы стартуют **лениво** через консоль админки
+4. `Application.shutdown()` — ServiceManager.stop_all() → очередь → Web Admin → ресурсы
+
+---
+
 ### Core (ядро)
 
 ```
 services/core/
 ├── container.py            # DI контейнер (явное создание)
-├── database.py             # DatabaseService (сессии)
-├── llm_provider.py         # LLM абстракция (Ollama, OpenAI, Anthropic)
-├── circuit_breaker.py      # Circuit Breaker (защита от сбоев)
+├── database.py             # DatabaseService (обёртка над абстрактным слоем)
+├── llm_provider.py         # LLM абстракция (Ollama, OpenAI, Anthropic + Fallback)
+├── circuit_breaker.py      # Circuit Breaker (защита от каскадных сбоев)
 ├── redis_queue.py          # RedisTaskQueue (распределённая очередь)
 └── celery_worker.py        # Celery Worker (обработка задач)
 ```
 
-**Ответственность:**
-- Управление зависимостями (Container) — **явное создание в main.py**
-- Управление сессиями БД (DatabaseService) — singleton через `get_database_service()`
-- LLM провайдер с fallback (Ollama → OpenAI → Anthropic)
-- Circuit Breaker для защиты от каскадных сбоев
-- Распределённая очередь задач (Redis)
+---
+
+### ServiceManager (управление сервисами)
+
+**`services/service_manager.py`**
+
+Singleton для управления жизненным циклом сервисов из веб-админки:
+
+| Метод | Описание |
+|-------|----------|
+| `start_service(name)` | Запуск сервиса |
+| `stop_service(name)` | Остановка сервиса |
+| `restart_service(name)` | Перезапуск с очисткой ресурсов |
+| `get_all_statuses()` | Статусы всех сервисов (state, healthy, uptime, last_error) |
+| `start_all()` / `stop_all()` | Массовый запуск/остановка |
+
+**Состояния сервисов:** `stopped` → `starting` → `running` → `stopping` / `crashed`
+
+**Особенности рестарта бота:**
+- `dp.stop_polling()` для graceful shutdown polling
+- Ожидание завершения задачи (15 сек таймаут)
+- Пауза 5 сек для очистки Telegram сессии на сервере
+- `force_close()` → `shutdown()` → сборка мусора
 
 ---
 
@@ -121,8 +180,7 @@ services/core/
 
 ```
 services/categorization/
-├── __init__.py
-├── queue.py            # CategorizationQueue + CategorizationTask
+├── queue.py            # CategorizationQueue (локальная + Redis дубликат)
 ├── classifier.py       # NewsClassifier + ClassificationResult
 ├── saver.py            # NewsSaver
 └── processor.py        # CategorizationProcessor
@@ -131,24 +189,17 @@ services/categorization/
 **Поток данных:**
 ```
 ListenerBot → CategorizationQueue → CategorizationProcessor
-                                      ├─ CategorizerAgent (AI)
-                                      ├─ NewsClassifier (парсинг)
-                                      ├─ NewsSaver (БД)
-                                      └─ NotificationService (уведомления)
+                                    ├─ CategorizerAgent (AI)
+                                    ├─ NewsClassifier (парсинг)
+                                    ├─ NewsSaver (БД)
+                                    └─ NotificationService (уведомления)
 ```
 
-**Компоненты:**
-
-| Компонент | Ответственность |
-|-----------|----------------|
-| **CategorizationQueue** | Очередь задач с async/await (maxlen=10) |
-| **NewsClassifier** | Парсинг AI ответов, извлечение category/urgency/text |
-| **NewsSaver** | Сохранение постов и событий в БД |
-| **CategorizationProcessor** | Координация: AI → парсинг → сохранение |
-
-**Изменения в v3.0:**
-- ❌ Удалена обёртка `services/telegram/categorization.py`
-- ✅ ListenerBot использует модуль напрямую
+**CategorizationQueue:**
+- Локальная очередь (`deque`, maxlen=10) — основной потребитель
+- Redis — дублирующий бэкэнд для распределённых воркеров
+- `add()` пишет в локальную очередь + дублирует в Redis
+- `get()` читает из локальной очереди
 
 ---
 
@@ -156,7 +207,6 @@ ListenerBot → CategorizationQueue → CategorizationProcessor
 
 ```
 services/news/
-├── __init__.py
 ├── orchestrator.py     # NewsOrchestrator + стратегии
 ├── generation.py       # NewsGenerationService
 ├── context.py          # EventContextService
@@ -169,43 +219,14 @@ services/news/
     └── trusted.py      # TrustedSourceStrategy (доверенные источники)
 ```
 
-**Поток данных:**
-```
-Scheduler (расписание из БД) → NewsOrchestrator → Strategy
-                                                 │
-                    ┌────────────────────────────┼──────────────┐
-                    │                            │              │
-                    ▼                            ▼              ▼
-            UrgentNewsStrategy          ScheduledNews     TrustedSource
-            (срочные 4-5)               (плановые 1-3)    (доверенные)
-                    │                            │              │
-                    ▼                            ▼              ▼
-            Analyst → EventBus            Сохранение      Публикация
-            Editor → Archivist            в БД            напрямую
-            Moderation
-```
-
-**Компоненты:**
-
-| Компонент | Ответственность |
-|-----------|----------------|
-| **NewsOrchestrator** | Координация через стратегии, EventBus |
-| **NewsGenerationService** | Генерация (Editor + Archivist), уведомления |
-| **EventContextService** | Поиск похожих событий/постов (векторный поиск) |
-| **ModerationNotificationService** | Уведомления админам о модерации |
-
-**Изменения в v3.0:**
-- ✅ Устранено глобальное состояние `_notification_service`
-- ✅ NotificationService передаётся через конструктор
-
 ---
 
 ### AI Agent (агенты)
 
 ```
 services/ai_agent/
-├── __init__.py
 ├── agent_queue.py          # AgentTaskQueue (локальная или Redis)
+├── cache.py                # LLM Cache
 ├── remote_client.py        # AIAgentRemoteClient (клиент к микросервису)
 ├── agents/
 │   ├── base.py             # BaseAgent (работа с LLM)
@@ -218,55 +239,16 @@ services/ai_agent/
 └── vector_routers.py       # Обработчики векторного поиска
 ```
 
-**Микросервис AI-агентов:**
-```
-microservices/ai-agent-service/
-├── app/
-│   └── main.py             # FastAPI приложение (порт 8002)
-├── Dockerfile
-└── requirements.txt
-```
-
-**AI Агенты:**
-
-| Агент | Задача | Промпт |
-|-------|--------|--------|
-| **Categorizer** | Первичная классификация, фильтрация рекламы | `prompts/categorizer.txt` |
-| **Analyst** | Анализ категории, тэгирование, извлечение фактов | `prompts/analyst.txt` |
-| **Editor** | Генерация новости в журналистском стиле | `prompts/editor.txt` |
-| **Archivist** | Структурирование контекста для векторного поиска | `prompts/archivist.txt` |
-
-**EventBus:**
-- Приоритетная очередь (heapq)
-- Ограничение параллелизма (Semaphore)
-- Обработчики с приоритетами
-
-**AgentTaskQueue:**
-- Единая очередь для всех AI агентов
-- Приоритеты: CRITICAL, HIGH, NORMAL, LOW
-- История выполненных задач
-- **v3.9.0:** Поддержка Redis (распределённая очередь)
-
-**AIAgentRemoteClient:**
-- HTTP клиент к микросервису AI-агентов
-- Автоматический fallback на локальные агенты
-- Retry logic при ошибках
-
 ---
 
 ### Telegram (боты и уведомления)
 
 ```
 services/telegram/
-├── __init__.py         # NotificationService (categorization удалён)
+├── __init__.py         # NotificationService
 ├── connection.py       # Утилиты подключения
-└── notification.py     # NotificationService
+└── notification.py     # NotificationService (уведомления)
 ```
-
-**NotificationService:**
-- Уведомления админам (срочные новости, модерация)
-- Уведомления подписчикам (с учётом предпочтений)
-- **Изменения в v3.0:** Бот передаётся только через конструктор
 
 ---
 
@@ -274,11 +256,9 @@ services/telegram/
 
 ```
 services/bot/
-├── __init__.py
-├── bot.py              # BotService (aiogram)
+├── bot.py              # BotService (aiogram, lazy init)
 ├── utils.py
 └── handlers/
-    ├── __init__.py
     ├── router.py       # Главный роутер
     ├── access.py       # Проверка прав админа
     ├── callbacks.py    # Callback query handlers
@@ -296,32 +276,21 @@ services/bot/
     ├── publishers.py   # Управление каналами
     ├── states.py       # FSM состояния
     ├── subscription.py # Подписки
-    └── tasks.py        # Задачи планировщика
+    ├── tasks.py        # Задачи планировщика
+    └── two_factor_auth.py
 ```
-
-**BotService:**
-- Создание и управление aiogram ботом
-- Инициализация NotificationService с ботом
-- **Изменения в v3.0:** Удалён singleton `_bot_service`
 
 ---
 
-### Listener (UserBot) — мониторинг Telegram-каналов
+### Listener (UserBot)
 
 ```
 services/listener/
-├── __init__.py
 ├── bot.py              # ListenerBot (Telethon)
 ├── auth_service.py     # Авторизация через бота
 └── handlers/
     └── auth.py          # Хендлеры авторизации
 ```
-
-**ListenerBot:**
-- Мониторинг Telegram-каналов (Telethon)
-- Динамическое добавление/удаление каналов
-- Отправка задач в CategorizationQueue
-- Поддержка 2FA при авторизации
 
 ---
 
@@ -332,121 +301,129 @@ services/scheduler/
 └── scheduler.py        # Scheduler
 ```
 
-**Scheduler** — управляемый календарь задач на основе таблицы `tasks`:
+**Задачи планировщика:**
 
-| Задача | Описание |
-|--------|----------|
-| **Утренняя обработка** | `daily_morning` — время из БД (по умолчанию 09:00 МСК) |
-| **Вечерняя обработка** | `daily_evening` — время из БД (по умолчанию 21:00 МСК) |
-| **Обработка событий** | Каждые 48 часа (настраивается в `settings.event_processing_interval_hours`) |
-| **Обработка задач** | Каждые 30 секунд — проверка таблицы `tasks` |
-| **RSS-парсинг** | Каждые 5 минут — проверка активных RSS источников |
-
-**Модель Task (`database/models.py`):**
-- `task_type` — тип задачи (`daily_morning`, `daily_evening`, `direct_generation`, `scheduled_processing`)
-- `scheduled_at` — запланированное время выполнения
-- `status` — pending/active/completed/failed/expired/canceled
-- `recurring` — флаг периодической задачи
-- `recurrence_pattern` — периодичность в днях (1=ежедневно)
-- `publisher_channel_id` — канал публикации (для прямой генерации)
-
-**Логика работы:**
-1. Планировщик создаёт периодические задачи (`daily_morning`/`daily_evening`) при запуске
-2. Каждые 30 секунд проверяет таблицу `tasks` на наличие задач со статусом `pending`
-3. Задачи выполняются в порядке очереди, статус обновляется на `active`
-4. Периодические задачи возвращаются в статус `pending` с новым `scheduled_at`
-5. Одноразовые задачи завершаются терминальным статусом (`completed`/`failed`/`expired`)
+| Задача | Интервал | Описание |
+|--------|----------|----------|
+| `daily_morning` | по расписанию | Утренняя обработка (по умолчанию 09:00 МСК) |
+| `daily_evening` | по расписанию | Вечерняя обработка (по умолчанию 21:00 МСК) |
+| Обработка событий | 48 часов | Настройка: `event_processing_interval_hours` |
+| Проверка задач | 30 секунд | Таблица `tasks` |
+| RSS-парсинг | 5 минут | Активные RSS источники |
 
 ---
 
-### Monitoring (мониторинг)
+### Health Check (мониторинг здоровья)
 
 ```
-monitoring/
-├── prometheus/
-│   ├── prometheus.yml      # Конфигурация scraping
-│   └── alerts.yml          # 30+ правил алертов
-└── grafana/
-    ├── dashboards/
-    │   ├── ai_agents.json            # Дашборд AI агентов
-    │   ├── llm_circuit_breaker.json  # Дашборд LLM и CB
-    │   └── infrastructure.json       # Инфраструктурный дашборд
-    └── provisioning/
-        ├── datasources/      # Prometheus datasource
-        └── dashboards/       # Провижининг дашбордов
+services/monitoring/
+├── health_check.py     # HealthChecker + 8 встроенных проверок
+├── metrics.py          # Prometheus метрики
+└── __init__.py
 ```
 
-**Компоненты:**
+**Проверяемые компоненты:**
 
-| Компонент | Описание |
-|-----------|----------|
-| **Prometheus** | Сбор метрик (15s интервал), хранение (15 дней) |
-| **Alertmanager** | Обработка алертов (email, Telegram, Slack) |
-| **Grafana** | Визуализация метрик, дашборды |
+| Компонент | Критичность | Метод проверки |
+|-----------|------------|----------------|
+| **database** | CRITICAL | `SELECT 1` через session_context |
+| **telegram_bot** | CRITICAL | `bot.get_me()` через Telegram API |
+| **ollama** | HIGH | `/api/tags` — доступность |
+| **llm_fallback** | HIGH | Проверка всех провайдеров |
+| **vector_search** | HIGH | `client.list_collections()` |
+| **circuit_breakers** | MEDIUM | Состояние всех breaker'ов |
+| **scheduler** | MEDIUM | Подсчёт задач по статусам |
+| **categorization_queue** | MEDIUM | Наличие очереди |
 
-**Метрики:**
-- `agent_queue_size` — размер очереди задач
-- `agent_tasks_total` — всего задач (по статусам)
-- `agent_task_duration` — длительность выполнения
-- `circuit_breaker_state` — состояние CB
-- `llm_requests_total` — LLM запросы
-- `vector_search_duration` — задержка поиска
+**API:**
+- `GET /api/health` — краткий статус
+- `GET /api/health/full` — полная проверка
+- `GET /api/health/{component}` — конкретный компонент
+- `GET /api/health/live` — liveness probe
+- `GET /api/health/ready` — readiness probe
 
 ---
 
-### Vector Search (векторный поиск)
+### Vector Search
 
 ```
 services/vector_search/
-├── __init__.py
 ├── embeddings.py       # EmbeddingService (sentence-transformers)
 ├── chroma_client.py    # ChromaVectorStore (ChromaDB)
-└── search_engine.py    # VectorSearchEngine
+├── search_engine.py    # VectorSearchEngine
+├── service.py          # VectorSearchService (DI)
+├── hnsw_config.py      # Оптимизация HNSW параметров
+└── auto_reindex.py     # Автопереиндексация
 ```
-
-**Компоненты:**
-
-| Компонент | Ответственность |
-|-----------|----------------|
-| **EmbeddingService** | Генерация эмбеддингов (sentence-transformers) |
-| **ChromaVectorStore** | Хранение и поиск векторов (ChromaDB) |
-| **VectorSearchEngine** | Поиск похожих событий и постов |
-
-**Использование:**
-- Поиск контекста для генерации новостей
-- Поиск похожих событий (min_score=0.7)
-- Поиск похожих постов (min_score=0.6)
 
 ---
 
-### Payment (платежи)
+### Web Admin
 
 ```
-services/payment/
-├── __init__.py
-├── abstractions.py     # PaymentProvider, PaymentLink, PaymentData
-├── service.py          # PaymentService
-├── test_provider.py    # TestPaymentProvider (тестовый)
-└── telegram_stars_provider.py  # TelegramStarsProvider
+services/web_admin/
+├── api/
+│   ├── app.py          # FastAPI приложение (роуты + middleware)
+│   └── auth.py         # JWT утилиты (Telegram авторизация)
+├── routes/
+│   ├── auth.py         # Вход/выход
+│   ├── channels.py     # Каналы
+│   ├── console.py      # Консоль управления (11 endpoint'ов)
+│   ├── dashboard.py    # Дашборд
+│   ├── listener_auth.py # Авторизация Listener (6 endpoint'ов)
+│   ├── listener_auth_ws.py # WebSocket для авторизации
+│   ├── news.py         # Новости
+│   ├── rss.py          # RSS
+│   ├── settings.py     # Настройки (.env)
+│   ├── tasks.py        # Задачи (12 endpoint'ов)
+│   ├── users.py        # Пользователи
+│   └── web.py          # Web источники
+├── health_router.py    # Health check API
+├── session_manager.py  # Сессии + JWT (SQLite)
+├── service.py          # WebAdminService (uvicorn)
+├── config.py           # Конфигурация + load_dotenv
+├── log_handler.py      # Логирование
+└── templates/
+    ├── index.html      # Главная панель
+    ├── console.html    # Консоль управления
+    ├── settings.html   # Настройки
+    ├── login.html      # Страница входа
+    ├── news.html       # Новости
+    ├── channels.html   # Каналы
+    ├── users.html      # Пользователи
+    ├── tasks.html      # Задачи
+    ├── rss.html        # RSS
+    ├── web.html        # Web источники
+    └── components/
+        ├── footer.html # Футер с глобальным статусом
+        ├── listener-auth-modal.html
+        └── notifications-modal.html
 ```
 
-**Провайдеры:**
+---
 
-| Провайдер | Описание |
-|-----------|----------|
-| **TestProvider** | Тестовый режим (бесплатно) |
-| **TelegramStarsProvider** | Telegram Stars (нативная оплата) |
+### Database (абстрактный слой)
 
-**Настройки:**
-- `payment_provider` — выбор провайдера (test / telegram_stars)
-- `subscription_price_rub` — цена подписки (99 руб)
-- `subscription_duration_days` — длительность (30 дней)
+```
+services/database/
+├── config.py             # DatabaseConfig
+├── enums.py              # DatabaseType, ConnectionStatus
+├── exceptions.py         # Исключения
+├── interfaces.py         # IDatabaseService, IProvider
+├── factory.py            # DatabaseServiceFactory
+├── postgresql_admin.py   # Администрирование PostgreSQL
+└── providers/
+    ├── base.py           # BaseDatabaseService
+    ├── sqlite.py         # SQLiteDatabaseService
+    ├── postgresql.py     # PostgreSQLDatabaseService
+    └── mysql.py          # MySQLDatabaseService
+```
 
 ---
 
 ## 🗄️ База данных
 
-### Модели (database/models.py)
+### Модели (`database/models.py`)
 
 | Модель | Таблица | Описание |
 |--------|---------|----------|
@@ -458,58 +435,26 @@ services/payment/
 | **User** | `users` | Пользователи бота |
 | **NewsCategory** | `news_categories` | Справочник категорий |
 | **Task** | `tasks` | Задачи планировщика |
+| **RSSSource** | `rss_sources` | RSS источники |
+| **RSSNews** | `rss_news` | RSS новости |
+| **WebSource** | `web_sources` | Web источники |
+| **WebNews** | `web_news` | Web новости |
 
-### Ключевые поля
-
-**TelegramPost:**
-- `category` — категория новости
-- `urgency` — срочность (1-5)
-- `checked_at` (Boolean) — обработан ли аналитиком
-- `category_confidence` — уверенность категории (0.0-1.0)
-- `source_trust_rating` — рейтинг доверия источника
-- `bypass_ara` — обошёл ли цикл АРА
-- `publisher_channel_id` — канал публикации (если напрямую)
-
-**GeneratedNews:**
-- `text` — сгенерированный текст
-- `moderation_status` — pending/approved/rejected/edited
-- `bypass_ara` — обошёл ли цикл АРА
-- `publisher_channel_id` — канал публикации
-- `published_at` — время публикации
-
-**User:**
-- `user_id_encrypted` — зашифрованный ID (AES-256-GCM)
-- `user_id_hash` — HMAC-SHA256 хэш (для поиска)
-- `role` — user / admin
-- `has_subscription` — наличие подписки
-- `subscription_started_at` / `subscription_ends_at` — даты подписки
-- `preferred_categories` / `preferred_tags` — предпочтения (JSON)
-
-**Task** — календарь задач планировщика:
-- `task_type` — тип задачи (`daily_morning`, `daily_evening`, `direct_generation`, `scheduled_processing`)
-- `description` — описание задачи
-- `post_id` — ID поста (для прямой генерации)
-- `news_id` — ID новости (для плановой обработки)
-- `scheduled_at` — запланированное время выполнения
-- `status` — pending/active/completed/failed/expired/canceled
-- `recurring` — флаг периодической задачи
-- `recurrence_pattern` — периодичность в днях (1=ежедневно, 2=раз в 2 дня)
-- `publisher_channel_id` — ID канала публикации
-- `created_at` / `completed_at` — время создания/завершения
-
-### Репозитории (database/repositories/)
+### Репозитории (`database/repositories/`)
 
 | Репозиторий | Файл |
 |-------------|------|
-| **BaseRepository** | `base.py` |
-| **ChannelRepository** | `channels.py` |
-| **PostRepository** | `posts.py` |
-| **EventRepository** | `events.py` |
-| **NewsRepository** | `news.py` |
-| **PublisherRepository** | `publishers.py` |
-| **UserRepository** | `users.py` |
-| **CategoryRepository** | `categories.py` |
-| **TaskRepository** | `tasks.py` |
+| BaseRepository | `base.py` |
+| ChannelRepository | `channels.py` |
+| PostRepository | `posts.py` |
+| EventRepository | `events.py` |
+| NewsRepository | `news.py` |
+| PublisherRepository | `publishers.py` |
+| UserRepository | `users.py` |
+| CategoryRepository | `categories.py` |
+| TaskRepository | `tasks.py` |
+| RSSSourceRepository | `rss_sources.py` |
+| RSSNewsRepository | `rss_news.py` |
 
 ---
 
@@ -518,271 +463,22 @@ services/payment/
 ### Статусы задач
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    ЖИЗНЕННЫЙ ЦИКЛ ЗАДАЧИ                        │
-└─────────────────────────────────────────────────────────────────┘
-
 ПЕРИОДИЧЕСКАЯ ЗАДАЧА (recurring=True):
-┌─────────┐    ┌─────────┐    ┌─────────┐
-│ pending │───▶│ active  │───▶│ pending │───▶ ...
-└─────────┘    └─────────┘    └─────────┘
-                  │
-                  ▼
-            (выполнение)
-                  │
-                  ▼
-            reset_recurring_task()
-            (новое scheduled_at)
+pending ──▶ active ──▶ pending ──▶ ...
 
 ОДНОРАЗОВАЯ ЗАДАЧА (recurring=False):
-┌─────────┐    ┌─────────┐    ┌──────────────┐
-│ pending │───▶│ active  │───▶│ completed    │
-└─────────┘    └─────────┘    │ failed       │
-                  │            │ expired      │
-                  │            │ canceled     │
-                  ▼            └──────────────┘
-            (выполнение)
-                  │
-                  ▼
-            mark_completed()
-            или mark_failed()
+pending ──▶ active ──▶ completed / failed / expired / canceled
 ```
 
 ### Переходы статусов
 
 | Из статуса | В статус | Условие | Метод |
 |------------|----------|---------|-------|
-| `pending` | `active` | Время наступило, взято в работу | `mark_active()` |
-| `active` | `pending` | Периодическая задача выполнена | `reset_recurring_task()` |
-| `active` | `completed` | Одноразовая задача выполнена | `mark_completed()` |
-| `active` | `failed` | Ошибка выполнения | `mark_failed()` |
-| `pending` | `expired` | Время вышло, не успели взять | `mark_expired()` |
-| `*` | `canceled` | Отменено админом | `mark_canceled()` |
-
-### Проверка просроченных задач
-
-Планировщик проверяет просроченные одноразовые задачи перед каждой обработкой:
-- Если `scheduled_at < now` и `recurring=False` → статус `expired`
-- Это предотвращает выполнение задач, которые не успели взять в работу
-
----
-
-## 🔄 Поток обработки новостей
-
-### Срочная новость (срочность 4-5)
-
-```
-┌──────────────┐
-│ Listener Bot │
-└──────┬───────┘
-       │ Новый пост
-       ▼
-┌──────────────────┐
-│ Categorization   │
-│ Queue            │
-└──────┬───────────┘
-       │
-       ▼
-┌──────────────────┐
-│ Categorization   │
-│ Processor        │
-└──────┬───────────┘
-       │
-       ├─────────────────────┐
-       │                     │
-       ▼                     ▼
-┌─────────────┐       ┌─────────────┐
-│ NewsSaver   │       │ Analyst     │
-│ (сохранить) │       │ (анализ)    │
-└──────┬──────┘       └──────┬──────┘
-       │                     │
-       └──────────┬──────────┘
-                  │
-                  ▼
-         ┌────────────────┐
-         │ UrgentNews     │
-         │ Strategy       │
-         └───────┬────────┘
-                 │
-                 ▼
-         ┌────────────────┐
-         │ EventBus       │
-         │ GENERATE_NEWS  │
-         └───────┬────────┘
-                 │
-                 ▼
-         ┌────────────────┐
-         │ Editor         │
-         │ (генерация)    │
-         └───────┬────────┘
-                 │
-                 ▼
-         ┌────────────────┐
-         │ Archivist      │
-         │ (контекст)     │
-         └───────┬────────┘
-                 │
-                 ▼
-         ┌────────────────┐
-         │ Moderation     │
-         │ (уведомление)  │
-         └────────────────┘
-```
-
-### Плановая новость (срочность 1-3)
-
-```
-┌──────────────┐
-│ Listener Bot │
-└──────┬───────┘
-       │
-       ▼
-┌──────────────────┐
-│ Categorization   │
-│ Processor        │
-└──────┬───────────┘
-       │
-       ▼
-┌──────────────────┐
-│ AnalystAgent     │  ← Анализ на этапе категоризации!
-│ (категория +     │
-│  confidence+тэги)│
-└──────┬───────────┘
-       │
-       ▼
-┌──────────────────┐
-│ ScheduledNews    │
-│ Strategy         │
-└──────┬───────────┘
-       │
-       ▼
-┌──────────────────┐
-│ Сохранение в БД  │
-│ checked_at=false │
-└──────┬───────────┘
-       │
-       ▼
-┌──────────────────┐
-│ Scheduler        │
-│ (ожидание времени│
-│  из tasks表)     │
-└──────┬───────────┘
-       │
-       ▼
-┌──────────────────┐
-│ Таблица `tasks`  │
-│ daily_morning/   │
-│ daily_evening    │
-└──────┬───────────┘
-       │
-       ▼
-┌──────────────────┐
-│ NewsOrchestrator │
-│ process_pending_ │
-│ news_batch()     │  ← Analyst НЕ запускается!
-└──────┬───────────┘
-       │
-       ▼
-┌─────────────┐
-│ Editor      │
-│ (генерация) │
-└──────┬──────┘
-       │
-       ▼
-┌─────────────┐
-│ Archivist   │
-│ (контекст)  │
-└──────┬──────┘
-       │
-       ▼
-┌─────────────┐
-│ Moderation  │
-└─────────────┘
-```
-
-**Важно:** Analyst НЕ запускается в планировщике — он уже сработал в дуэте с Categorizer на этапе категоризации.
-
-**Таблица `tasks` — календарь задач:**
-- Периодические задачи (`daily_morning`/`daily_evening`) создаются при запуске планировщика
-- Время выполнения хранится в поле `scheduled_at` (настраивается через БД)
-- Планировщик проверяет таблицу каждые 30 секунд
-- Задачи переходят по статусам: `pending` → `active` → `pending` (периодические) или `completed`/`failed` (одноразовые)
-
-### Доверенный источник (срочность 4-5 + is_trusted=true)
-
-```
-┌──────────────┐
-│ Listener Bot │
-└──────┬───────┘
-       │
-       ▼
-┌──────────────────┐
-│ Categorization   │
-│ Processor        │
-└──────┬───────────┘
-       │
-       ▼
-┌──────────────────┐
-│ Analyst          │
-│ (анализ)         │
-└──────┬───────────┘
-       │
-       ▼
-┌──────────────────┐
-│ TrustedSource    │
-│ Strategy         │
-└──────┬───────────┘
-       │
-       ├──────────────────┐
-       │                  │
-       ▼                  ▼
-┌─────────────┐   ┌─────────────┐
-│ Публикация  │   │ Уведомление │
-│ в канал     │   │ подписчикам │
-└─────────────┘   └─────────────┘
-```
-
----
-
-## 🧩 EventBus
-
-### Архитектура
-
-```
-┌─────────────────────────────────────────┐
-│              EventBus                   │
-│  ┌─────────────────────────────────┐   │
-│  │  Priority Queue                 │   │
-│  │  (heapq, PrioritizedEvent)      │   │
-│  └─────────────────────────────────┘   │
-│  ┌─────────────────────────────────┐   │
-│  │  Handlers (по приоритету)       │   │
-│  └─────────────────────────────────┘   │
-│  ┌─────────────────────────────────┐   │
-│  │  Semaphore (concurrency limit)  │   │
-│  └─────────────────────────────────┘   │
-└─────────────────────────────────────────┘
-```
-
-### Типы событий
-
-```python
-class EventType(Enum):
-    NEW_NEWS = auto()           # Новый пост
-    CATEGORIZED = auto()        # Категория определена
-    SAVE_NEWS = auto()          # Сохранить новость
-    CREATE_CONTEXT = auto()     # Создать контекст
-    VALIDATE_CATEGORY = auto()  # Проверка категории
-    GENERATE_NEWS = auto()      # Генерация новости
-```
-
-### Приоритеты
-
-| Приоритет | Значение | Пример |
-|-----------|----------|--------|
-| **Высокий** | 1 | Срочные новости (4-5) |
-| **Нормальный** | 3 | Плановые новости (1-3) |
-| **Низкий** | 5 | Фоновые задачи |
+| `pending` | `active` | Время наступило | `mark_active()` |
+| `active` | `pending` | Периодическая задача | `reset_recurring_task()` |
+| `active` | `completed` | Одноразовая задача | `mark_completed()` |
+| `active` | `failed` | Ошибка | `mark_failed()` |
+| `pending` | `expired` | Время вышло | `mark_expired()` |
 
 ---
 
@@ -804,19 +500,24 @@ class EventType(Enum):
 | **Цель** | Детерминированный поиск пользователей |
 | **Данные** | `user_id_hash` |
 
+### Web Admin аутентификация
+
+- SQLite БД для учётных данных (`.web_admin_session.db`)
+- Хэширование паролей через bcrypt
+- JWT токены с продлением сессии (3 часа)
+- Секрет: `WEB_ADMIN_JWT_SECRET` из `.env`
+
 ---
 
 ## 📊 Масштабирование
 
 ### Горизонтальное
-
 - Несколько инстансов бота (через Redis для очереди)
 - Разделение ListenerBot и AdminBot на разные серверы
 - Вынос векторного поиска в отдельный сервис
 
 ### Вертикальное
-
-- Увеличение лимита параллелизма EventBus (max_concurrency)
+- Увеличение лимита параллелизма EventBus (`max_concurrency`)
 - Оптимизация векторного поиска (индексы ChromaDB)
 - Кэширование результатов векторного поиска
 
@@ -826,11 +527,11 @@ class EventType(Enum):
 
 ### Уровни
 
-| Уровень | Описание | Пример |
+| Уровень | Описание | Файлов |
 |---------|----------|--------|
-| **Unit** | Отдельные компоненты | TestNewsClassifier |
-| **Integration** | Взаимодействие | TestCategorizationProcessor |
-| **E2E** | Полный цикл | TestNewsCycle |
+| **Unit** | Отдельные компоненты | ~48 |
+| **Integration** | Взаимодействие | ~10 |
+| **E2E** | Полный цикл | ~5 |
 
 ### Запуск
 
@@ -847,17 +548,9 @@ pytest tests/test_news/ -v             # Обработка новостей
 pytest tests/test_agents/ -v           # AI агенты
 pytest tests/test_repositories/ -v     # Репозитории
 pytest tests/services/ -v              # Сервисы
+pytest tests/test_rss/ -v             # RSS
+pytest tests/test_auth/ -v            # 2FA
 ```
-
-### Статистика (v3.0)
-
-| Категория | Тестов | Покрытие |
-|-----------|--------|----------|
-| **Всего** | 100+ | ~85% |
-| **Categorization** | 5 | 100% |
-| **News** | 13 | 100% |
-| **Repositories** | 20+ | 90% |
-| **Services** | 30+ | 85% |
 
 ---
 
@@ -870,72 +563,36 @@ pytest tests/services/ -v              # Сервисы
 | **Асинхронность** | Все I/O операции async/await |
 | **Типизация** | Type hints для всех функций и методов |
 | **Документирование** | Docstrings для всех классов и публичных методов |
+| **Lazy Startup** | Сервисы стартуют по запросу, не автоматически |
 
 ---
 
-## 🔄 Изменения в версии 4.0 (2026-08-11)
+## 🔄 Изменения в версии 4.0.0 (2026-08-16)
 
-### Глубокий рефакторинг архитектуры
+### ServiceManager — управление сервисами
+- Сервисы запускаются **лениво** через веб-консоль
+- Graceful shutdown с очисткой ресурсов
+- Проверка жизненности (`is_alive`), uptime, last_error
 
-| Компонент | Изменение |
-|-----------|-----------|
-| **NewsOrchestrator** | Новый координатор с паттерном Strategy |
-| **EventBus** | Шина событий с приоритетами |
-| **Scheduler** | Календарь задач на основе таблицы `tasks` |
-| **ListenerBot** | Выделен в отдельный сервис (Telethon) |
-| **Модульная категоризация** | `services/categorization/` — отдельный модуль |
-| **Векторный поиск** | Оптимизированный ChromaDB клиент |
+### Health Check — проверка здоровья
+- 8 компонентов: database, telegram_bot, ollama, llm_fallback, vector_search, circuit_breakers, scheduler, categorization_queue
+- API: `/health`, `/health/full`, `/health/{component}`
+- Автоматическое обновление каждые 10 секунд
 
-### Таблица `tasks` — управляемый календарь задач
+### Web Admin v2
+- 52 API endpoint'а
+- 7+ страниц (главная, консоль, настройки, новости, каналы, пользователи, задачи, RSS, web)
+- Панель уведомлений о сбоях
+- Глобальный статус в футере на всех страницах
+- Консоль: SQL, Python, логи, управление сервисами
 
-**До:** Жёстко закодированное расписание в планировщике  
-**После:** Гибкое расписание через таблицу `tasks` в БД
-
-| Возможность | Реализация |
-|-------------|------------|
-| **Периодические задачи** | `daily_morning`/`daily_evening` с настраиваемым временем |
-| **Прямая генерация** | `direct_generation` — генерация новости по описанию |
-| **Плановая обработка** | `scheduled_processing` — обработка новостей по расписанию |
-| **Статусы задач** | pending/active/completed/failed/expired/canceled |
-| **Recurrence pattern** | Периодичность в днях для периодических задач |
-
-### Удалённые компоненты
-
-| Файл | Причина |
-|------|---------|
-| `database/migrate_*.py` | Миграции применены, файлы не нужны |
-| `services/bot/config.py` | Конфигурация перенесена в `settings.py` |
-| `services/listener/helpers.py` | Мёртвый код |
-| `docs/PROJECT_HISTORY.md` | Устаревшая документация |
+### Логирование
+- Централизованная настройка (`logging_config.py`)
+- Корреляция ID для отслеживания запросов
+- Подавление шума: httpx, SQLAlchemy, aiohttp
 
 ---
 
-## 🔄 Изменения в версии 3.0 (2026-08-08)
-
-### Устранение глобальных состояний
-
-| Компонент | Было | Стало |
-|-----------|------|-------|
-| **NotificationService** | `_notification_service` singleton | Явное создание в BotService |
-| **BotService** | `_bot_service` singleton | Явное создание в main.py |
-| **Container** | `_container` singleton | Явное создание в main.py |
-
-### Удалённые компоненты
-
-| Файл | Причина |
-|------|---------|
-| `services/telegram/categorization.py` | Дублировал `services/categorization/` |
-
-### Обновлённые зависимости
-
-| Файл | Изменение |
-|------|-----------|
-| `services/listener/bot.py` | Прямое использование `services/categorization/` |
-| `services/news/orchestrator.py` | Получение NotificationService через ссылку |
-| `services/bot/handlers/*` | Использование `get_bot_instance()` |
-
----
-
-**Автор:** AI-агент Стефания  
-**Дата актуализации:** 2026-08-11  
+**Автор:** AI-агент Стефания
+**Дата актуализации:** 2026-08-16
 **Версия:** 4.0.0

@@ -1,0 +1,323 @@
+<!-- Модальное окно уведомлений -->
+<div id="notifications-modal" class="fixed inset-0 z-50 hidden" role="dialog" aria-modal="true">
+    <!-- Оверлей -->
+    <div class="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onclick="closeNotificationsModal()"></div>
+
+    <!-- Панель -->
+    <div class="fixed right-0 top-0 h-full w-full max-w-md bg-white shadow-2xl flex flex-col transform transition-transform duration-200">
+
+        <!-- Заголовок -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
+            <div class="flex items-center space-x-3">
+                <div class="w-9 h-9 bg-red-100 rounded-lg flex items-center justify-center">
+                    <i class="fas fa-bell text-red-500"></i>
+                </div>
+                <div>
+                    <h3 class="text-lg font-bold text-gray-800">Уведомления</h3>
+                    <p class="text-xs text-gray-500" id="notif-count-text">0 непрочитанных</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-2">
+                <button onclick="markAllNotificationsRead()" class="px-3 py-1.5 text-xs text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Прочитать все">
+                    <i class="fas fa-check-double mr-1"></i>Все прочитано
+                </button>
+                <button onclick="closeNotificationsModal()" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                    <i class="fas fa-times text-lg"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Фильтры -->
+        <div class="flex items-center space-x-2 px-6 py-3 border-b border-gray-100 flex-shrink-0">
+            <button onclick="filterNotifications('all')" class="notif-filter-btn active px-3 py-1 text-xs font-medium rounded-full border transition-colors" data-filter="all">
+                Все
+            </button>
+            <button onclick="filterNotifications('error')" class="notif-filter-btn px-3 py-1 text-xs font-medium rounded-full border transition-colors" data-filter="error">
+                <i class="fas fa-exclamation-circle text-red-500 mr-1"></i>Ошибки
+            </button>
+            <button onclick="filterNotifications('warning')" class="notif-filter-btn px-3 py-1 text-xs font-medium rounded-full border transition-colors" data-filter="warning">
+                <i class="fas fa-exclamation-triangle text-yellow-500 mr-1"></i>Предупреждения
+            </button>
+            <button onclick="filterNotifications('info')" class="notif-filter-btn px-3 py-1 text-xs font-medium rounded-full border transition-colors" data-filter="info">
+                <i class="fas fa-info-circle text-blue-500 mr-1"></i>Инфо
+            </button>
+        </div>
+
+        <!-- Список уведомлений -->
+        <div class="flex-1 overflow-y-auto" id="notifications-list">
+            <div class="flex items-center justify-center h-full text-gray-400">
+                <div class="text-center">
+                    <i class="fas fa-bell-slash text-5xl mb-3"></i>
+                    <p class="text-sm">Загрузка уведомлений...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Футер -->
+        <div class="px-6 py-3 border-t border-gray-200 bg-gray-50 flex-shrink-0">
+            <p class="text-xs text-gray-400 text-center">
+                Уведомления обновляются автоматически каждые 10 сек
+            </p>
+        </div>
+    </div>
+</div>
+
+<script>
+    // =================================================================
+    // Уведомления
+    // =================================================================
+
+    let _allNotifications = [];   // все уведомления из API
+    let _notifFilter = 'all';     // текущий фильтр
+    let _notifPollTimer = null;
+
+    // --- Открыть/закрыть модалку -----------------------------------------
+    function openNotificationsModal() {
+        const modal = document.getElementById('notifications-modal');
+        if (modal) {
+            modal.classList.remove('hidden');
+            // Убираем красный значок при открытии
+            markAllNotificationsRead(true); // визуальный сброс бэджа
+        }
+    }
+
+    function closeNotificationsModal() {
+        const modal = document.getElementById('notifications-modal');
+        if (modal) modal.classList.add('hidden');
+    }
+
+    // --- Загрузка уведомлений из API ------------------------------------
+    async function loadNotifications() {
+        try {
+            const resp = await fetch('/api/services/status');
+            if (!resp.ok) return;
+            const data = await resp.json();
+            if (!data.success) return;
+
+            const apiNotifs = (data.notifications || []).map(n => ({
+                ...n,
+                timestamp: new Date().toISOString(),
+                read: n.read ?? false,
+            }));
+
+            // Слив: сохраняем старые read-флаги для тех же id
+            const oldById = {};
+            _allNotifications.forEach(n => { oldById[n.id] = n.read; });
+            apiNotifs.forEach(n => {
+                if (oldById[n.id]) n.read = oldById[n.id];
+            });
+
+            _allNotifications = apiNotifs;
+
+            // Обновляем бэдж колокольчика
+            const unread = _allNotifications.filter(n => !n.read).length;
+            updateNotificationBadge(unread);
+
+            // Рендерим список если модалка открыта
+            renderNotifications();
+
+            // Обновляем статусы сервисов на дашборде (богатый формат)
+            if (data.statuses) {
+                renderServiceStatusesRich(data.statuses);
+            }
+        } catch (e) {
+            console.error('[Notif] Ошибка загрузки:', e);
+        }
+    }
+
+    // --- Бэдж колокольчика ----------------------------------------------
+    function updateNotificationBadge(unread) {
+        const badge = document.getElementById('notification-badge');
+        if (!badge) return;
+        if (unread > 0) {
+            badge.textContent = unread > 99 ? '99+' : unread;
+            badge.classList.remove('hidden');
+        } else {
+            badge.classList.add('hidden');
+        }
+    }
+
+    // --- Рендер списка --------------------------------------------------
+    function renderNotifications() {
+        const list = document.getElementById('notifications-list');
+        if (!list) return;
+
+        // Фильтрация
+        const filtered = _notifFilter === 'all'
+            ? _allNotifications
+            : _allNotifications.filter(n => n.type === _notifFilter);
+
+        if (filtered.length === 0) {
+            const icon = _notifFilter === 'all' ? 'bell-slash' :
+                         _notifFilter === 'error' ? 'check-circle' :
+                         _notifFilter === 'warning' ? 'check-circle' : 'check-circle';
+            const msg = _notifFilter === 'all' ? 'Уведомлений нет — всё работает' :
+                        `Нет уведомлений типа «${_notifFilter}»`;
+            list.innerHTML = `
+                <div class="flex items-center justify-center h-full text-gray-400">
+                    <div class="text-center">
+                        <i class="fas fa-${icon} text-5xl mb-3 text-green-300"></i>
+                        <p class="text-sm">${msg}</p>
+                    </div>
+                </div>`;
+            return;
+        }
+
+        list.innerHTML = filtered.map(n => {
+            const typeIcon = n.type === 'error' ? 'exclamation-circle' :
+                             n.type === 'warning' ? 'exclamation-triangle' : 'info-circle';
+            const typeColor = n.type === 'error' ? 'red' :
+                              n.type === 'warning' ? 'yellow' : 'blue';
+            const readClass = n.read ? 'opacity-60' : '';
+            const dotClass = n.read ? '' : 'block w-2 h-2 bg-blue-500 rounded-full absolute top-3 right-3';
+
+            return `
+                <div class="relative px-6 py-4 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors ${readClass}"
+                     onclick="markNotificationRead('${n.id}')">
+                    <div class="flex items-start space-x-3">
+                        <div class="w-8 h-8 bg-${typeColor}-100 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                            <i class="fas fa-${typeIcon} text-${typeColor}-500 text-sm"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center space-x-2">
+                                <span class="text-sm font-semibold text-gray-800">${escapeHtmlNotif(n.title)}</span>
+                                ${n.service ? `<span class="px-1.5 py-0.5 bg-gray-100 text-gray-600 text-xs rounded font-mono">${n.service}</span>` : ''}
+                            </div>
+                            <p class="text-xs text-gray-500 mt-1 line-clamp-2">${escapeHtmlNotif(n.message)}</p>
+                            <p class="text-xs text-gray-400 mt-1">${formatNotifTime(n.timestamp)}</p>
+                        </div>
+                    </div>
+                </div>`;
+        }).join('');
+
+        // Счётчик
+        const countEl = document.getElementById('notif-count-text');
+        const unread = _allNotifications.filter(n => !n.read).length;
+        if (countEl) countEl.textContent = `${unread} непрочитанных`;
+    }
+
+    // --- Фильтр ---------------------------------------------------------
+    function filterNotifications(type) {
+        _notifFilter = type;
+        // Обновляем активную кнопку
+        document.querySelectorAll('.notif-filter-btn').forEach(btn => {
+            if (btn.dataset.filter === type) {
+                btn.classList.add('active', 'bg-blue-50', 'border-blue-300', 'text-blue-700');
+                btn.classList.remove('text-gray-600', 'border-gray-200');
+            } else {
+                btn.classList.remove('active', 'bg-blue-50', 'border-blue-300', 'text-blue-700');
+                btn.classList.add('text-gray-600', 'border-gray-200');
+            }
+        });
+        renderNotifications();
+    }
+
+    // --- Маркировка прочитанным -----------------------------------------
+    async function markNotificationRead(id) {
+        const n = _allNotifications.find(x => x.id === id);
+        if (n) n.read = true;
+        renderNotifications();
+        updateNotificationBadge(_allNotifications.filter(x => !x.read).length);
+    }
+
+    async function markAllNotificationsRead(visualOnly = false) {
+        _allNotifications.forEach(n => { n.read = true; });
+        if (!visualOnly) {
+            try { await fetch('/api/notifications/read', { method: 'POST' }); } catch (_) {}
+        }
+        renderNotifications();
+        updateNotificationBadge(0);
+    }
+
+    // --- Рендер статусов сервисов (богатый формат) ----------------------
+    function renderServiceStatusesRich(statuses) {
+        const map = {
+            bot: { label: 'Admin Bot', icon: 'robot', color: 'blue' },
+            listener: { label: 'Listener Bot', icon: 'eye', color: 'purple' },
+            scheduler: { label: 'Scheduler', icon: 'clock', color: 'orange' },
+        };
+
+        for (const [key, info] of Object.entries(statuses)) {
+            const el = document.getElementById(`status-${key}`);
+            if (!el) continue;
+
+            const state = info.state || 'stopped';
+            const healthy = info.healthy;
+
+            let text, cls;
+            if (state === 'running' && healthy) {
+                text = `OK${formatUptimeNotif(info.uptime_sec || 0)}`;
+                cls = 'bg-green-100 text-green-700';
+            } else if (state === 'running' && !healthy) {
+                text = 'С ошибкой';
+                cls = 'bg-yellow-100 text-yellow-700';
+            } else if (state === 'crashed') {
+                text = 'Упал';
+                cls = 'bg-red-100 text-red-700';
+            } else if (state === 'starting' || state === 'stopping') {
+                text = state === 'starting' ? 'Запуск...' : 'Остановка...';
+                cls = 'bg-yellow-100 text-yellow-700';
+            } else {
+                text = 'Остановлен';
+                cls = 'bg-gray-100 text-gray-600';
+            }
+
+            el.textContent = text;
+            el.className = `px-2 py-1 text-xs rounded-full ${cls}`;
+        }
+
+        // Обновляем глобальный статус в футере
+        updateSystemStatusFromData(statuses);
+    }
+
+    // --- Утилиты --------------------------------------------------------
+    function escapeHtmlNotif(text) {
+        if (!text) return '';
+        const d = document.createElement('div');
+        d.textContent = text;
+        return d.innerHTML;
+    }
+
+    function formatNotifTime(iso) {
+        if (!iso) return '';
+        try {
+            const d = new Date(iso);
+            return d.toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+        } catch { return iso; }
+    }
+
+    function formatUptimeNotif(sec) {
+        if (sec <= 0) return '';
+        if (sec < 60) return `· ${sec}с`;
+        const h = Math.floor(sec / 3600);
+        const m = Math.floor((sec % 3600) / 60);
+        if (h > 0) return `· ${h}ч ${m}м`;
+        return `· ${m}м`;
+    }
+
+    // --- Автопоolling ---------------------------------------------------
+    function startNotificationPolling() {
+        loadNotifications();
+        // Первый запуск health check (async, не блокирует)
+        loadHealthStatuses();
+        _notifPollTimer = setInterval(() => {
+            loadNotifications();
+            loadHealthStatuses();
+        }, 10000);
+    }
+
+    // --- Health check polling (ai_agent, database, chromadb) -------------
+    async function loadHealthStatuses() {
+        try {
+            const resp = await fetch('/api/health/full?timeout=5');
+            if (resp.ok) {
+                const data = await resp.json();
+                if (data.components) {
+                    renderHealthComponents(data.components);
+                }
+            }
+        } catch (e) {
+            console.error('[Health] Ошибка:', e);
+        }
+    }
+</script>

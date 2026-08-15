@@ -321,29 +321,36 @@ class HealthChecker:
 
 async def check_database_health() -> ComponentHealth:
     """Проверка здоровья базы данных."""
-    from services.database import get_database_service
-
     start_time = time.time()
 
     try:
+        from services.core.database import get_database_service
+
         db_service = get_database_service()
 
-        # Проверка подключения
-        async with db_service.session_factory() as session:
+        # Проверка подключения — используем session_context (общий для старого и нового API)
+        async with db_service.session_context() as session:
             from sqlalchemy import text
             await session.execute(text("SELECT 1"))
 
         latency_ms = (time.time() - start_time) * 1000
 
+        # Определяем тип БД
+        db_type = getattr(db_service, 'db_type', None)
+        # У DatabaseService (обёртка) db_type нет напрямую — ищем через _service
+        if db_type is None and hasattr(db_service, '_service') and db_service._service:
+            db_type = db_service._service.db_type
+        db_type_label = db_type.name if db_type else "unknown"
+        db_type_value = db_type.value if db_type else "unknown"
+
         return ComponentHealth(
             name="database",
             status=HealthStatus.HEALTHY,
             severity=SeverityLevel.CRITICAL,
-            message=f"БД подключена ({db_service.db_type.name})",
+            message=f"БД подключена ({db_type_label})",
             latency_ms=latency_ms,
             details={
-                "db_type": db_service.db_type.value,
-                "pool_size": db_service.config.pool_size if hasattr(db_service, 'config') else "N/A",
+                "db_type": db_type_value,
             },
         )
 
@@ -361,11 +368,18 @@ async def check_ollama_health() -> ComponentHealth:
     """Проверка здоровья Ollama."""
     from services.core.llm_provider import OllamaProvider
 
-    provider = OllamaProvider()
+    start_time = time.time()
 
     try:
+        # Кэшируем — конструктор лёгкий, но is_available() делает HTTP-запрос
+        if not hasattr(check_ollama_health, '_provider'):
+            check_ollama_health._provider = OllamaProvider()
+        provider = check_ollama_health._provider
+
         available = await provider.is_available()
         stats = provider.get_stats()
+
+        latency_ms = (time.time() - start_time) * 1000
 
         if available:
             return ComponentHealth(
@@ -373,12 +387,10 @@ async def check_ollama_health() -> ComponentHealth:
                 status=HealthStatus.HEALTHY,
                 severity=SeverityLevel.HIGH,
                 message="Ollama доступен",
-                latency_ms=stats.avg_latency_ms,
+                latency_ms=latency_ms,
                 details={
                     "model": provider.default_model,
                     "base_url": provider.base_url,
-                    "total_requests": stats.total_requests,
-                    "successful_requests": stats.successful_requests,
                 },
             )
         else:
@@ -386,8 +398,8 @@ async def check_ollama_health() -> ComponentHealth:
                 name="ollama",
                 status=HealthStatus.UNHEALTHY,
                 severity=SeverityLevel.HIGH,
-                message="Ollama недоступен",
-                details={"error": stats.last_error},
+                message=f"Ollama недоступен",
+                latency_ms=latency_ms,
             )
 
     except Exception as e:
@@ -396,6 +408,7 @@ async def check_ollama_health() -> ComponentHealth:
             status=HealthStatus.UNHEALTHY,
             severity=SeverityLevel.HIGH,
             message=f"Ollama ошибка: {type(e).__name__}: {e}",
+            latency_ms=(time.time() - start_time) * 1000,
         )
 
 
@@ -555,21 +568,24 @@ async def check_telegram_bot_health() -> ComponentHealth:
 
 
 async def check_vector_search_health() -> ComponentHealth:
-    """Проверка здоровья векторного поиска."""
+    start_time = time.time()
+
     try:
-        from services.vector_search import VectorSearchService
+        from services.vector_search.chroma_client import ChromaVectorStore
 
-        vector_service = VectorSearchService()
+        # Кэшируем клиент — нет смысла пересоздавать PersistentClient каждый раз
+        if not hasattr(check_vector_search_health, '_store'):
+            check_vector_search_health._store = ChromaVectorStore()
+        store = check_vector_search_health._store
 
-        # Проверка подключения к ChromaDB
-        start_time = time.time()
-        client = vector_service.vector_store.client
+        client = store._client
 
-        # Получение списка коллекций
-        collections = await client.list_collections()
+        # list_collections() в ChromaDB 0.5.x — синхронный метод
+        collections = client.list_collections()
+
         latency_ms = (time.time() - start_time) * 1000
 
-        collection_names = [c.name for c in collections]
+        collection_names = [c.name if hasattr(c, 'name') else str(c) for c in collections]
 
         return ComponentHealth(
             name="vector_search",
@@ -579,7 +595,6 @@ async def check_vector_search_health() -> ComponentHealth:
             latency_ms=latency_ms,
             details={
                 "collections": collection_names,
-                "chroma_host": getattr(vector_service, 'chroma_host', 'unknown'),
             },
         )
 
@@ -589,6 +604,7 @@ async def check_vector_search_health() -> ComponentHealth:
             status=HealthStatus.UNHEALTHY,
             severity=SeverityLevel.HIGH,
             message=f"Векторный поиск ошибка: {type(e).__name__}: {e}",
+            latency_ms=(time.time() - start_time) * 1000,
         )
 
 
@@ -602,7 +618,7 @@ async def check_scheduler_health() -> ComponentHealth:
 
         start_time = time.time()
 
-        async with get_database_service().session_factory() as session:
+        async with get_database_service().session_context() as session:
             # Подсчёт задач по статусам
             query = select(Task.status, func.count(Task.id)).group_by(Task.status)
             result = await session.execute(query)
@@ -639,7 +655,10 @@ async def check_categorization_queue_health() -> ComponentHealth:
     try:
         from services.categorization.queue import CategorizationQueue
 
-        queue = CategorizationQueue()
+        # Кэшируем — singleton
+        if not hasattr(check_categorization_queue_health, '_queue'):
+            check_categorization_queue_health._queue = CategorizationQueue()
+        queue = check_categorization_queue_health._queue
 
         return ComponentHealth(
             name="categorization_queue",

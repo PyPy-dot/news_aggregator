@@ -38,18 +38,42 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
 def get_service_status():
-    """Получить статус сервисов из ServiceManager."""
+    """
+    Получить статус сервисов из ServiceManager.
+
+    Для обратной совместимости возвращает Dict[str, bool],
+    но новый формат доступен через get_service_statuses().
+    """
     try:
         from services.service_manager import get_service_manager
         manager = get_service_manager()
         return manager.get_all_states()
     except Exception as e:
         logger.debug(f"Не удалось получить статус из ServiceManager: {e}")
-        # Возвращаем статус по умолчанию (все остановлено)
         return {
             "bot": False,
             "listener": False,
             "scheduler": False,
+        }
+
+
+def get_service_statuses():
+    """
+    Получить богатый статус сервисов с реальной проверкой.
+
+    Returns:
+        Dict[str, Dict] — {name: {state, healthy, uptime_sec, started_at, last_error}}
+    """
+    try:
+        from services.service_manager import get_service_manager
+        manager = get_service_manager()
+        return manager.get_all_statuses()
+    except Exception as e:
+        logger.debug(f"Не удалось получить статусы из ServiceManager: {e}")
+        return {
+            "bot": {"state": "stopped", "healthy": False, "uptime_sec": 0, "started_at": None, "last_error": None},
+            "listener": {"state": "stopped", "healthy": False, "uptime_sec": 0, "started_at": None, "last_error": None},
+            "scheduler": {"state": "stopped", "healthy": False, "uptime_sec": 0, "started_at": None, "last_error": None},
         }
 
 
@@ -443,8 +467,8 @@ async def execute_sql(request: Request, user: Optional[dict] = Depends(get_optio
 
 @router.get("/api/status")
 async def get_status(user: Optional[dict] = Depends(get_optional_user)):
-    """Получить статус сервисов."""
-    services = get_service_status()
+    """Получить статус сервисов (богатый формат с uptime, errors)."""
+    services = get_service_statuses()
     return JSONResponse(content={
         "success": True,
         "services": services

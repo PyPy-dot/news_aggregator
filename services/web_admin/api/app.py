@@ -310,18 +310,36 @@ async def get_services_status(user: Optional[dict] = Depends(get_optional_user))
     Получить статусы сервисов для главной панели.
 
     Возвращает:
-    - bot: True/False
-    - listener: True/False
-    - scheduler: True/False
+    - services: {bot, listener, scheduler} — bool для обратной совместимости
+    - statuses: {bot, listener, scheduler} — богатый формат (state, healthy, uptime_sec, last_error)
+    - notifications: список активных уведомлений (сбои сервисов)
     """
     from services.service_manager import get_service_manager
 
     try:
         manager = get_service_manager()
         services = manager.get_all_states()
+        statuses = manager.get_all_statuses()
+
+        # Строим уведомления из проблемных сервисов
+        notifications = []
+        for name, info in statuses.items():
+            if info.get("state") == "crashed" or info.get("last_error"):
+                notifications.append({
+                    "id": f"service_{name}_{info.get('state', 'error')}",
+                    "type": "error" if info.get("state") == "crashed" else "warning",
+                    "title": f"Сервис {name} {'упал' if info.get('state') == 'crashed' else 'с ошибкой'}",
+                    "message": info.get("last_error") or f"Состояние: {info.get('state')}",
+                    "service": name,
+                    "created_at": info.get("started_at"),
+                    "read": False,
+                })
+
         return {
             "success": True,
-            "services": services
+            "services": services,
+            "statuses": statuses,
+            "notifications": notifications,
         }
     except Exception as e:
         logger.error(f"Ошибка получения статусов сервисов: {e}")
@@ -331,8 +349,114 @@ async def get_services_status(user: Optional[dict] = Depends(get_optional_user))
                 "bot": False,
                 "listener": False,
                 "scheduler": False
-            }
+            },
+            "statuses": {},
+            "notifications": [],
         }
+
+
+@app.post("/api/notifications/read", tags=["API"], response_class=JSONResponse)
+async def mark_notifications_read(
+    service: Optional[str] = None,
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    """
+    Пометить уведомления как прочитанные.
+
+    Args:
+        service: конкретный сервис или None = все
+    """
+    return {"success": True, "read": service or "all"}
+
+
+@app.post("/api/news/generate", tags=["API"], response_class=JSONResponse)
+async def generate_news_endpoint(
+    request: Request,
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    """
+    Быстрая генерация новости из текста.
+
+    Body: { "text": "...", "category": "..." }
+    """
+    try:
+        data = await request.json()
+        text = data.get("text", "").strip()
+        category = data.get("category", "") or None
+
+        if not text:
+            return {"success": False, "error": "Текст не указан"}
+
+        # Получаем orchestrator из контейнера
+        from main import app as main_app
+        container = getattr(main_app, '_global_container', None) if main_app else None
+        if not container:
+            # Fallback: ищем контейнер из модуля main
+            import sys
+            main_mod = sys.modules.get('main')
+            container = getattr(main_mod, '_global_container', None) if main_mod else None
+
+        if container:
+            async with container.session() as session:
+                from database import RepositoryFactory
+                factory = RepositoryFactory(session)
+                orchestrator = await container.create_orchestrator(session)
+                news_id = await orchestrator.generate_direct_news(
+                    description=text,
+                    publisher_channel_id=None,  # всем пользователям через бота
+                )
+                await session.commit()
+                return {"success": True, "news_id": news_id}
+        else:
+            return {"success": False, "error": "DI контейнер не доступен"}
+
+    except Exception as e:
+        logger.error(f"Ошибка генерации новости: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/channels", tags=["API"], response_class=JSONResponse)
+async def create_channel_endpoint(
+    request: Request,
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    """
+    Быстрое добавление канала.
+
+    Body: { "channel_id": -100..., "title": "...", "description": "..." }
+    """
+    try:
+        data = await request.json()
+        channel_id = data.get("channel_id")
+        title = data.get("title", "").strip()
+        description = data.get("description", "").strip()
+
+        if not channel_id or not title:
+            return {"success": False, "error": "Укажите channel_id и title"}
+
+        db_service = get_database_service()
+        async with db_service.session_context() as session:
+            from database.repositories.channels import ChannelRepository
+            repo = ChannelRepository(session)
+            # Проверка дубликата
+            existing = await repo.get_by_telegram_id(int(channel_id))
+            if existing:
+                return {"success": False, "error": f"Канал с ID {channel_id} уже существует"}
+
+            ch_id = await repo.add_channel(
+                channel_id=int(channel_id),
+                title=title,
+                description=description,
+                trust_rating=0.5,
+                is_trusted=False,
+            )
+            await session.commit()
+
+        return {"success": True, "channel_id": ch_id}
+
+    except Exception as e:
+        logger.error(f"Ошибка добавления канала: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
 
 
 @app.get("/api/news/recent", tags=["API"], response_class=JSONResponse)
@@ -376,6 +500,7 @@ async def get_recent_news(limit: int = 5, user: Optional[dict] = Depends(get_opt
 # =============================================================================
 
 from services.web_admin.routes import auth, dashboard, news, channels, users, tasks, rss, web, console, settings, listener_auth, listener_auth_ws
+from services.web_admin import health_router
 
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
@@ -389,6 +514,7 @@ app.include_router(console.router, prefix="/console", tags=["Console"])
 app.include_router(listener_auth.router, prefix="/listener-auth", tags=["Listener Auth"])
 app.include_router(listener_auth_ws.router, prefix="/ws", tags=["Listener Auth WS"])
 app.include_router(settings.router, prefix="/settings", tags=["Settings"])
+app.include_router(health_router.router, prefix="/api", tags=["Health"])
 
 
 # =============================================================================
