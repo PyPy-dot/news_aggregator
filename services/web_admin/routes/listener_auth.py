@@ -364,30 +364,11 @@ async def recreate_client(listener, session_name: str = "userbot") -> bool:
             connection_retries=3,
             retry_delay=1,
             timeout=30,
-            use_ipv6=True,
+            use_ipv6=settings.telegram_use_ipv6,
             flood_sleep_threshold=60,
             auto_reconnect=True,
         )
-        try:
-            await listener.client.connect()
-        except Exception:
-            # IPv6 не работает — без него
-            try:
-                await listener.client.disconnect()
-            except Exception:
-                pass
-            listener.client = TelegramClient(
-                session_file,
-                api_id=settings.api_id,
-                api_hash=settings.api_hash,
-                connection_retries=3,
-                retry_delay=1,
-                timeout=30,
-                use_ipv6=False,
-                flood_sleep_threshold=60,
-                auto_reconnect=True,
-            )
-            await listener.client.connect()
+        await listener.client.connect()
         listener._client_initialized = True
         logger.info("✅ Клиент пересоздан с чистой сессией")
         return True

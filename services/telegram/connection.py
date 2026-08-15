@@ -47,7 +47,7 @@ class TelegramConnectionService:
             connection_retries=connection_retries,
             retry_delay=retry_delay,
             timeout=timeout,
-            use_ipv6=False
+            use_ipv6=settings.telegram_use_ipv6
         )
         self.is_connected = False
 

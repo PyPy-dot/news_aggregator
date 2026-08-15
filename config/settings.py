@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     # Telegram Proxy (опционально, для обхода блокировок)
     telegram_proxy: str | None = Field(default=None, alias='TELEGRAM_PROXY', description='Proxy URL для Telegram (socks5://host:port)')
     telegram_mtproto_proxy: str | None = Field(default=None, alias='TELEGRAM_MTPROTO_PROXY', description='MTProto proxy для Telegram (server:port:secret)')
+    telegram_use_ipv6: bool = Field(default=True, alias='TELEGRAM_USE_IPV6', description='Использовать IPv6 для подключения к Telegram (true/false в зависимости от сети)')
     disable_listener_bot: bool = Field(default=False, alias='DISABLE_LISTENER_BOT', description='Отключить ListenerBot (если Telegram заблокирован)')
 
     # 2FA настройки (для защиты Listener Bot)
