@@ -10,7 +10,7 @@
                 <i class="fab fa-telegram-plane text-white text-4xl"></i>
             </div>
             <h3 class="text-2xl font-bold text-white">Авторизация Telegram</h3>
-            <p class="text-sm text-gray-400 mt-2" id="auth-message">Требуется вход в Telegram</p>
+            <p class="text-sm text-gray-400 mt-2" id="la-auth-message">Требуется вход в Telegram</p>
             <p class="text-xs text-blue-400 mt-1">ListenerBot ожидает авторизации</p>
         </div>
 
@@ -18,45 +18,47 @@
         <div class="flex items-center justify-center mb-6">
             <div class="flex items-center space-x-3">
                 <div class="text-center">
-                    <div id="step-code-indicator" class="w-4 h-4 rounded-full bg-blue-500 animate-pulse mx-auto"></div>
+                    <div id="la-step-code-indicator" class="w-4 h-4 rounded-full bg-blue-500 animate-pulse mx-auto"></div>
                     <p class="text-xs text-gray-500 mt-1">Код</p>
                 </div>
                 <div class="w-12 h-0.5 bg-gray-600"></div>
                 <div class="text-center">
-                    <div id="step-password-indicator" class="w-4 h-4 rounded-full bg-gray-600 mx-auto"></div>
+                    <div id="la-step-password-indicator" class="w-4 h-4 rounded-full bg-gray-600 mx-auto"></div>
                     <p class="text-xs text-gray-500 mt-1">Пароль</p>
                 </div>
             </div>
         </div>
 
         <!-- Форма ввода кода -->
-        <div id="code-form">
-            <label for="auth-code" class="block text-sm font-medium text-gray-300 mb-2">
+        <div id="la-code-form">
+            <label for="la-auth-code" class="block text-sm font-medium text-gray-300 mb-2">
                 <i class="fas fa-key mr-2 text-blue-400"></i>
                 Код подтверждения
             </label>
             <input
                 type="text"
-                id="auth-code"
+                id="la-auth-code"
                 placeholder="12345"
                 maxlength="10"
+                autocomplete="off"
                 class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-center text-xl tracking-widest font-mono"
             />
             <p class="text-xs text-gray-500 mt-2 text-center">
-                Код отправлен на <span id="auth-phone" class="text-blue-400"></span>
+                Код отправлен на <span id="la-auth-phone" class="text-blue-400"></span>
             </p>
         </div>
 
         <!-- Форма ввода пароля -->
-        <div id="password-form" class="hidden">
-            <label for="auth-password" class="block text-sm font-medium text-gray-300 mb-2">
+        <div id="la-password-form" class="hidden">
+            <label for="la-auth-password" class="block text-sm font-medium text-gray-300 mb-2">
                 <i class="fas fa-lock mr-2 text-green-400"></i>
                 Облачный пароль Telegram
             </label>
             <input
                 type="password"
-                id="auth-password"
+                id="la-auth-password"
                 placeholder="Ваш 2FA пароль"
+                autocomplete="off"
                 class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all text-center"
             />
             <p class="text-xs text-gray-500 mt-2 text-center">
@@ -65,29 +67,29 @@
         </div>
 
         <!-- Сообщения об ошибках -->
-        <div id="auth-error" class="hidden mt-4 bg-red-900/50 border border-red-700 text-red-200 px-4 py-3 rounded-lg text-sm">
+        <div id="la-auth-error" class="hidden mt-4 bg-red-900/50 border border-red-700 text-red-200 px-4 py-3 rounded-lg text-sm">
             <i class="fas fa-exclamation-triangle mr-2"></i>
-            <span id="auth-error-text"></span>
+            <span id="la-auth-error-text"></span>
         </div>
 
         <!-- Сообщения об успехе -->
-        <div id="auth-success" class="hidden mt-4 bg-green-900/50 border border-green-700 text-green-200 px-4 py-3 rounded-lg text-sm text-center">
+        <div id="la-auth-success" class="hidden mt-4 bg-green-900/50 border border-green-700 text-green-200 px-4 py-3 rounded-lg text-sm text-center">
             <i class="fas fa-check-circle mr-2"></i>
-            <span id="auth-success-text">Авторизация успешна!</span>
+            <span id="la-auth-success-text">Авторизация успешна!</span>
         </div>
 
         <!-- Кнопки -->
-        <div class="flex items-center justify-between mt-6 space-x-3">
+        <div id="la-auth-buttons" class="flex items-center justify-between mt-6 space-x-3">
             <button
-                onclick="cancelListenerAuth()"
+                onclick="LA_AUTH.cancel()"
                 class="flex-1 px-4 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors text-sm font-medium border border-gray-600"
             >
                 <i class="fas fa-times mr-2"></i>
                 Отмена
             </button>
             <button
-                onclick="submitListenerAuth()"
-                id="auth-submit-btn"
+                onclick="LA_AUTH.submit()"
+                id="la-auth-submit-btn"
                 class="flex-1 px-4 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white rounded-lg transition-all text-sm font-medium shadow-lg"
             >
                 <i class="fas fa-arrow-right mr-2"></i>
@@ -96,9 +98,17 @@
         </div>
 
         <!-- Индикатор загрузки -->
-        <div id="auth-loading" class="hidden mt-4 text-center">
+        <div id="la-auth-loading" class="hidden mt-4 text-center">
             <i class="fas fa-circle-notch fa-spin text-blue-500 text-2xl"></i>
             <p class="text-sm text-gray-400 mt-2">Обработка запроса...</p>
+        </div>
+
+        <!-- Индикатор WebSocket подключения -->
+        <div class="mt-2 text-center">
+            <span id="la-ws-status" class="text-xs text-gray-600">
+                <i class="fas fa-circle text-gray-500" id="la-ws-dot"></i>
+                <span id="la-ws-text">Подключение...</span>
+            </span>
         </div>
 
         <!-- Подсказка -->
@@ -111,294 +121,452 @@
     </div>
 </div>
 
-<!-- Скрипт авторизации ListenerBot -->
+<!-- Скрипт авторизации ListenerBot (WebSocket-first) -->
 <script>
-    (function() {
-        'use strict';
+(function() {
+    'use strict';
 
-        let _authCheckInterval = null;
-        let _authStep = 'code';
-        let _authModalVisible = false;
+    // -----------------------------------------------------------------------
+    // Утилиты DOM с префиксом la- (чтобы не конфликтовать с другими скриптами)
+    // -----------------------------------------------------------------------
+    function $(id) { return document.getElementById(id); }
+    function hide(id) { const el = $(id); if (el) el.classList.add('hidden'); }
+    function show(id) { const el = $(id); if (el) el.classList.remove('hidden'); }
 
-        // ------------------------------------------------------------------
-        // Проверка необходимости авторизации
-        // ------------------------------------------------------------------
-        window.checkListenerAuthNeeded = async function() {
+    // -----------------------------------------------------------------------
+    // Состояние
+    // -----------------------------------------------------------------------
+    let step = 'code';          // 'code' | 'password'
+    let modalVisible = false;
+    let ws = null;
+    let wsReconnectTimer = null;
+    let pollTimer = null;
+    let useWebSocket = false;   // Определяется при подключении
+
+    // -----------------------------------------------------------------------
+    // WebSocket подключение
+    // -----------------------------------------------------------------------
+    function connectWebSocket() {
+        if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) {
+            return; // Уже подключены
+        }
+
+        const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${proto}//${window.location.host}/ws/listener-auth`;
+
+        try {
+            ws = new WebSocket(wsUrl);
+        } catch (e) {
+            setWsStatus('error', 'WebSocket недоступен');
+            useWebSocket = false;
+            return;
+        }
+
+        ws.onopen = function() {
+            useWebSocket = true;
+            setWsStatus('connected', 'Real-time');
+            console.log('[LA_AUTH] WebSocket подключён');
+        };
+
+        ws.onmessage = function(event) {
             try {
-                const response = await fetch('/listener-auth/api/listener/auth/check');
-                const result = await response.json();
-
-                if (result.success) {
-                    if (result.auth_needed && !_authModalVisible) {
-                        const state = result.state || { step: 'code' };
-                        console.log('🔐 Авторизация требуется:', state);
-                        openListenerAuthModal(state);
-                    }
-                }
-            } catch (error) {
-                console.error('Ошибка проверки авторизации:', error);
+                const data = JSON.parse(event.data);
+                handleWsMessage(data);
+            } catch (e) {
+                console.error('[LA_AUTH] Ошибка разбора WS:', e);
             }
         };
 
-        // ------------------------------------------------------------------
+        ws.onclose = function() {
+            useWebSocket = false;
+            setWsStatus('disconnected', 'Переподключение...');
+            console.log('[LA_AUTH] WebSocket отключён, переподключение через 3 сек');
+
+            // Переподключение
+            clearTimeout(wsReconnectTimer);
+            wsReconnectTimer = setTimeout(connectWebSocket, 3000);
+        };
+
+        ws.onerror = function() {
+            setWsStatus('error', 'Ошибка соединения');
+            useWebSocket = false;
+        };
+    }
+
+    function setWsStatus(status, text) {
+        const dot = $('la-ws-dot');
+        const txt = $('la-ws-text');
+        if (!dot || !txt) return;
+
+        if (status === 'connected') {
+            dot.className = 'fas fa-circle text-green-500';
+        } else if (status === 'error') {
+            dot.className = 'fas fa-circle text-red-500';
+        } else {
+            dot.className = 'fas fa-circle text-yellow-500 animate-pulse';
+        }
+        txt.textContent = text;
+    }
+
+    // -----------------------------------------------------------------------
+    // Обработка WebSocket сообщений
+    // -----------------------------------------------------------------------
+    function handleWsMessage(data) {
+        if (!data || !data.type) return;
+
+        switch (data.type) {
+            case 'state_change':
+                onStateChange(data.state);
+                break;
+            case 'accepted':
+                showLoading();
+                break;
+            case 'completed':
+                showSuccess('Авторизация успешна!');
+                setTimeout(() => LA_AUTH.close(), 2000);
+                break;
+            case 'error':
+                showError(data.error || 'Ошибка авторизации');
+                hideLoading();
+                break;
+            case 'pong':
+                // ping/pong — игнорируем
+                break;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Реакция на изменение состояния
+    // -----------------------------------------------------------------------
+    function onStateChange(state) {
+        if (!state) return;
+
+        if (state.step === 'completed') {
+            showSuccess('Авторизация успешна!');
+            setTimeout(() => LA_AUTH.close(), 2000);
+            return;
+        }
+
+        if (state.step === 'error') {
+            showError(state.error || 'Ошибка авторизации');
+            return;
+        }
+
+        // Обновить шаг
+        if (state.step === 'password' && step !== 'password') {
+            step = 'password';
+            updateStepUI();
+        } else if (state.step === 'code' && step !== 'code') {
+            step = 'code';
+            updateStepUI();
+        }
+
+        // Обновить номер телефона
+        if (state.phone_number) {
+            const phoneEl = $('la-auth-phone');
+            if (phoneEl) phoneEl.textContent = state.phone_number;
+        }
+
+        // Обновить сообщение
+        if (state.message) {
+            const msgEl = $('la-auth-message');
+            if (msgEl) msgEl.textContent = state.message;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // HTTP polling fallback
+    // -----------------------------------------------------------------------
+    function startPolling() {
+        if (pollTimer) clearInterval(pollTimer);
+
+        pollTimer = setInterval(async () => {
+            if (useWebSocket) return; // Не поллим если есть WebSocket
+
+            try {
+                const resp = await fetch('/listener-auth/api/listener/auth/status');
+                if (!resp.ok) return;
+                const result = await resp.json();
+                if (result.success && result.state) {
+                    onStateChange(result.state);
+                }
+            } catch (e) {
+                // Игнорируем
+            }
+        }, 2000);
+    }
+
+    // -----------------------------------------------------------------------
+    // HTTP fallback для отправки
+    // -----------------------------------------------------------------------
+    async function submitViaHTTP(endpoint, body) {
+        const resp = await fetch(`/listener-auth/api/listener/auth${endpoint}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        return resp.json();
+    }
+
+    async function cancelViaHTTP() {
+        try {
+            await fetch('/listener-auth/api/listener/auth/cancel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+        } catch (e) { /* ignore */ }
+    }
+
+    // -----------------------------------------------------------------------
+    // UI функции
+    // -----------------------------------------------------------------------
+    function updateStepUI() {
+        const codeForm = $('la-code-form');
+        const passForm = $('la-password-form');
+        const codeInd = $('la-step-code-indicator');
+        const passInd = $('la-step-password-indicator');
+        const message = $('la-auth-message');
+        const submitBtn = $('la-auth-submit-btn');
+
+        if (step === 'code') {
+            if (codeForm) codeForm.classList.remove('hidden');
+            if (passForm) passForm.classList.add('hidden');
+            if (codeInd) codeInd.className = 'w-4 h-4 rounded-full bg-blue-500 animate-pulse mx-auto';
+            if (passInd) passInd.className = 'w-4 h-4 rounded-full bg-gray-600 mx-auto';
+            if (message) message.textContent = 'Введите код подтверждения';
+            if (submitBtn) submitBtn.innerHTML = '<i class="fas fa-arrow-right mr-2"></i>Далее';
+            const input = $('la-auth-code');
+            if (input) setTimeout(() => input.focus(), 100);
+        } else {
+            if (codeForm) codeForm.classList.add('hidden');
+            if (passForm) passForm.classList.remove('hidden');
+            if (codeInd) codeInd.className = 'w-4 h-4 rounded-full bg-green-500 mx-auto';
+            if (passInd) passInd.className = 'w-4 h-4 rounded-full bg-blue-500 animate-pulse mx-auto';
+            if (message) message.textContent = 'Введите облачный пароль';
+            if (submitBtn) submitBtn.innerHTML = '<i class="fas fa-check mr-2"></i>Войти';
+            const input = $('la-auth-password');
+            if (input) setTimeout(() => input.focus(), 100);
+        }
+    }
+
+    function showError(message) {
+        hide('la-auth-success');
+        hide('la-auth-loading');
+        const txt = $('la-auth-error-text');
+        if (txt) txt.textContent = message;
+        show('la-auth-error');
+    }
+
+    function showSuccess(message) {
+        hide('la-auth-error');
+        hide('la-auth-loading');
+        const txt = $('la-auth-success-text');
+        if (txt) txt.textContent = message;
+        show('la-auth-success');
+        // Скрыть кнопки
+        hide('la-auth-buttons');
+    }
+
+    function showLoading() {
+        hide('la-auth-error');
+        hide('la-auth-success');
+        show('la-auth-loading');
+    }
+
+    function hideLoading() {
+        hide('la-auth-loading');
+    }
+
+    function clearInputs() {
+        const ci = $('la-auth-code');
+        const pi = $('la-auth-password');
+        if (ci) ci.value = '';
+        if (pi) pi.value = '';
+    }
+
+    // -----------------------------------------------------------------------
+    // Публичный API — LA_AUTH
+    // -----------------------------------------------------------------------
+    window.LA_AUTH = {
         // Открыть модалку
-        // ------------------------------------------------------------------
-        window.openListenerAuthModal = function(state) {
-            if (_authModalVisible) return;
+        open: function(state) {
+            if (modalVisible) return;
+            modalVisible = true;
+            step = (state && state.step) || 'code';
 
-            _authModalVisible = true;
-            _authStep = state.step || 'code';
-
-            const modal = document.getElementById('listener-auth-modal');
+            const modal = $('listener-auth-modal');
             if (!modal) return;
 
             modal.classList.remove('hidden');
-            hideEl('auth-error');
-            hideEl('auth-success');
-            clearAuthInputs();
+            hide('la-auth-error');
+            hide('la-auth-success');
+            hide('la-auth-loading');
+            show('la-auth-buttons');
+            clearInputs();
 
-            if (state.phone_number) {
-                const phoneEl = document.getElementById('auth-phone');
+            if (state && state.phone_number) {
+                const phoneEl = $('la-auth-phone');
                 if (phoneEl) phoneEl.textContent = state.phone_number;
             }
 
-            updateAuthStep();
-            startAuthStatusPoll();
+            updateStepUI();
 
-            // Автофокус на поле ввода
-            setTimeout(() => {
-                const input = _authStep === 'code'
-                    ? document.getElementById('auth-code')
-                    : document.getElementById('auth-password');
-                if (input) input.focus();
-            }, 300);
-        };
+            // Подключить WebSocket
+            connectWebSocket();
+            startPolling();
 
-        // ------------------------------------------------------------------
-        // Закрыть модалку
-        // ------------------------------------------------------------------
-        window.closeListenerAuthModal = function() {
-            const modal = document.getElementById('listener-auth-modal');
-            if (modal) modal.classList.add('hidden');
-            _authModalVisible = false;
-            if (_authCheckInterval) {
-                clearInterval(_authCheckInterval);
-                _authCheckInterval = null;
+            // Если модалка открыта но процесс не запущен — попробовать запустить
+            if (!state || (!state.step || state.step === null)) {
+                LA_AUTH.startProcess();
             }
-        };
+        },
 
-        // ------------------------------------------------------------------
-        // Отменить авторизацию
-        // ------------------------------------------------------------------
-        window.cancelListenerAuth = async function() {
+        // Закрыть модалку
+        close: function() {
+            const modal = $('listener-auth-modal');
+            if (modal) modal.classList.add('hidden');
+            modalVisible = false;
+
+            if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+            if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
+
+            // Не закрываем WebSocket — он может пригодиться при повторном открытии
+        },
+
+        // Отправить (код или пароль)
+        submit: async function() {
+            hide('la-auth-error');
+            hide('la-auth-success');
+            showLoading();
+
             try {
-                await fetch('/listener-auth/api/listener/auth/cancel', {
+                if (step === 'code') {
+                    const code = ($('la-auth-code') || {}).value;
+                    const trimmed = (code || '').trim();
+                    if (!trimmed) {
+                        showError('Введите код из Telegram');
+                        hideLoading();
+                        return;
+                    }
+
+                    if (useWebSocket && ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'submit_code', code: trimmed }));
+                    } else {
+                        const result = await submitViaHTTP('/auth/code', { code: trimmed });
+                        if (!result.success) {
+                            showError(result.error || 'Ошибка отправки кода');
+                            hideLoading();
+                        }
+                    }
+                    // Очистить поле
+                    const input = $('la-auth-code');
+                    if (input) input.value = '';
+
+                } else if (step === 'password') {
+                    const password = ($('la-auth-password') || {}).value || '';
+                    if (!password) {
+                        showError('Введите облачный пароль');
+                        hideLoading();
+                        return;
+                    }
+
+                    if (useWebSocket && ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'submit_password', password: password }));
+                    } else {
+                        const result = await submitViaHTTP('/auth/password', { password: password });
+                        if (!result.success) {
+                            showError(result.error || 'Ошибка отправки пароля');
+                            hideLoading();
+                        }
+                    }
+                    // Очистить поле
+                    const input = $('la-auth-password');
+                    if (input) input.value = '';
+                }
+            } catch (error) {
+                showError('Ошибка сети: ' + error.message);
+                hideLoading();
+            }
+        },
+
+        // Отменить
+        cancel: async function() {
+            if (useWebSocket && ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'cancel' }));
+            } else {
+                await cancelViaHTTP();
+            }
+            LA_AUTH.close();
+        },
+
+        // Запустить процесс авторизации
+        startProcess: async function() {
+            try {
+                const resp = await fetch('/listener-auth/api/listener/auth/start', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' }
                 });
+                const result = await resp.json();
+                if (!result.success) {
+                    console.warn('[LA_AUTH] Не удалось запустить авторизацию:', result.error);
+                }
             } catch (e) {
-                console.error('Ошибка отмены:', e);
+                console.error('[LA_AUTH] Ошибка запуска:', e);
             }
-            closeListenerAuthModal();
-        };
+        },
 
-        // ------------------------------------------------------------------
-        // Отправить код / пароль
-        // ------------------------------------------------------------------
-        window.submitListenerAuth = async function() {
-            const loading = document.getElementById('auth-loading');
-            hideEl('auth-error');
-            hideEl('auth-success');
-            if (loading) loading.classList.remove('hidden');
-
+        // Проверить необходимость авторизации
+        checkNeeded: async function() {
             try {
-                if (_authStep === 'code') {
-                    const code = (document.getElementById('auth-code') || {}).value || '';
-                    const trimmed = code.trim();
-                    if (!trimmed) {
-                        showAuthError('Введите код из Telegram');
-                        if (loading) loading.classList.add('hidden');
-                        return;
-                    }
+                const resp = await fetch('/listener-auth/api/listener/auth/check');
+                if (!resp.ok) return;
+                const result = await resp.json();
 
-                    const resp = await fetch('/listener-auth/api/listener/auth/code', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ code: trimmed })
-                    });
-                    const result = await resp.json();
-
-                    if (result.success) {
-                        const input = document.getElementById('auth-code');
-                        if (input) input.value = '';
-                        // Статус обновится через polling
-                    } else {
-                        showAuthError(result.error || 'Ошибка отправки кода');
-                        if (loading) loading.classList.add('hidden');
-                    }
-
-                } else if (_authStep === 'password') {
-                    const password = (document.getElementById('auth-password') || {}).value || '';
-                    if (!password) {
-                        showAuthError('Введите облачный пароль');
-                        if (loading) loading.classList.add('hidden');
-                        return;
-                    }
-
-                    const resp = await fetch('/listener-auth/api/listener/auth/password', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ password })
-                    });
-                    const result = await resp.json();
-
-                    if (result.success) {
-                        const input = document.getElementById('auth-password');
-                        if (input) input.value = '';
-                        // Статус обновится через polling
-                    } else {
-                        showAuthError(result.error || 'Ошибка отправки пароля');
-                        if (loading) loading.classList.add('hidden');
-                    }
+                if (result.success && result.auth_needed && !modalVisible) {
+                    const state = result.state || { step: 'code' };
+                    console.log('[LA_AUTH] Авторизация требуется:', state);
+                    LA_AUTH.open(state);
                 }
-            } catch (error) {
-                showAuthError('Ошибка сети: ' + error.message);
-                if (loading) loading.classList.add('hidden');
-            }
-        };
-
-        // ------------------------------------------------------------------
-        // Polling статуса
-        // ------------------------------------------------------------------
-        function startAuthStatusPoll() {
-            if (_authCheckInterval) clearInterval(_authCheckInterval);
-
-            _authCheckInterval = setInterval(async () => {
-                try {
-                    const resp = await fetch('/listener-auth/api/listener/auth/status');
-                    const result = await resp.json();
-
-                    if (!result.success || !result.state) return;
-
-                    const state = result.state;
-
-                    if (state.step === 'completed') {
-                        showAuthSuccess('Авторизация успешна!');
-                        setTimeout(() => closeListenerAuthModal(), 2000);
-                        return;
-                    }
-
-                    if (state.step === 'error') {
-                        showAuthError(state.error || 'Ошибка авторизации');
-                        return;
-                    }
-
-                    if (state.step === 'password' && _authStep !== 'password') {
-                        _authStep = 'password';
-                        updateAuthStep();
-                    }
-
-                    if (state.step === 'code' && _authStep !== 'code') {
-                        _authStep = 'code';
-                        updateAuthStep();
-                    }
-
-                    // Обновить номер телефона
-                    if (state.phone_number) {
-                        const phoneEl = document.getElementById('auth-phone');
-                        if (phoneEl) phoneEl.textContent = state.phone_number;
-                    }
-                } catch (e) {
-                    // Игнорируем ошибки polling
-                }
-            }, 1000);
-        }
-
-        // ------------------------------------------------------------------
-        // Обновить UI в зависимости от шага
-        // ------------------------------------------------------------------
-        function updateAuthStep() {
-            const codeForm = document.getElementById('code-form');
-            const passForm = document.getElementById('password-form');
-            const codeInd = document.getElementById('step-code-indicator');
-            const passInd = document.getElementById('step-password-indicator');
-            const message = document.getElementById('auth-message');
-            const submitBtn = document.getElementById('auth-submit-btn');
-
-            if (_authStep === 'code') {
-                if (codeForm) codeForm.classList.remove('hidden');
-                if (passForm) passForm.classList.add('hidden');
-                if (codeInd) codeInd.className = 'w-4 h-4 rounded-full bg-blue-500 animate-pulse mx-auto';
-                if (passInd) passInd.className = 'w-4 h-4 rounded-full bg-gray-600 mx-auto';
-                if (message) message.textContent = 'Введите код подтверждения';
-                if (submitBtn) submitBtn.innerHTML = '<i class="fas fa-arrow-right mr-2"></i>Далее';
-                const input = document.getElementById('auth-code');
-                if (input) input.focus();
-            } else {
-                if (codeForm) codeForm.classList.add('hidden');
-                if (passForm) passForm.classList.remove('hidden');
-                if (codeInd) codeInd.className = 'w-4 h-4 rounded-full bg-green-500 mx-auto';
-                if (passInd) passInd.className = 'w-4 h-4 rounded-full bg-blue-500 animate-pulse mx-auto';
-                if (message) message.textContent = 'Введите облачный пароль';
-                if (submitBtn) submitBtn.innerHTML = '<i class="fas fa-check mr-2"></i>Войти';
-                const input = document.getElementById('auth-password');
-                if (input) input.focus();
+            } catch (e) {
+                console.error('[LA_AUTH] Ошибка проверки:', e);
             }
         }
+    };
 
-        // ------------------------------------------------------------------
-        // Утилиты
-        // ------------------------------------------------------------------
-        function showAuthError(message) {
-            const div = document.getElementById('auth-error');
-            const txt = document.getElementById('auth-error-text');
-            if (txt) txt.textContent = message;
-            if (div) div.classList.remove('hidden');
-        }
-        window.showListenerAuthError = showAuthError;
+    // -----------------------------------------------------------------------
+    // Backward compatibility — старые функции для console.html
+    // -----------------------------------------------------------------------
+    window.checkListenerAuthNeeded = LA_AUTH.checkNeeded;
+    window.openListenerAuthModal = LA_AUTH.open;
+    window.closeListenerAuthModal = LA_AUTH.close;
+    window.submitListenerAuth = LA_AUTH.submit;
+    window.cancelListenerAuth = LA_AUTH.cancel;
+    window.showListenerAuthError = function(msg) { showError(msg); };
+    window.showListenerAuthSuccess = function(msg) { showSuccess(msg); };
+    window.hideListenerAuthElement = hide;
 
-        function showAuthSuccess(message) {
-            const div = document.getElementById('auth-success');
-            const txt = document.getElementById('auth-success-text');
-            if (txt) txt.textContent = message;
-            if (div) div.classList.remove('hidden');
-        }
-        window.showListenerAuthSuccess = showAuthSuccess;
-
-        function hideEl(id) {
-            const el = document.getElementById(id);
-            if (el) el.classList.add('hidden');
-        }
-        window.hideListenerAuthElement = hideEl;
-
-        function clearAuthInputs() {
-            const ci = document.getElementById('auth-code');
-            const pi = document.getElementById('auth-password');
-            if (ci) ci.value = '';
-            if (pi) pi.value = '';
-            _authStep = 'code';
-        }
-
-        // ------------------------------------------------------------------
-        // Инициализация
-        // ------------------------------------------------------------------
-        document.addEventListener('DOMContentLoaded', () => {
-            // Enter в полях ввода
-            ['auth-code', 'auth-password'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) {
-                    el.addEventListener('keypress', (e) => {
-                        if (e.key === 'Enter') {
-                            e.preventDefault();
-                            submitListenerAuth();
-                        }
-                    });
-                }
-            });
-
-            // Проверяем авторизацию при загрузке и периодически
-            checkListenerAuthNeeded();
-            setInterval(checkListenerAuthNeeded, 3000);
+    // -----------------------------------------------------------------------
+    // Инициализация
+    // -----------------------------------------------------------------------
+    document.addEventListener('DOMContentLoaded', function() {
+        // Enter в полях ввода
+        ['la-auth-code', 'la-auth-password'].forEach(function(id) {
+            const el = $(id);
+            if (el) {
+                el.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        LA_AUTH.submit();
+                    }
+                });
+            }
         });
-    })();
+
+        // Проверить авторизацию при загрузке
+        LA_AUTH.checkNeeded();
+
+        // Периодическая проверка (на случай если WebSocket упал)
+        setInterval(LA_AUTH.checkNeeded, 10000);
+    });
+})();
 </script>

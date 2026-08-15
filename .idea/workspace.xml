@@ -5,42 +5,9 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="f50a90aa-42af-4089-8f79-0b118ce41214" name="Changes" comment="0.1">
-      <change afterPath="$PROJECT_DIR$/.web_admin_session.db" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/docs/CONSOLE_GUIDE.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/docs/WEB_ADMIN_AUTH.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/docs/WEB_ADMIN_GUIDE.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/service_manager.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/web_admin/config.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/web_admin/log_handler.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/web_admin/routes/listener_auth.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/web_admin/service.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/web_admin/session_manager.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/web_admin/templates/components/footer.html" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/web_admin/templates/console.html" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/web_admin/templates/login.html" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/web_admin/templates/settings.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.env.example" beforeDir="false" afterPath="$PROJECT_DIR$/.env.example" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/dataSources.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/dataSources.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/news_aggregator.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/news_aggregator.iml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/TEST_ISSUES_REPORT.md" beforeDir="false" afterPath="$PROJECT_DIR$/TEST_ISSUES_REPORT.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/bot/bot.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/bot/bot.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/bot/handlers/callbacks_channels.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/bot/handlers/callbacks_channels.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/bot/handlers/commands.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/bot/handlers/commands.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/bot/handlers/keyboards.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/bot/handlers/keyboards.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/bot/handlers/publishers.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/bot/handlers/publishers.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/listener/bot.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/listener/bot.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/vector_search/embeddings.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/vector_search/embeddings.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/web_admin/api/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/web_admin/api/app.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/web_admin/routes/auth.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/web_admin/routes/auth.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/web_admin/routes/console.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/web_admin/routes/console.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/web_admin/routes/settings.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/web_admin/routes/settings.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/web_admin/templates/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/services/web_admin/templates/index.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/services/test_categorization.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/services/test_categorization.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/standalone/test_auth.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/standalone/test_auth.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_core/test_redis_queue.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_core/test_redis_queue.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_monitoring/test_health_check.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_monitoring/test_health_check.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_news/test_generation.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_news/test_generation.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -76,7 +43,7 @@
   &quot;associatedIndex&quot;: 8
 }</component>
   <component name="ProjectId" id="3FoVoFTFj5QeF6SP4WdatwSM9xT" />
-  <component name="ProjectLevelVcsManager" settingsEditedManually="true">
+  <component name="ProjectLevelVcsManager">
     <ConfirmationsSetting value="2" id="Add" />
   </component>
   <component name="ProjectViewState">
@@ -89,10 +56,14 @@
     &quot;ASKED_MARK_IGNORED_FILES_AS_EXCLUDED&quot;: &quot;true&quot;,
     &quot;Python.config.executor&quot;: &quot;Run&quot;,
     &quot;Python.main.executor&quot;: &quot;Run&quot;,
+    &quot;Python.test_telethon_auth.executor&quot;: &quot;Run&quot;,
     &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
     &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
+    &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
     &quot;git-widget-placeholder&quot;: &quot;master&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Yandex.Disk/news_aggregator&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/Users/vladvolk/Documents/StefaniaProjects/news_aggregator&quot;,
     &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
     &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
     &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
@@ -118,7 +89,7 @@
       <recent name="F:\Documents\Projects\news_aggregator\services" />
     </key>
   </component>
-  <component name="RunManager">
+  <component name="RunManager" selected="Python.main">
     <configuration name="main" type="PythonConfigurationType" factoryName="Python" nameIsGenerated="true">
       <module name="news_aggregator" />
       <option name="ENV_FILES" value="" />
@@ -129,10 +100,12 @@
       </envs>
       <option name="SDK_HOME" value="" />
       <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
-      <option name="IS_MODULE_SDK" value="true" />
+      <option name="IS_MODULE_SDK" value="false" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="DEBUG_JUST_MY_CODE" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="RUN_TOOL" value="" />
       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/main.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
@@ -142,6 +115,36 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
+    <configuration name="test_telethon_auth" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="news_aggregator" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="false" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="DEBUG_JUST_MY_CODE" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="RUN_TOOL" value="" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/test_telethon_auth.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Python.test_telethon_auth" />
+      </list>
+    </recent_temporary>
   </component>
   <component name="SharedIndexes">
     <attachedChunks>
@@ -202,6 +205,12 @@
       <workItem from="1786515033614" duration="23200000" />
       <workItem from="1786593471381" duration="31724000" />
       <workItem from="1786685568696" duration="16782000" />
+      <workItem from="1786728521723" duration="166000" />
+      <workItem from="1786730549094" duration="914000" />
+      <workItem from="1786735139497" duration="2003000" />
+      <workItem from="1786737158723" duration="384000" />
+      <workItem from="1786737694369" duration="3244000" />
+      <workItem from="1786775255046" duration="2782000" />
     </task>
     <task id="LOCAL-00001" summary="0">
       <option name="closed" value="true" />
@@ -232,7 +241,9 @@
     <option name="LAST_COMMIT_MESSAGE" value="0.1" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
+    <SUITE FILE_PATH="coverage/bot_py$main.coverage" NAME="main Coverage Results" MODIFIED="1786777555137" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/bot_py$test_telethon_auth.coverage" NAME="test_telethon_auth Coverage Results" MODIFIED="1786777898120" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/news_aggregator$config.coverage" NAME="config Coverage Results" MODIFIED="1782746628139" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/bot" />
-    <SUITE FILE_PATH="coverage/news_aggregator$main.coverage" NAME="main Coverage Results" MODIFIED="1786714925596" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/news_aggregator$main.coverage" NAME="main Coverage Results" MODIFIED="1786737245841" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
   </component>
 </project>
