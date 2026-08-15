@@ -278,9 +278,6 @@
                                     <button onclick="controlService('listener', 'restart')" class="control-btn px-3 py-1.5 bg-purple-500 text-white rounded-lg hover:bg-purple-600 text-sm font-medium">
                                         <i class="fas fa-redo mr-1"></i>Лисенер
                                     </button>
-                                    <button onclick="openListenerAuthFromConsole()" class="control-btn px-3 py-1.5 bg-teal-500 text-white rounded-lg hover:bg-teal-600 text-sm font-medium" title="Авторизация Telegram">
-                                        <i class="fas fa-sign-in-alt mr-1"></i>Telegram
-                                    </button>
                                     <button onclick="controlService('scheduler', 'restart')" class="control-btn px-3 py-1.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 text-sm font-medium">
                                         <i class="fas fa-redo mr-1"></i>Шедулер
                                     </button>
@@ -296,7 +293,9 @@
                                 <div class="mt-4 flex items-center space-x-3 flex-shrink-0">
                                     <span class="text-gray-500 font-mono">$</span>
                                     <input type="text" id="command-input" class="command-input flex-1 px-4 py-3 rounded-lg text-sm"
-                                           placeholder="Введите команду (help для списка команд)..." autocomplete="off">
+                                           placeholder="Введите команду (help для списка команд)..."
+                                           autocomplete="new-password"
+                                          autocorrect="off" autocapitalize="off" spellcheck="false">
                                     <button onclick="executeCommand()" class="px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 text-sm font-medium">
                                         <i class="fas fa-play mr-2"></i>Выполнить
                                     </button>
@@ -670,6 +669,9 @@
                 const result = await response.json();
 
                 if (result.success && Array.isArray(result.logs)) {
+                    // Проверяем, проскроллил ли пользователь вверх
+                    const wasScrolledUp = container.scrollHeight - container.scrollTop - container.clientHeight > 50;
+
                     container.innerHTML = result.logs.map(log => {
                         const levelClass = {
                             'DEBUG': 'text-gray-400',
@@ -681,8 +683,11 @@
 
                         return `<div class="${levelClass} mb-1">[${log.timestamp}] [${log.source}] ${escapeHtml(log.message)}</div>`;
                     }).join('');
-                    // Автопрокрутка вниз
-                    container.scrollTop = container.scrollHeight;
+
+                    // Автопрокрутка вниз только если пользователь не изучает старые логи
+                    if (!wasScrolledUp) {
+                        container.scrollTop = container.scrollHeight;
+                    }
                 } else {
                     container.innerHTML = '<span class="text-gray-500">Нет логов</span>';
                 }

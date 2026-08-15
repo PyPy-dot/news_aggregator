@@ -241,6 +241,33 @@ class Settings(BaseSettings):
 settings = Settings()
 
 
+def reload_settings():
+    """
+    Перечитать .env и обновить глобальный экземпляр настроек.
+
+    Returns:
+        list изменённых ключей (верхний регистр, без алиасов)
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    old = settings
+    fresh = Settings()
+
+    changed = []
+    for field_name in old.model_fields:
+        old_val = getattr(old, field_name)
+        new_val = getattr(fresh, field_name)
+        if old_val != new_val:
+            changed.append(field_name)
+            setattr(old, field_name, new_val)
+
+    if changed:
+        logger.info(f"⚙️ Настройки обновлены в памяти: {changed}")
+
+    return changed
+
+
 # Для обратной совместимости
 def load_prompt(prompt_name: str) -> str:
     """

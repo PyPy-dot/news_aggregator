@@ -34,7 +34,7 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 # Категории переменных для группировки
 ENV_CATEGORIES = {
-    "Application": ["APP_VERSION"],
+    "Application": ["APP_VERSION", "TELEGRAM_USE_IPV6"],
     "Database": ["DB_USER", "DB_PASSWORD", "DB_NAME", "DB_HOST", "DB_PORT"],
     "Telegram Bot": ["BOT_TOKEN", "API_ID", "API_HASH", "PHONE_NUMBER"],
     "Telegram Proxy": ["TELEGRAM_PROXY", "TELEGRAM_MTPROTO_PROXY"],
@@ -48,35 +48,37 @@ ENV_CATEGORIES = {
 }
 
 # Переменные которые можно редактировать (безопасные)
+# reload: immediate = сразу, service:X = рестарт сервиса, full = рестарт всего
 EDITABLE_VARS = {
-    "APP_VERSION": {"type": "text", "description": "Версия приложения"},
-    "DB_USER": {"type": "text", "description": "Пользователь БД"},
-    "DB_PASSWORD": {"type": "password", "description": "Пароль БД"},
-    "DB_NAME": {"type": "text", "description": "Имя БД"},
-    "DB_HOST": {"type": "text", "description": "Хост БД"},
-    "DB_PORT": {"type": "number", "description": "Порт БД"},
-    "BOT_TOKEN": {"type": "password", "description": "Токен Telegram бота"},
-    "API_ID": {"type": "text", "description": "API ID Telegram"},
-    "API_HASH": {"type": "password", "description": "API Hash Telegram"},
-    "PHONE_NUMBER": {"type": "text", "description": "Номер телефона Telegram"},
-    "TELEGRAM_PROXY": {"type": "text", "description": "Proxy для Telegram"},
-    "TELEGRAM_MTPROTO_PROXY": {"type": "text", "description": "MTProto Proxy"},
-    "DISABLE_LISTENER_BOT": {"type": "boolean", "description": "Отключить ListenerBot"},
-    "LISTENER_2FA_ENABLED": {"type": "boolean", "description": "Включить 2FA для ListenerBot"},
-    "LISTENER_2FA_PROVIDER": {"type": "text", "description": "2FA провайдер (google/yandex)"},
-    "LISTENER_2FA_SECRET": {"type": "password", "description": "2FA секрет"},
-    "ADMIN_ID": {"type": "text", "description": "Telegram ID администратора"},
-    "JWT_SECRET": {"type": "password", "description": "JWT секрет"},
-    "OLLAMA_HOST": {"type": "text", "description": "Ollama хост"},
-    "OLLAMA_MODEL": {"type": "text", "description": "Ollama модель"},
-    "CHROMA_HOST": {"type": "text", "description": "ChromaDB хост"},
-    "REDIS_URL": {"type": "text", "description": "Redis URL"},
-    "LOG_LEVEL": {"type": "select", "options": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], "description": "Уровень логирования"},
-    "ENCRYPTION_KEY": {"type": "password", "description": "Ключ шифрования"},
-    "WEB_ADMIN_HOST": {"type": "text", "description": "Web Admin хост"},
-    "WEB_ADMIN_PORT": {"type": "number", "description": "Web Admin порт"},
-    "WEB_ADMIN_JWT_SECRET": {"type": "password", "description": "Web Admin JWT секрет"},
-    "WEB_ADMIN_SESSION_EXPIRE_HOURS": {"type": "number", "description": "Время жизни сессии (часы)"},
+    "APP_VERSION": {"type": "text", "reload": "immediate", "description": "Версия приложения"},
+    "DB_USER": {"type": "text", "reload": "full", "description": "Пользователь БД"},
+    "DB_PASSWORD": {"type": "password", "reload": "full", "description": "Пароль БД"},
+    "DB_NAME": {"type": "text", "reload": "full", "description": "Имя БД"},
+    "DB_HOST": {"type": "text", "reload": "full", "description": "Хост БД"},
+    "DB_PORT": {"type": "number", "reload": "full", "description": "Порт БД"},
+    "BOT_TOKEN": {"type": "password", "reload": "service:bot", "description": "Токен Telegram бота"},
+    "API_ID": {"type": "text", "reload": "service:listener", "description": "API ID Telegram"},
+    "API_HASH": {"type": "password", "reload": "service:listener", "description": "API Hash Telegram"},
+    "PHONE_NUMBER": {"type": "text", "reload": "service:listener", "description": "Номер телефона Telegram"},
+    "TELEGRAM_PROXY": {"type": "text", "reload": "service:listener", "description": "Proxy для Telegram"},
+    "TELEGRAM_MTPROTO_PROXY": {"type": "text", "reload": "service:listener", "description": "MTProto Proxy"},
+    "TELEGRAM_USE_IPV6": {"type": "boolean", "reload": "service:listener", "description": "Использовать IPv6 для Telegram"},
+    "DISABLE_LISTENER_BOT": {"type": "boolean", "reload": "service:listener", "description": "Отключить ListenerBot"},
+    "LISTENER_2FA_ENABLED": {"type": "boolean", "reload": "service:listener", "description": "Включить 2FA для ListenerBot"},
+    "LISTENER_2FA_PROVIDER": {"type": "text", "reload": "service:listener", "description": "2FA провайдер (google/yandex)"},
+    "LISTENER_2FA_SECRET": {"type": "password", "reload": "service:listener", "description": "2FA секрет"},
+    "ADMIN_ID": {"type": "text", "reload": "immediate", "description": "Telegram ID администратора"},
+    "JWT_SECRET": {"type": "password", "reload": "full", "description": "JWT секрет"},
+    "OLLAMA_HOST": {"type": "text", "reload": "immediate", "description": "Ollama хост"},
+    "OLLAMA_MODEL": {"type": "text", "reload": "immediate", "description": "Ollama модель"},
+    "CHROMA_HOST": {"type": "text", "reload": "immediate", "description": "ChromaDB хост"},
+    "REDIS_URL": {"type": "text", "reload": "immediate", "description": "Redis URL"},
+    "LOG_LEVEL": {"type": "select", "options": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], "reload": "immediate", "description": "Уровень логирования"},
+    "ENCRYPTION_KEY": {"type": "password", "reload": "full", "description": "Ключ шифрования"},
+    "WEB_ADMIN_HOST": {"type": "text", "reload": "full", "description": "Web Admin хост"},
+    "WEB_ADMIN_PORT": {"type": "number", "reload": "full", "description": "Web Admin порт"},
+    "WEB_ADMIN_JWT_SECRET": {"type": "password", "reload": "full", "description": "Web Admin JWT секрет"},
+    "WEB_ADMIN_SESSION_EXPIRE_HOURS": {"type": "number", "reload": "immediate", "description": "Время жизни сессии (часы)"},
 }
 
 
@@ -247,6 +249,9 @@ async def update_env_vars(request: Request, user: Optional[dict] = Depends(get_o
     Обновить переменные окружения.
 
     Body: {"variables": {"KEY": "value", ...}}
+
+    Returns structured response with what was applied immediately
+    and what requires restart.
     """
     try:
         data = await request.json()
@@ -267,20 +272,102 @@ async def update_env_vars(request: Request, user: Optional[dict] = Depends(get_o
                     content={"success": False, "error": f"Переменная {key} не может быть изменена"}
                 )
 
+        # Читаем старые значения чтобы определить что изменилось
+        old_env = parse_env_file(ENV_FILE)
+
         # Записываем файл
         success = write_env_file(ENV_FILE, variables)
 
-        if success:
-            logger.info(f"✅ .env обновлен: {list(variables.keys())}")
-            return JSONResponse(content={
-                "success": True,
-                "message": "Настройки сохранены. Перезапустите приложение для применения."
-            })
-        else:
+        if not success:
             return JSONResponse(
                 status_code=500,
                 content={"success": False, "error": "Ошибка записи файла"}
             )
+
+        # Определяем какие переменные реально изменились
+        changed_keys = []
+        for key, new_value in variables.items():
+            old_info = old_env.get(key)
+            if old_info is None or old_info["value"] != new_value:
+                changed_keys.append(key)
+
+        # Перезагружаем settings в памяти
+        from config.settings import reload_settings
+        reload_settings()
+
+        # Применяем immediate настройки
+        applied_immediately = []
+        for key in changed_keys:
+            var_info = EDITABLE_VARS.get(key, {})
+            reload_type = var_info.get("reload", "full")
+
+            if reload_type == "immediate":
+                # LOG_LEVEL — применить сразу
+                if key == "LOG_LEVEL":
+                    import logging as log_mod
+                    log_mod.getLogger().setLevel(variables[key])
+                    logger.info(f"🔧 LOG_LEVEL применён: {variables[key]}")
+
+                applied_immediately.append(key)
+
+        # Определяем что требует рестарта
+        requires_restart = {}  # service_name -> [keys]
+        needs_full_restart = []
+        for key in changed_keys:
+            var_info = EDITABLE_VARS.get(key, {})
+            reload_type = var_info.get("reload", "full")
+
+            if reload_type == "immediate":
+                continue
+            elif reload_type == "full":
+                if key not in needs_full_restart:
+                    needs_full_restart.append(key)
+            elif reload_type.startswith("service:"):
+                service = reload_type.split(":", 1)[1]
+                if service not in requires_restart:
+                    requires_restart[service] = []
+                requires_restart[service].append(key)
+
+        # Проверяем состояние сервисов через service_manager
+        running_services = {}
+        try:
+            from services.service_manager import get_service_manager
+            manager = get_service_manager()
+            for svc in requires_restart:
+                running_services[svc] = manager.is_running(svc)
+        except Exception:
+            pass
+
+        # Формируем ответ
+        result = {
+            "success": True,
+            "message": "Настройки сохранены",
+            "changed": changed_keys,
+            "applied_immediately": applied_immediately,
+            "requires_restart": requires_restart,
+            "needs_full_restart": needs_full_restart,
+            "running_services": running_services,
+        }
+
+        # Определяем итоговое сообщение
+        messages = []
+        if applied_immediately:
+            messages.append(f"Применено сразу: {', '.join(applied_immediately)}")
+        if requires_restart:
+            for svc, keys in requires_restart.items():
+                svc_name = {"bot": "Бот", "listener": "Лисенер", "scheduler": "Шедулер"}.get(svc, svc)
+                if running_services.get(svc):
+                    messages.append(f"Требует рестарта {svc_name}: {', '.join(keys)}")
+                else:
+                    messages.append(f"Применится при запуске {svc_name}: {', '.join(keys)}")
+        if needs_full_restart:
+            messages.append(f"Требует перезапуска приложения: {', '.join(needs_full_restart)}")
+
+        if messages:
+            result["message"] = ". ".join(messages) + "."
+
+        logger.info(f"✅ .env обновлен: {changed_keys}")
+        return JSONResponse(content=result)
 
     except Exception as e:
         logger.error(f"Ошибка обновления .env: {e}", exc_info=True)
@@ -293,18 +380,45 @@ async def update_env_vars(request: Request, user: Optional[dict] = Depends(get_o
 @router.post("/api/env/restart")
 async def restart_services(request: Request, user: Optional[dict] = Depends(get_optional_user)):
     """
-    Перезапустить сервисы после изменения настроек.
+    Перезапустить указанные сервисы после изменения настроек.
 
-    Внимание: Это требует внешней оркестрации (docker-compose restart или аналог)
+    Body: {"services": ["bot", "listener", "scheduler"]}
     """
-    # В реальной реализации здесь был бы вызов docker-compose или systemd
-    # Для现在 просто возвращаем инструкцию
-    return JSONResponse(content={
-        "success": True,
-        "message": "Для применения настроек перезапустите приложение",
-        "instructions": [
-            "Остановите сервисы: docker-compose down",
-            "Запустите заново: docker-compose up -d",
-            "Или: systemctl restart news-aggregator"
-        ]
-    })
+    try:
+        data = await request.json()
+        services = data.get("services", [])
+
+        results = {}
+        try:
+            from services.service_manager import get_service_manager
+            manager = get_service_manager()
+
+            for svc in services:
+                try:
+                    if manager.is_running(svc):
+                        # Рестарт: стоп → старт
+                        await manager.stop_service(svc)
+                        await manager.start_service(svc)
+                        results[svc] = "restarted"
+                    else:
+                        results[svc] = "not_running"
+                except Exception as e:
+                    results[svc] = f"error: {e}"
+        except Exception as e:
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "error": f"ServiceManager недоступен: {e}"}
+            )
+
+        return JSONResponse(content={
+            "success": True,
+            "message": "Сервисы перезапущены",
+            "results": results,
+        })
+
+    except Exception as e:
+        logger.error(f"Ошибка рестарта сервисов: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )

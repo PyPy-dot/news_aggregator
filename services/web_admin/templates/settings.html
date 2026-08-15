@@ -245,9 +245,9 @@
 
                         <!-- Кнопки -->
                         <div class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
-                            <p class="text-xs text-gray-500">
+                            <p class="text-xs text-gray-500" id="settings-hint">
                                 <i class="fas fa-info-circle mr-1"></i>
-                                Изменения вступят в силу после перезапуска приложения
+                                Изменения применяются автоматически после сохранения
                             </p>
                             <div class="flex items-center space-x-3">
                                 <button
@@ -260,6 +260,7 @@
                                 </button>
                                 <button
                                     type="submit"
+                                    id="save-btn"
                                     class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500 transition-colors text-sm font-medium"
                                 >
                                     <i class="fas fa-save mr-2"></i>
@@ -273,13 +274,13 @@
                     <div class="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
                         <h4 class="text-sm font-bold text-blue-800 mb-2">
                             <i class="fas fa-lightbulb mr-2"></i>
-                            Как использовать
+                            Как применяются настройки
                         </h4>
                         <ul class="text-sm text-blue-700 space-y-1">
-                            <li>• Измените значения переменных в форме выше</li>
-                            <li>• Нажмите "Сохранить" для записи в .env файл</li>
-                            <li>• Перезапустите приложение для применения изменений</li>
-                            <li>• Некоторые переменные требуют перезапуска конкретных сервисов</li>
+                            <li>• <strong>Сразу</strong> — уровень логирования, LLM, кэш, хосты</li>
+                            <li>• <strong>При запуске сервиса</strong> — если сервис остановлен, настройки применятся автоматически при запуске</li>
+                            <li>• <strong>Рестарт сервиса</strong> — если сервис запущен, появится кнопка для рестарта</li>
+                            <li>• <strong>Перезапуск приложения</strong> — параметры БД и безопасности</li>
                         </ul>
                     </div>
 
@@ -354,6 +355,10 @@
                 variables[key] = value;
             }
 
+            const saveBtn = document.getElementById('save-btn');
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Сохранение...';
+
             try {
                 const response = await fetch('/settings/api/env', {
                     method: 'POST',
@@ -365,13 +370,69 @@
 
                 if (result.success) {
                     showMessage('success', result.message);
+
+                    // Если есть сервисы которые требуют рестарта и запущены — показать кнопку
+                    if (result.requires_restart) {
+                        const runningCount = Object.keys(result.running_services || {}).filter(
+                            s => result.running_services[s]
+                        ).length;
+                        if (runningCount > 0) {
+                            const hint = document.getElementById('settings-hint');
+                            if (hint) {
+                                hint.innerHTML = `<i class="fas fa-exclamation-triangle mr-1 text-yellow-600"></i>
+                                    Некоторые настройки требуют рестарта сервиса.
+                                    <button onclick="restartChangedServices(${JSON.stringify(Object.keys(result.requires_restart))})"
+                                        class="text-blue-600 hover:text-blue-800 underline font-medium ml-1 cursor-pointer">
+                                        Перезапустить сервисы
+                                    </button>`;
+                            }
+                        }
+                    }
+
+                    // Если нужно полное перезапуск
+                    if (result.needs_full_restart && result.needs_full_restart.length > 0) {
+                        const hint = document.getElementById('settings-hint');
+                        if (hint) {
+                            hint.innerHTML = `<i class="fas fa-redo mr-1 text-red-600"></i>
+                                Некоторые изменения требуют перезапуска приложения.`;
+                        }
+                    }
                 } else {
                     showMessage('error', result.error || 'Ошибка сохранения');
                 }
             } catch (error) {
                 showMessage('error', 'Ошибка сети: ' + error.message);
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<i class="fas fa-save mr-2"></i>Сохранить';
             }
         });
+
+        // Рестарт сервисов из настроек
+        async function restartChangedServices(services) {
+            if (!confirm(`Перезапустить сервисы: ${services.join(', ')}?`)) return;
+
+            try {
+                const response = await fetch('/settings/api/env/restart', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ services })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showMessage('success', 'Сервисы перезапущены. Настройки применены.');
+                    const hint = document.getElementById('settings-hint');
+                    if (hint) {
+                        hint.innerHTML = '<i class="fas fa-info-circle mr-1"></i>Изменения применяются автоматически после сохранения';
+                    }
+                } else {
+                    showMessage('error', result.error || 'Ошибка перезапуска');
+                }
+            } catch (error) {
+                showMessage('error', 'Ошибка сети: ' + error.message);
+            }
+        }
 
         // Обновление статуса системы
         (function() {
