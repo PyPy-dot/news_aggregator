@@ -54,8 +54,6 @@ class WebAdminService:
 
         Запускает FastAPI приложение в фоновом режиме.
         """
-        import asyncio
-
         if self._running:
             logger.warning("Web Admin уже запущен")
             return
@@ -76,6 +74,9 @@ class WebAdminService:
             reload=self.reload,
             log_level=self.log_level,
             access_log=True,
+            lifespan="off",  # отключаем lifespan — не используем startup/shutdown хуки,
+                              # а при отмене uvicorn логирует CancelledError как ERROR
+                              # с traceback (lifespan/on.py:97, exc_info=exc)
         )
 
         # Создаём сервер
@@ -83,12 +84,7 @@ class WebAdminService:
 
         # Запускаем в фоне
         self._running = True
-        try:
-            await self._server.serve()
-        except asyncio.CancelledError:
-            # Ожидаемо при graceful shutdown — uvicorn выводит traceback
-            # при отмене lifespan-очереди. Подавляем, чтобы не пугать.
-            logger.debug("Web Admin сервер отменён (graceful shutdown)")
+        await self._server.serve()
 
     async def _ensure_credentials(self) -> None:
         """
