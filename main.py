@@ -90,61 +90,25 @@ class Application:
         # Исправление некорректных datetime полей в БД (пустые строки → NULL)
         await self._fix_corrupted_datetime_fields()
 
-        # Создаём и инициализируем сервисы в правильном порядке
-        # 1. Сначала BotService — он создаёт NotificationService
+        # Создаём сервисы (без инициализации бота!)
+        # BotService инициализируется lazy через ServiceManager._start_bot()
         self.bot_service = BotService()
-        await self.bot_service.initialize()
+        self.listener = ListenerBot(self.container)
+        self.scheduler = Scheduler(self.container)
 
-        # ВАЖНО: Сначала регистрируем ВСЕ сервисы, потом сигнализируем о готовности!
-        logger.info("🔍 Регистрация сервисов...")
-        logger.info(f"   bot_service.bot exists: {self.bot_service.bot is not None}")
-        logger.info(f"   bot_service._notification_service exists: {self.bot_service._notification_service is not None}")
-
-        # 1. Регистрируем BotService в глобальной переменной для get_bot_instance_async
-        from services.bot.bot import set_bot_service_ref
-        set_bot_service_ref(self.bot_service)
-
-        # 2. Регистрируем Bot и NotificationService в контейнере
-        if self.bot_service.bot:
-            self.container.register_instance_by_name('Bot', self.bot_service.bot)
-            logger.info("✅ Bot зарегистрирован в контейнере")
-        else:
-            logger.error("❌ Bot НЕ зарегистрирован: bot_service.bot = None")
-
-        if self.bot_service._notification_service:
-            self.container.register_instance_by_name(
-                'NotificationService', self.bot_service._notification_service
-            )
-            logger.info("✅ NotificationService зарегистрирован в контейнере")
-        else:
-            logger.error("❌ NotificationService НЕ зарегистрирован")
-
-        # 3. Сохраняем контейнер для других helper функций
+        # Сохраняем контейнер для helper функций
         global _global_container
         _global_container = self.container
         logger.info("✅ Контейнер сохранён (_global_container установлен)")
 
-        # 4. Регистрируем событие готовности в системе (ДО установки!)
-        from services.bot.bot import set_bot_ready_event
-        set_bot_ready_event(self._bot_ready)
-
-        # 5. ТЕПЕРЬ сигнализируем о готовности - ВСЁ зарегистрировано
-        self._bot_ready.set()
-        logger.info("🚩 ГОТОВО: бот зарегистрирован, событие _bot_ready установлено")
-        logger.info(f"✅ Контейнер сохранён для helper функций (_global_container={id(_global_container)})")
-
-        # 2. Теперь ListenerBot и Scheduler могут использовать контейнер
-        self.listener = ListenerBot(self.container)
-        self.scheduler = Scheduler(self.container)
-
-        # 3. Инициализируем очередь задач (Redis или локальную)
+        # Очередь задач
         self._agent_queue_started = False
         if is_redis_queue():
             logger.info("🔧 Инициализация Redis очереди задач...")
         else:
             logger.info("🔧 Инициализация локальной очереди задач...")
 
-        logger.debug("✅ Сервисы созданы и инициализированы")
+        logger.debug("✅ Сервисы созданы (бот не инициализирован — будет lazy через ServiceManager)")
 
     def _mask_db_url(self, url: str) -> str:
         """Замаскировать пароль в URL БД для логирования."""
@@ -184,9 +148,8 @@ class Application:
         """
         Запустить приложение.
 
-        Запускает все сервисы и ждёт сигналов завершения.
-        КРИТИЧНО: Боты запускаются последовательно для избежания
-        конфликтов при подключении к Telegram.
+        Запускает Web Admin и регистрирует сервисы в ServiceManager.
+        Бот, Listener и Scheduler запускаются lazy через консоль админки.
         """
         if not self.container:
             raise RuntimeError("Application not initialized. Call initialize() first.")

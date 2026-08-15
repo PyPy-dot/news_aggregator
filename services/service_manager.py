@@ -282,27 +282,51 @@ class ServiceManager:
         if self._bot_service is None:
             raise RuntimeError("BotService не инициализирован")
 
-        # Если бот был остановлен (self.bot is None), нужно перезайнициализировать
+        # 1. Если бот не инициализирован — инициализируем (lazy, с подключением к Telegram)
         if self._bot_service.bot is None:
-            logger.info("🔄 Бот не инициализирован, выполняю initialize()...")
+            logger.info("🔄 Инициализация бота (первый запуск / после рестарта)...")
             await self._bot_service.initialize()
-            logger.info("✅ Бот перезайнициализирован")
+            logger.info("✅ Бот инициализирован")
+
+        # 2. Регистрируем BotService в глобальной ссылке (для get_bot_instance_async)
+        from services.bot.bot import set_bot_service_ref, set_bot_ready_event
+
+        set_bot_service_ref(self._bot_service)
+        logger.info("✅ BotService зарегистрирован (глобальная ссылка)")
+
+        # 3. Регистрируем Bot и NotificationService в DI контейнере
+        # _global_container — глобальная переменная из main.py; достаем через sys.modules
+        # чтобы избежать циклического импорта
+        import sys
+        main_mod = sys.modules.get('main')
+        _global_container = getattr(main_mod, '_global_container', None) if main_mod else None
+
+        if _global_container and self._bot_service.bot:
+            _global_container.register_instance_by_name('Bot', self._bot_service.bot)
+            logger.info("✅ Bot зарегистрирован в DI контейнере")
+
+        if _global_container and self._bot_service._notification_service:
+            _global_container.register_instance_by_name(
+                'NotificationService', self._bot_service._notification_service
+            )
+            logger.info("✅ NotificationService зарегистрирован в DI контейнере")
+
+        # 4. Сигнализируем о готовности
+        _bot_ready = asyncio.Event()
+        set_bot_ready_event(_bot_ready)
+        _bot_ready.set()
+        logger.info("🚩 Бот готов, событие _bot_ready установлено")
 
         self._bot_should_run = True
 
-        # Запускаем polling в новой задаче
+        # 5. Запускаем polling в новой задаче
         async def run_bot():
             try:
-                from services.bot.bot import set_bot_ready_event
-                import asyncio
-                bot_ready = asyncio.Event()
-                set_bot_ready_event(bot_ready)
                 await self._bot_service.run_polling()
             except asyncio.CancelledError:
                 logger.info("🛑 Bot задача отменена")
             except Exception as e:
                 logger.error(f"❌ Bot ошибка: {e}", exc_info=True)
-            # НЕ закрываем БД - она должна оставаться доступной для других сервисов
 
         self._bot_task = asyncio.create_task(
             run_bot(),
