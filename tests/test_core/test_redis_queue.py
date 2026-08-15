@@ -15,11 +15,10 @@ import asyncio
 import os
 import pytest
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 # Пытаемся импортировать fakeredis для локальных тестов
 try:
-    import fakeredis.aioredis
     FAKEREDIS_AVAILABLE = True
 except ImportError:
     FAKEREDIS_AVAILABLE = False

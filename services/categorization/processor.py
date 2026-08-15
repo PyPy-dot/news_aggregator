@@ -11,7 +11,6 @@ from services.ai_agent.agents.categorizer import CategorizerAgent
 from services.categorization.queue import CategorizationTask
 from services.categorization.classifier import NewsClassifier, ClassificationResult
 from services.categorization.saver import NewsSaver
-from database.repositories.posts import PostRepository
 
 if TYPE_CHECKING:
     from services.telegram.notification import NotificationService
@@ -204,7 +203,6 @@ class CategorizationProcessor:
         """
         try:
             from services.ai_agent.agents import AnalystAgent
-            from services.news.helpers import find_similar_events, find_similar_posts
 
             analyst = AnalystAgent()
 

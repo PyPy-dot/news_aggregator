@@ -17,7 +17,7 @@ from services.payment.abstractions import (
     PaymentStatus,
     PaymentError,
 )
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 import logging
 from dataclasses import dataclass
 

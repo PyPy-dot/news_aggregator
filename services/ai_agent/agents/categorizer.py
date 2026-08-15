@@ -8,9 +8,7 @@ Categorizer Agent — первичная классификация новост
 """
 
 import logging
-import re
 import json
-from typing import Optional
 
 from services.ai_agent.agents.base import BaseAgent, queued
 from services.ai_agent.agent_queue import TaskPriority

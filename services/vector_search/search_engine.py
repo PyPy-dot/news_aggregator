@@ -8,7 +8,6 @@ Vector Search Engine — высокоуровневый API для поиска 
 """
 
 import json
-import logging
 import hashlib
 from typing import Optional, Any
 from collections import OrderedDict

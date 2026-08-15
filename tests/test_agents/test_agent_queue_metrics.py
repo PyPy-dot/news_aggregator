@@ -4,16 +4,9 @@ Tests for AgentTaskQueue Prometheus metrics.
 
 import pytest
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from services.ai_agent.agent_queue import AgentTaskQueue, TaskPriority, AgentTask, TaskStatus
-from services.monitoring.metrics import (
-    agent_queue_size,
-    agent_queue_active_tasks,
-    agent_tasks_total,
-    agent_task_duration,
-    agent_queue_pending_by_priority,
-)
 
 
 @pytest.fixture

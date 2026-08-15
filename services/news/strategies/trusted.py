@@ -6,7 +6,6 @@ import logging
 from typing import Any
 
 from services.news.strategies.base import NewsProcessingStrategy
-from database.repositories.posts import PostRepository
 
 logger = logging.getLogger(__name__)
 

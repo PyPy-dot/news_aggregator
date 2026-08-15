@@ -6,7 +6,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from typing import Optional, List
-from sqlalchemy import select, update, desc, func, delete
+from sqlalchemy import select, desc, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import RSSNews

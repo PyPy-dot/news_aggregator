@@ -15,7 +15,6 @@ Usage:
 """
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -26,7 +25,6 @@ from services.monitoring.health_check import (
     check_system_health,
     get_health_summary,
     HealthStatus,
-    SystemHealth,
 )
 
 logger = logging.getLogger(__name__)
@@ -234,7 +232,6 @@ async def health_metrics():
     Returns:
         Текст в формате Prometheus metrics
     """
-    import time
 
     checker = get_health_checker()
     results = checker.get_last_results()

@@ -14,7 +14,6 @@ import json
 import io
 import tempfile
 from pathlib import Path
-from datetime import datetime
 
 from services.logging_json import (
     JSONFormatter,

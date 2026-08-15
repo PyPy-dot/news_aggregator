@@ -5,7 +5,7 @@ Tests for NotificationService.
 import asyncio
 import pytest
 import logging
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 
 from services.telegram.notification import NotificationService
 

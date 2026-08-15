@@ -7,7 +7,7 @@
 import asyncio
 import logging
 from sqlalchemy import text
-from services.core.database import get_database_service, Task
+from services.core.database import get_database_service
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

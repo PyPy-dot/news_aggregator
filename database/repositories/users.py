@@ -6,12 +6,12 @@ import json
 import logging
 from datetime import datetime, timezone
 from typing import Optional, Tuple
-from sqlalchemy import select, update, text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import User
 from database.repositories.base import BaseRepository
-from services.util import encrypt_user_id, decrypt_user_id, hash_user_id_for_lookup, get_encryption_key
+from services.util import encrypt_user_id, decrypt_user_id, hash_user_id_for_lookup
 
 logger = logging.getLogger(__name__)
 

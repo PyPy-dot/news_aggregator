@@ -175,7 +175,7 @@ class PostgreSQLProvider(IProvider):
             Строка версии
         """
         try:
-            from sqlalchemy import text
+            pass
 
             result = await self.execute_query("SELECT version()")
             return result[0]['version'] if result else 'Unknown'

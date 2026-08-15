@@ -11,8 +11,6 @@
 
 import pytest
 import asyncio
-import time
-from unittest.mock import AsyncMock
 
 from services.core.circuit_breaker import (
     CircuitState,
@@ -32,7 +30,6 @@ from services.core.circuit_breaker import (
 
 class TestException(Exception):
     """Тестовое исключение."""
-    pass
 
 
 # =============================================================================

@@ -6,7 +6,6 @@
 
 import pytest
 import asyncio
-import time
 from services.ai_agent.cache import (
     LLMResponseCache,
     CacheEntry,

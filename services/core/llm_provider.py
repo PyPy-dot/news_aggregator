@@ -11,8 +11,8 @@ LLM Provider — абстракция для работы с LLM провайд�
 import asyncio
 import logging
 from abc import ABC, abstractmethod
-from typing import Optional, List, Dict, Any, Sequence
-from dataclasses import dataclass, field
+from typing import Optional, List, Dict, Sequence
+from dataclasses import dataclass
 from enum import Enum
 
 logger = logging.getLogger(__name__)
@@ -80,13 +80,11 @@ class LLMProvider(ABC):
     @abstractmethod
     def name(self) -> str:
         """Название провайдера."""
-        pass
 
     @property
     @abstractmethod
     def provider_type(self) -> ProviderType:
         """Тип провайдера."""
-        pass
 
     @abstractmethod
     async def chat(
@@ -108,7 +106,6 @@ class LLMProvider(ABC):
         Returns:
             Ответ от модели
         """
-        pass
 
     @abstractmethod
     async def is_available(self) -> bool:
@@ -118,7 +115,6 @@ class LLMProvider(ABC):
         Returns:
             True если провайдер доступен
         """
-        pass
 
     def get_stats(self) -> ProviderStats:
         """Получить статистику провайдера."""

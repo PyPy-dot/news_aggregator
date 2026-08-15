@@ -10,11 +10,11 @@ import logging
 from aiogram import F
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
-from aiogram.filters import Command, StateFilter
+from aiogram.filters import Command
 
 from services.database import get_database_service
 from database import RepositoryFactory
-from services.bot.handlers.keyboards import kb2, ikb1
+from services.bot.handlers.keyboards import ikb1
 from services.bot.handlers.router import admin
 from services.bot.handlers.states import AddChannel, DeleteChannel, TrustedChannel, EditNewsStates
 from services.bot.handlers.access import check_admin_access

@@ -3,7 +3,7 @@ Tests for NewsOrchestrator with strategies.
 """
 
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock, PropertyMock
+from unittest.mock import AsyncMock, MagicMock
 
 from sqlalchemy.ext.asyncio import AsyncSession
 

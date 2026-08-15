@@ -2,10 +2,9 @@
 Task repository для работы с задачами.
 """
 
-import json
 from datetime import datetime
 from typing import Optional, List
-from sqlalchemy import select, update, desc
+from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import Task

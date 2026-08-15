@@ -25,7 +25,6 @@ from typing import TYPE_CHECKING
 from database import RepositoryFactory
 from services.news.orchestrator import NewsOrchestrator
 from services.database import get_database_service
-from config.settings import settings
 
 if TYPE_CHECKING:
     from services.core.container import Container

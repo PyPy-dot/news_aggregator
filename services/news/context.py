@@ -5,7 +5,6 @@ Event Context Service — управление контекстом событи
 """
 
 import logging
-import json
 from typing import Optional, Dict, Any, List, TYPE_CHECKING
 
 from database.repositories.events import EventRepository

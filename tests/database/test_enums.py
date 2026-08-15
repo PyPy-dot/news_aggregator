@@ -2,10 +2,8 @@
 Тесты для перечислений абстрактного слоя базы данных.
 """
 
-import pytest
 
 from services.database.enums import DatabaseType, IsolationLevel, ConnectionStatus
-from services.database.config import DatabaseConfig
 
 
 class TestDatabaseType:

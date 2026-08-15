@@ -249,7 +249,6 @@ class AutoReindexService:
             item_id: ID элемента
             data: Данные для индексации
         """
-        from services.vector_search.search_engine import VectorSearchEngine
 
         # Получаем текст для индексации
         text = self._extract_text(item_type, data)

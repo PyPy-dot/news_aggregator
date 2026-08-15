@@ -27,64 +27,51 @@ class DatabaseError(Exception):
 
 class ConnectionError(DatabaseError):
     """Ошибка подключения к базе данных."""
-    pass
 
 
 class PoolError(DatabaseError):
     """Ошибка пула подключений."""
-    pass
 
 
 class TransactionError(DatabaseError):
     """Ошибка транзакции."""
-    pass
 
 
 class QueryError(DatabaseError):
     """Ошибка выполнения запроса."""
-    pass
 
 
 class ConfigurationError(DatabaseError):
     """Ошибка конфигурации базы данных."""
-    pass
 
 
 class ProviderNotFoundError(DatabaseError):
     """Провайдер СУБД не найден."""
-    pass
 
 
 class UnsupportedDatabaseError(DatabaseError):
     """СУБД не поддерживается."""
-    pass
 
 
 class SessionError(DatabaseError):
     """Ошибка сессии базы данных."""
-    pass
 
 
 class MigrationError(DatabaseError):
     """Ошибка миграции базы данных."""
-    pass
 
 
 class LockError(DatabaseError):
     """Ошибка блокировки."""
-    pass
 
 
 class TimeoutError(DatabaseError):
     """Таймаут операции базы данных."""
-    pass
 
 
 class IntegrityError(DatabaseError):
     """Ошибка целостности данных (unique constraint, foreign key)."""
-    pass
 
 
 class OperationalError(DatabaseError):
     """Операционная ошибка (проблемы с подключением, сервером)."""
-    pass

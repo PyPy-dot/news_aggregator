@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 load_dotenv(project_root / '.env')
 
 from services.database import get_database_service
-from services.util import hash_user_id_for_lookup, encrypt_user_id
+from services.util import hash_user_id_for_lookup
 from database.repositories.users import UserRepository
 
 
@@ -48,7 +48,7 @@ async def diagnose():
     # Подключаемся к БД и смотрим всех пользователей
     db_service = get_database_service()
     async with db_service.session_context() as session:
-        from sqlalchemy import select, text
+        from sqlalchemy import select
         from database.models import User
 
         # Получаем всех пользователей

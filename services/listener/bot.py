@@ -110,7 +110,7 @@ class ListenerBot:
             - is_fresh: bool — сессия активна (не старше 7 дней)
         """
         import os
-        from datetime import datetime, timedelta
+        from datetime import datetime
 
         session_file = f"{session_name}.session"
         result = {

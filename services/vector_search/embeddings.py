@@ -3,7 +3,6 @@ Embedding Service — генерация векторных эмбеддинго
 """
 
 import asyncio
-import logging
 import warnings
 from functools import lru_cache
 from typing import Optional

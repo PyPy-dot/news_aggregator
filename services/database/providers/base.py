@@ -5,15 +5,15 @@
 import logging
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
-from typing import Any, AsyncContextManager, AsyncGenerator, Optional
+from typing import Any, AsyncGenerator, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession, AsyncEngine, create_async_engine
-from sqlalchemy import text, TextClause
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from services.database.interfaces import IDatabaseService, IProvider
 from services.database.config import DatabaseConfig
-from services.database.enums import DatabaseType, ConnectionStatus, IsolationLevel
+from services.database.enums import DatabaseType, ConnectionStatus
 from services.database.exceptions import (
     DatabaseError,
     ConnectionError,
@@ -71,7 +71,6 @@ class BaseDatabaseService(IDatabaseService, ABC):
     @abstractmethod
     def db_type(self) -> DatabaseType:
         """Тип СУБД."""
-        pass
 
     def _create_engine(self) -> AsyncEngine:
         """
@@ -399,4 +398,3 @@ class BaseDatabaseService(IDatabaseService, ABC):
         Returns:
             IProvider экземпляр
         """
-        pass

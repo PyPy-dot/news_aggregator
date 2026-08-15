@@ -3,7 +3,6 @@
 """
 
 import pytest
-from unittest.mock import patch, MagicMock
 
 from services.monitoring import (
     get_metrics,

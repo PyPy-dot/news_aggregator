@@ -10,9 +10,8 @@ WebSocket endpoint для real-time авторизации ListenerBot.
 """
 
 import asyncio
-import json
 import logging
-from typing import Optional, Set
+from typing import Set
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 

@@ -1,10 +1,9 @@
 """Auth routes для Web Admin — классическая аутентификация по логину/паролю."""
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, Form
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, Form
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
-from datetime import datetime, timedelta, timezone
 from typing import Optional, Annotated
 
 from services.web_admin.session_manager import get_session_manager, SessionManager

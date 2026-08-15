@@ -5,7 +5,6 @@ NewsSaver — сохранение результатов категоризац
 """
 
 import logging
-from typing import Optional, List
 
 from database.repositories.channels import ChannelRepository
 from database.repositories.posts import PostRepository

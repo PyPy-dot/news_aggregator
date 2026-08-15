@@ -2,7 +2,7 @@
 Конфигурация подключения к базе данных.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 from services.database.enums import DatabaseType, IsolationLevel

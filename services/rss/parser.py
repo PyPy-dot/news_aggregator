@@ -10,7 +10,7 @@ RSS Parser Service для парсинга RSS/Atom лент.
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 from dataclasses import dataclass
 
 import feedparser

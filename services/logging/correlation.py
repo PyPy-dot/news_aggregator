@@ -18,7 +18,6 @@ Usage:
 
 import logging
 import uuid
-import asyncio
 from contextvars import ContextVar
 from typing import Optional
 from functools import wraps

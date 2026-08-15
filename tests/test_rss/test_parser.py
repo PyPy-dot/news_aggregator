@@ -3,7 +3,6 @@
 """
 
 import pytest
-from datetime import datetime, timezone
 
 from services.rss.parser import RSSParserService, ParsedNewsItem, FeedMetadata
 

@@ -6,7 +6,6 @@ Session Manager для Web Admin — управление сессиями и а
 JWT токены с продлением сессии
 """
 
-import json
 import logging
 import sqlite3
 from datetime import datetime, timedelta, timezone

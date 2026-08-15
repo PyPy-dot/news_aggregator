@@ -12,7 +12,7 @@ from services.database.providers import (
     PostgreSQLDatabaseService,
     MySQLDatabaseService,
 )
-from services.database.exceptions import UnsupportedDatabaseError, ProviderNotFoundError, ConfigurationError
+from services.database.exceptions import ProviderNotFoundError
 
 
 class TestDatabaseServiceFactoryCreate:

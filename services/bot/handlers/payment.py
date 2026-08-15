@@ -9,8 +9,7 @@ Payment handlers — обработчики для оплаты подписок
 
 import logging
 from aiogram import F, Router
-from aiogram.types import PreCheckoutQuery, Message, LabeledPrice
-from aiogram.filters import ExceptionTypeFilter
+from aiogram.types import PreCheckoutQuery, Message
 
 from services.bot.handlers.router import admin  # Используем тот же роутер
 
@@ -59,8 +58,7 @@ async def process_successful_payment(message: Message):
 
     Оформляет подписку после успешной оплаты.
     """
-    from services.payment import get_payment_service, PaymentStatus
-    from database import RepositoryFactory
+    from services.payment import get_payment_service
     from database.repositories.users import UserRepository
     from services.database import get_database_service
     from datetime import datetime, timedelta
@@ -160,7 +158,6 @@ async def start_subscription_payment(message: Message):
     """
     from services.payment import get_payment_service
     from database import RepositoryFactory
-    from database.repositories.users import UserRepository
     from services.database import get_database_service
 
     async with get_database_service().session_context() as session:

@@ -14,7 +14,6 @@
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from pathlib import Path
 
 # Настройка логирования
 logging.basicConfig(
@@ -35,7 +34,6 @@ async def test_scheduler():
     # Импортируем зависимости
     from services.database import get_database_service
     from database import RepositoryFactory
-    from config.settings import settings
 
     # Инициализация БД
     db_service = get_database_service()

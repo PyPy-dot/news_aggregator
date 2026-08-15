@@ -6,14 +6,13 @@
 
 import logging
 from datetime import datetime, timedelta
-from aiogram import F, Router
+from aiogram import F
 from aiogram.types import Message, CallbackQuery, LabeledPrice, PreCheckoutQuery
-from aiogram.filters import Command, StateFilter
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 
 from services.bot.handlers.router import admin
-from services.bot.handlers.keyboards import user_kb, get_user_kb_for_role
-from services.bot.handlers.states import UserPreferencesStates
+from services.bot.handlers.keyboards import get_user_kb_for_role
 from services.bot.handlers.access import is_admin
 
 from database import RepositoryFactory

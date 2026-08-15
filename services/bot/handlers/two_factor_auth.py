@@ -21,8 +21,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-from database.repositories.users import UserRepository
-from services.auth.two_factor_auth import get_2fa_service, ProviderType
+from services.auth.two_factor_auth import get_2fa_service
 from services.bot.utils import get_repository_factory
 from services.telegram.notification import send_message_with_retry
 

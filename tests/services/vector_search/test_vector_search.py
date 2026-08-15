@@ -6,7 +6,7 @@ import pytest
 from unittest.mock import Mock, patch, MagicMock
 
 from services.vector_search.embeddings import EmbeddingService
-from services.vector_search.chroma_client import ChromaVectorStore, COLLECTION_EVENTS
+from services.vector_search.chroma_client import ChromaVectorStore
 from services.vector_search.search_engine import VectorSearchEngine, LRUCache
 
 

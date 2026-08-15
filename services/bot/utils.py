@@ -3,7 +3,6 @@
 """
 
 import logging
-import json
 import time
 import asyncio
 from typing import Optional, Callable, Any
@@ -286,7 +285,6 @@ async def approve_news_by_id(
         admin_telegram_id: Telegram ID админа
         with_channel_choice: Показать ли выбор канала для публикации
     """
-    from database.repositories.users import UserRepository
 
     async with get_repository_factory() as factory:
         news_repo = factory.news()
@@ -365,7 +363,6 @@ async def reject_news_by_id(
         news_id: ID новости
         admin_telegram_id: Telegram ID админа
     """
-    from database.repositories.users import UserRepository
 
     async with get_repository_factory() as factory:
         news_repo = factory.news()

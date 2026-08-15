@@ -224,4 +224,3 @@ class TestListenerBotChannelMonitoring:
 
 
 # Импортируем asyncio для тестов
-import asyncio

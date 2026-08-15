@@ -2,7 +2,6 @@
 Tests for NewsClassifier.
 """
 
-import pytest
 from services.categorization.classifier import NewsClassifier, ClassificationResult
 
 

@@ -10,8 +10,6 @@
 """
 
 import logging
-import asyncio
-import sys
 import io
 import traceback
 from contextlib import redirect_stdout, redirect_stderr
@@ -19,10 +17,10 @@ from datetime import datetime
 from typing import Optional
 from pathlib import Path
 
-from fastapi import APIRouter, Request, Depends, HTTPException
+from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import text, select, func
+from sqlalchemy import text, select
 
 from services.database import get_database_service
 from services.web_admin.api.app import get_optional_user

@@ -8,7 +8,6 @@
 - Валидация параметров
 """
 
-import pytest
 
 from services.vector_search.hnsw_config import (
     HNSWConfig,

@@ -3,8 +3,7 @@ Channel repository для работы с каналами.
 """
 
 import json
-from typing import Optional
-from sqlalchemy import select, update, desc
+from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import Channel, TelegramPost

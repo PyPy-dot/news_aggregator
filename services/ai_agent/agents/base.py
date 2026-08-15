@@ -13,9 +13,8 @@ Base Agent для работы с LLM через fallback-провайдер.
 import logging
 import re
 import json
-import time
 import asyncio
-from typing import Optional, Any, Callable, Coroutine
+from typing import Optional, Any
 from functools import wraps
 
 from config.settings import settings

@@ -4,7 +4,7 @@
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, time
+from datetime import time
 
 from services.scheduler.scheduler import Scheduler
 

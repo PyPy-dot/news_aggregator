@@ -18,7 +18,7 @@ from database import RepositoryFactory
 from services.ai_agent.routers import EventBus
 from services.ai_agent.events import EventType, Event
 from services.ai_agent.vector_routers import register_vector_search_handlers
-from services.ai_agent.agents import EditorAgent, DirectNewsEditorAgent, ArchivistAgent
+from services.ai_agent.agents import DirectNewsEditorAgent, ArchivistAgent
 from services.telegram.notification import NotificationService
 from services.news.strategies.base import NewsProcessingStrategy
 from services.news.strategies.urgent import UrgentNewsStrategy
@@ -27,7 +27,6 @@ from services.news.strategies.trusted import TrustedSourceStrategy
 from services.news.generation import NewsGenerationService
 from services.news.context import EventContextService
 from services.news.helpers import add_generated_news
-from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -954,7 +953,6 @@ class NewsOrchestrator:
             text: Текст сообщения
         """
         try:
-            from aiogram import Bot
             from services.bot.bot import get_bot_instance_async
 
             bot = await get_bot_instance_async(wait=False, timeout=10.0)

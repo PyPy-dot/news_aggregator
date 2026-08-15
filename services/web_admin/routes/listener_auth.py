@@ -25,7 +25,7 @@ import sys
 from datetime import datetime
 from typing import Callable, Optional, Dict, Any, List
 
-from fastapi import APIRouter, Request, Depends, HTTPException
+from fastapi import APIRouter, Request, Depends
 from fastapi.responses import JSONResponse
 
 from services.web_admin.api.app import get_optional_user

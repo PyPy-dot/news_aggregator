@@ -1,16 +1,15 @@
 import logging
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, BigInteger, Integer, DateTime, Float, Boolean, select, Text
+from sqlalchemy import ForeignKey, String, BigInteger, Integer, DateTime, Float, Boolean
 import sqlalchemy as sa
 from sqlalchemy.orm import Mapped, mapped_column, DeclarativeBase, relationship
-from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncAttrs
 
 # Приглушаем SQLAlchemy до ERROR (только критические ошибки)
 logging.getLogger('sqlalchemy.engine').setLevel(logging.ERROR)
 
 # Импортируем настройки для использования в моделях
-from config.settings import settings
 
 # =============================================================================
 # УДАЛЕНО: engine создаётся в DatabaseService (services/core/database.py)

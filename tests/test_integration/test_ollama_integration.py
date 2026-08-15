@@ -15,7 +15,6 @@
 import os
 import pytest
 import asyncio
-from typing import Optional
 
 # Пропускаем тесты если OLLAMA_HOST не настроен
 pytestmark = pytest.mark.skipif(

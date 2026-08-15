@@ -7,7 +7,7 @@ REST API для создания, просмотра и управления з�
 
 from datetime import datetime, timedelta
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException, Query, Body
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from database import RepositoryFactory

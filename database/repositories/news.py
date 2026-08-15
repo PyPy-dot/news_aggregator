@@ -5,7 +5,7 @@ News repository для работы с сгенерированными ново
 import json
 from datetime import datetime, timezone
 from typing import Optional
-from sqlalchemy import select, update, desc, func, delete
+from sqlalchemy import select, desc, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import GeneratedNews

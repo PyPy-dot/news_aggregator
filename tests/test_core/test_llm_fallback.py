@@ -9,8 +9,7 @@
 """
 
 import pytest
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from services.core.llm_provider import (
     LLMMessage,
@@ -19,9 +18,6 @@ from services.core.llm_provider import (
     LLMProviderError,
     ProviderType,
     ProviderStats,
-    OllamaProvider,
-    OpenAIProvider,
-    AnthropicProvider,
     FallbackLLMProvider,
 )
 

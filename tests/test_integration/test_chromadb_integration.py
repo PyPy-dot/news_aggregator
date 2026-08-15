@@ -14,8 +14,6 @@
 
 import os
 import pytest
-import asyncio
-from typing import List
 
 # Пропускаем тесты если CHROMA_HOST не настроен
 pytestmark = pytest.mark.skipif(

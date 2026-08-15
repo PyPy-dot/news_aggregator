@@ -7,12 +7,11 @@ Settings — Настройки веб-админки.
 """
 
 import logging
-import os
 import re
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Request, Depends, HTTPException
+from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 

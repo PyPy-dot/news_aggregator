@@ -9,12 +9,11 @@ Tests for:
 """
 
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock
 
 from services.categorization.queue import CategorizationQueue, CategorizationTask
 from services.categorization.classifier import NewsClassifier, ClassificationResult
 from services.categorization.saver import NewsSaver
-from services.categorization.processor import CategorizationProcessor
 
 
 class TestCategorizationTask:

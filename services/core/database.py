@@ -20,7 +20,6 @@ from config.settings import settings
 
 # Импортируем новый слой абстракции
 from services.database import (
-    get_database_service as get_new_db_service,
     IDatabaseService,
     DatabaseType,
 )

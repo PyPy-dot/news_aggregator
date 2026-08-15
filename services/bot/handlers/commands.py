@@ -10,8 +10,8 @@ from aiogram.types import Message
 from aiogram import F
 
 from services.bot.handlers.router import admin
-from services.bot.handlers.keyboards import admin_kb, user_kb, ikb1, ikb_trusted, create_subscription_kb
-from services.bot.handlers.states import AddChannel, TrustedChannel, UserPreferencesStates
+from services.bot.handlers.keyboards import admin_kb, user_kb, ikb1
+from services.bot.handlers.states import AddChannel, UserPreferencesStates
 from services.bot.utils import show_last_posts, show_generated_news
 from services.bot.handlers import publishers  # noqa: F401
 from services.bot.handlers.access import check_admin_access, is_admin
@@ -27,7 +27,6 @@ logger = logging.getLogger(__name__)
 async def start(message: Message):
     """Команда /start — главное меню и регистрация пользователя."""
     from services.bot.utils import check_and_show_advertisement, send_message_with_retry
-    from services.bot.handlers.keyboards import get_user_kb_for_role
 
     # Регистрируем пользователя в БД
     async with get_database_service().session_context() as session:
@@ -309,7 +308,6 @@ async def subscription_menu(message: Message):
 async def categories_menu(message: Message, state: FSMContext):
     """Меню категорий — выбор предпочтительных категорий (мультивыбор)."""
     from database import RepositoryFactory
-    from database.repositories.users import UserRepository
     from services.bot.handlers.keyboards import create_categories_kb, create_subscription_kb
     from services.bot.handlers.states import UserPreferencesStates
 
@@ -375,7 +373,6 @@ async def categories_menu(message: Message, state: FSMContext):
 @admin.message(Command('tags'))
 async def tags_menu(message: Message, state: FSMContext):
     """Меню тэгов — управление предпочтительными тэгами."""
-    from database.repositories.users import UserRepository
     from services.bot.handlers.keyboards import create_user_tags_kb, create_subscription_kb
     from services.bot.handlers.states import UserPreferencesStates
 
@@ -441,9 +438,7 @@ async def process_tags_input(message: Message, state: FSMContext):
 
     Тэги вводятся через пробел и сохраняются в БД.
     """
-    from database.repositories.users import UserRepository
     from services.bot.handlers.keyboards import create_user_tags_kb
-    from services.bot.handlers.states import UserPreferencesStates
 
     # Получаем тэги из сообщения (разделяем по пробелам)
     input_text = message.text.strip()
@@ -534,9 +529,7 @@ async def unsubscribe_command(message: Message):
     Отписаться от новостей — сброс предпочтений и отписка.
     Редактирует исходное сообщение меню, убирая кнопку отписки.
     """
-    from database.repositories.users import UserRepository
     from services.bot.handlers.keyboards import get_user_kb_for_role, user_kb
-    from services.bot.handlers.access import is_admin
 
     async with get_database_service().session_context() as session:
         factory = RepositoryFactory(session)
@@ -601,7 +594,6 @@ async def switch_to_user_menu(message: Message):
     Переключиться на пользовательское меню (для админов).
     """
     from services.bot.handlers.keyboards import get_user_kb_for_role
-    from services.bot.handlers.access import is_admin
 
     # Проверяем является ли пользователь админом и его подписку
     async with get_database_service().session_context() as session:
@@ -659,7 +651,7 @@ async def show_metrics(message: Message):
         await message.answer('❌ У вас нет прав администратора')
         return
 
-    from services.monitoring import get_health_status, update_queue_size, update_active_tasks
+    from services.monitoring import get_health_status
 
     # Получаем health status
     health = get_health_status()

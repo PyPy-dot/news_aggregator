@@ -7,7 +7,6 @@ ChromaDB Vector Store — хранение и поиск векторов.
 - Батчинг для эффективного добавления векторов
 """
 
-import json
 import logging
 import os
 from pathlib import Path

@@ -2,7 +2,6 @@
 Тесты для конфигурации базы данных.
 """
 
-import pytest
 
 from services.database.config import DatabaseConfig
 from services.database.enums import DatabaseType, IsolationLevel

@@ -24,7 +24,7 @@ import sys
 # Добавляем корень проекта в path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import User, TelegramPost, Channel, EventContext

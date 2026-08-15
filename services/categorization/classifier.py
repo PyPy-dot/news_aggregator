@@ -8,7 +8,6 @@ import logging
 import re
 import json
 from dataclasses import dataclass
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +40,6 @@ class NewsClassifier:
 
     def __init__(self) -> None:
         """Инициализация классификатора."""
-        pass
 
     def parse_ai_response(self, response: str) -> ClassificationResult:
         """

@@ -6,8 +6,6 @@ Tests for BaseAgent.
 """
 
 import pytest
-import json
-from unittest.mock import AsyncMock, patch, MagicMock
 
 from services.ai_agent.agents.base import BaseAgent
 

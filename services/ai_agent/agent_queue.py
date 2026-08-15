@@ -401,7 +401,6 @@ class AgentTaskQueue:
 
 class QueueFullError(Exception):
     """Исключение при переполнении очереди."""
-    pass
 
 
 # Глобальный экземпляр очереди (singleton)

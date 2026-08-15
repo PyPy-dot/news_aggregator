@@ -13,7 +13,7 @@ import json
 import logging
 from datetime import datetime
 from aiogram import F, Router
-from aiogram.types import Message, ReplyKeyboardRemove, CallbackQuery
+from aiogram.types import Message, CallbackQuery
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 
@@ -22,7 +22,6 @@ from database import RepositoryFactory
 from services.ai_agent.agents import EditorAgent
 from services.util import load_prompt
 from services.bot.handlers.keyboards import (
-    create_direct_news_channel_kb,
     kb1,
     create_direct_news_description_inline_kb,
 )
@@ -445,8 +444,6 @@ async def _save_news_to_db(text: str, tags: list, publisher_id: int):
 async def _publish_to_channel(publish_text: str, media_info: dict | None, publisher):
     """Опубликовать новость в канал."""
     from services.bot.bot import get_bot_instance_async
-    from aiogram.types import FSInputFile
-    import os
 
     # Получаем бота с ожиданием готовности (timeout 10 сек)
     bot_instance = await get_bot_instance_async(wait=True, timeout=10.0)

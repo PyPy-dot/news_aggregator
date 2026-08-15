@@ -7,13 +7,9 @@ Create Date: 2026-08-09 21:51:15.832835
 Миграция для нормализации тэгов к нижнему регистру.
 Приводит все существующие тэги в таблицах к lowercase для case-insensitive поиска.
 """
-import json
 from typing import Sequence, Union
 
 from alembic import op
-import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy import select, text, update
 
 
 # revision identifiers, used by Alembic.
@@ -45,11 +41,9 @@ def upgrade() -> None:
     # Помечаем, что данные были нормализованы
     # Фактическая нормализация происходит в Python-коде репозиториев
     # при чтении/записи, эта миграция — для документации
-    pass
 
 
 def downgrade() -> None:
     """
     Откат миграции невозможен — потеряется информация о регистре.
     """
-    pass

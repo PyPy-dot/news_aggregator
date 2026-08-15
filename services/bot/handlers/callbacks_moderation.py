@@ -370,7 +370,6 @@ async def reject_news_callback(callback: CallbackQuery):
 
     async with get_database_service().session_context() as session:
         from database.repositories.news import NewsRepository
-        from database.repositories.channels import ChannelRepository
 
         news_repo = NewsRepository(session)
         news = await news_repo.get(news_id)

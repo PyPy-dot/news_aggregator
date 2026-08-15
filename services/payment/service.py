@@ -12,7 +12,6 @@ from services.payment.abstractions import (
     PaymentLink,
     PaymentData,
     PaymentStatus,
-    PaymentError,
 )
 from services.payment.test_provider import TestPaymentProvider
 from services.payment.telegram_stars_provider import TelegramStarsProvider

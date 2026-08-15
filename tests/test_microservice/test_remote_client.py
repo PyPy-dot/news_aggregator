@@ -10,7 +10,6 @@
 
 import os
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
 
 # Пропускаем тесты если сервис недоступен
 pytestmark = pytest.mark.skipif(

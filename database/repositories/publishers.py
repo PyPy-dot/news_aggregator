@@ -5,7 +5,7 @@ Publisher Repository — работа с каналами для публика�
 import logging
 from typing import Optional
 
-from sqlalchemy import select, update, func, delete
+from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.repositories.base import BaseRepository
@@ -98,16 +98,16 @@ class PublisherRepository(BaseRepository):
         description: Optional[str] = None,
         category: Optional[str] = None,
         is_active: Optional[bool] = None,
-    ) -> bool:
+    ) -> 'Publisher | None':
         """
         Обновить информацию о канале.
 
         Returns:
-            True если обновлён, False если не найден
+            Обновлённый Publisher или None если не найден
         """
         publisher = await self.get_by_id(publisher_id)
         if not publisher:
-            return False
+            return None
 
         if title is not None:
             publisher.title = title
@@ -120,7 +120,7 @@ class PublisherRepository(BaseRepository):
 
         await self.session.commit()
         logger.info(f"🔄 Обновлён publisher ID={publisher_id}")
-        return True
+        return publisher
 
     async def deactivate(self, publisher_id: int) -> bool:
         """Деактивировать канал публикации."""

@@ -18,7 +18,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.database import IDatabaseService, get_database_service
 from database import RepositoryFactory
-from config.settings import settings
 
 if TYPE_CHECKING:
     from aiogram import Bot

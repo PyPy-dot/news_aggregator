@@ -17,7 +17,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import User
-from database.repositories.users import UserRepository
 from services.database import get_database_service
 from services.util import decrypt_user_id
 
@@ -736,7 +735,6 @@ async def send_message_with_retry(
     Returns:
         True если отправлено успешно, False иначе
     """
-    from aiogram.types import Message as AiogramMessage
 
     if not hasattr(message, 'bot') or not message.bot:
         logger.error("❌ У сообщения нет бота для отправки")

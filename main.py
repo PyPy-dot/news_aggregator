@@ -16,7 +16,7 @@ import sys
 from typing import Optional
 
 # НАСТРОЙКА ЛОГИРОВАНИЯ ДО ВСЕХ ОСТАЛЬНЫХ ИМПОРТОВ
-from services.logging_config import setup_logging, get_logger
+from services.logging_config import setup_logging
 
 setup_logging(
     level=logging.INFO,

@@ -11,7 +11,6 @@ import pytest
 import json
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database.models import User, TelegramPost, Channel, EventContext
 from database.repositories.users import UserRepository
 from database.repositories.posts import PostRepository
 from database.repositories.channels import ChannelRepository

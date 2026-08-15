@@ -23,7 +23,6 @@ from services.monitoring.health_check import (
     check_llm_fallback_health,
     check_circuit_breakers_health,
     check_telegram_bot_health,
-    check_vector_search_health,
     check_scheduler_health,
     create_default_health_checker,
     get_health_checker,
@@ -283,7 +282,6 @@ class TestBuiltInChecks:
     @pytest.mark.asyncio
     async def test_check_database_health_mock(self):
         """Тест: проверка БД (mock)."""
-        from services.database import IDatabaseService
         from services.database.enums import DatabaseType
 
         mock_db_service = MagicMock()

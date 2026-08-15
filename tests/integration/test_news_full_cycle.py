@@ -11,13 +11,11 @@
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime
 
-from database.models import TelegramPost, GeneratedNews
-from services.categorization.queue import CategorizationQueue, CategorizationTask
+from database.models import TelegramPost
+from services.categorization.queue import CategorizationTask
 from services.categorization.processor import CategorizationProcessor
 from services.categorization.saver import NewsSaver
-from services.categorization.classifier import NewsClassifier
 from services.ai_agent.agents.categorizer import CategorizerAgent
 from services.news.orchestrator import NewsOrchestrator
 from services.news.generation import NewsGenerationService

@@ -3,7 +3,7 @@ Category repository для работы с категориями новосте
 """
 
 from typing import Optional, List
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import NewsCategory

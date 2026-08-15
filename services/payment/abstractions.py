@@ -53,7 +53,6 @@ class PaymentProvider(ABC):
     @abstractmethod
     def name(self) -> str:
         """Название платёжной системы."""
-        pass
 
     @abstractmethod
     async def create_payment(
@@ -75,7 +74,6 @@ class PaymentProvider(ABC):
         Returns:
             PaymentLink со ссылкой на оплату
         """
-        pass
 
     @abstractmethod
     async def get_payment_status(self, payment_id: str) -> PaymentData:
@@ -88,7 +86,6 @@ class PaymentProvider(ABC):
         Returns:
             PaymentData со статусом
         """
-        pass
 
     @abstractmethod
     async def refund_payment(
@@ -108,7 +105,6 @@ class PaymentProvider(ABC):
         Returns:
             True если возврат успешен
         """
-        pass
 
     @abstractmethod
     async def handle_webhook(self, payload: Dict[str, Any]) -> Optional[PaymentData]:
@@ -121,9 +117,7 @@ class PaymentProvider(ABC):
         Returns:
             PaymentData если это статус платежа, иначе None
         """
-        pass
 
 
 class PaymentError(Exception):
     """Ошибка платёжного сервиса."""
-    pass

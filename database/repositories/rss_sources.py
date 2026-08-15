@@ -5,7 +5,7 @@ RSS Source repository для работы с источниками RSS лент
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
-from sqlalchemy import select, update, desc, func, delete
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import RSSSource

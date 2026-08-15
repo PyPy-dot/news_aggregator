@@ -10,7 +10,7 @@ Web Parser Service для парсинга сайтов.
 import logging
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 
 import requests
 from bs4 import BeautifulSoup

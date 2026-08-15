@@ -8,13 +8,10 @@ RSS Processor Service для обработки спарсенных новос�
 """
 
 import logging
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 
-from database.repositories.rss_sources import RSSSourceRepository
-from database.repositories.rss_news import RSSNewsRepository
-from database.repositories.posts import PostRepository
 from database import RepositoryFactory
-from services.rss.parser import RSSParserService, ParsedNewsItem, get_rss_parser_service
+from services.rss.parser import RSSParserService, get_rss_parser_service
 from services.ai_agent.agents.categorizer import CategorizerAgent
 from config.settings import settings
 

@@ -4,9 +4,6 @@ Vector Search Routers — обработчики событий для вект�
 Интегрируют AI агентов с векторным поиском через EventBus.
 """
 
-import logging
-import json
-from typing import Any
 
 from services.ai_agent.events import EventType, Event
 from services.ai_agent.routers import EventBus

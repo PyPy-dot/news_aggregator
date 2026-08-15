@@ -6,7 +6,7 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, AsyncContextManager, AsyncGenerator, Optional, TypeVar
+from typing import Any, AsyncContextManager, Optional, TypeVar
 
 from sqlalchemy.ext.asyncio import AsyncSession, AsyncEngine
 
@@ -28,19 +28,16 @@ class IDatabaseService(ABC):
     @abstractmethod
     def db_type(self) -> DatabaseType:
         """Тип СУБД."""
-        pass
 
     @property
     @abstractmethod
     def status(self) -> ConnectionStatus:
         """Текущий статус подключения."""
-        pass
 
     @property
     @abstractmethod
     def config(self) -> DatabaseConfig:
         """Конфигурация подключения."""
-        pass
 
     @abstractmethod
     async def connect(self) -> None:
@@ -50,7 +47,6 @@ class IDatabaseService(ABC):
         Raises:
             DatabaseError: Если не удалось подключиться
         """
-        pass
 
     @abstractmethod
     async def disconnect(self) -> None:
@@ -60,7 +56,6 @@ class IDatabaseService(ABC):
         Raises:
             DatabaseError: Если произошла ошибка при закрытии
         """
-        pass
 
     @abstractmethod
     async def create_session(self) -> AsyncSession:
@@ -73,7 +68,6 @@ class IDatabaseService(ABC):
         Raises:
             DatabaseError: Если сессия не создана
         """
-        pass
 
     @abstractmethod
     def session_context(
@@ -92,7 +86,6 @@ class IDatabaseService(ABC):
         Raises:
             DatabaseError: Если контекст не создан
         """
-        pass
 
     @abstractmethod
     async def execute_query(
@@ -113,7 +106,6 @@ class IDatabaseService(ABC):
         Raises:
             DatabaseError: Если запрос не выполнен
         """
-        pass
 
     @abstractmethod
     async def execute_many(
@@ -134,7 +126,6 @@ class IDatabaseService(ABC):
         Raises:
             DatabaseError: Если запрос не выполнен
         """
-        pass
 
     @abstractmethod
     async def begin_transaction(
@@ -153,7 +144,6 @@ class IDatabaseService(ABC):
         Raises:
             DatabaseError: Если транзакция не начата
         """
-        pass
 
     @abstractmethod
     async def health_check(self) -> bool:
@@ -166,7 +156,6 @@ class IDatabaseService(ABC):
         Raises:
             DatabaseError: Если проверка не пройдена
         """
-        pass
 
 
 class IConnectionPool(ABC):
@@ -178,13 +167,11 @@ class IConnectionPool(ABC):
     @abstractmethod
     def size(self) -> int:
         """Текущий размер пула."""
-        pass
 
     @property
     @abstractmethod
     def available(self) -> int:
         """Количество доступных подключений."""
-        pass
 
     @abstractmethod
     async def acquire(self) -> Any:
@@ -197,7 +184,6 @@ class IConnectionPool(ABC):
         Raises:
             PoolError: Если не удалось получить подключение
         """
-        pass
 
     @abstractmethod
     async def release(self, connection: Any) -> None:
@@ -210,7 +196,6 @@ class IConnectionPool(ABC):
         Raises:
             PoolError: Если не удалось вернуть подключение
         """
-        pass
 
     @abstractmethod
     async def close(self) -> None:
@@ -220,7 +205,6 @@ class IConnectionPool(ABC):
         Raises:
             PoolError: Если произошла ошибка при закрытии
         """
-        pass
 
 
 class IProvider(ABC):
@@ -232,17 +216,14 @@ class IProvider(ABC):
     @abstractmethod
     def engine(self) -> AsyncEngine:
         """SQLAlchemy engine."""
-        pass
 
     @abstractmethod
     def get_dialect(self) -> Any:
         """Получить диалект SQLAlchemy для СУБД."""
-        pass
 
     @abstractmethod
     def get_driver(self) -> str:
         """Получить название драйвера."""
-        pass
 
     @abstractmethod
     async def create_database(self, name: str) -> bool:
@@ -258,7 +239,6 @@ class IProvider(ABC):
         Raises:
             DatabaseError: Если не удалось создать базу
         """
-        pass
 
     @abstractmethod
     async def drop_database(self, name: str) -> bool:
@@ -274,7 +254,6 @@ class IProvider(ABC):
         Raises:
             DatabaseError: Если не удалось удалить базу
         """
-        pass
 
     @abstractmethod
     async def database_exists(self, name: str) -> bool:
@@ -290,4 +269,3 @@ class IProvider(ABC):
         Raises:
             DatabaseError: Если проверка не пройдена
         """
-        pass

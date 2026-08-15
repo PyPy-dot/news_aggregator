@@ -18,7 +18,7 @@ Celery Worker — распределённая обработка задач.
 
 import os
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from celery import Celery, Task
 from celery.schedules import crontab

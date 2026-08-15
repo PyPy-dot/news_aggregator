@@ -20,7 +20,6 @@ import logging
 import sqlite3
 import os
 import hmac
-import json
 from datetime import datetime, timezone
 from base64 import b64encode, b64decode
 from hashlib import sha256

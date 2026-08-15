@@ -22,7 +22,7 @@ Usage:
 
 import logging
 import asyncio
-from typing import Optional, Any
+from typing import Optional
 
 import httpx
 

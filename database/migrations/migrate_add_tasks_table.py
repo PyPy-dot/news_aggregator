@@ -11,7 +11,6 @@
 
 import asyncio
 import logging
-from datetime import datetime
 
 from sqlalchemy import text
 from services.core.database import get_database_service

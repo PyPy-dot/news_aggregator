@@ -15,7 +15,7 @@
 
 import logging
 from datetime import datetime, timedelta
-from aiogram import F, Router
+from aiogram import F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext

@@ -11,8 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from services.database.providers.base import BaseDatabaseService
 from services.database.interfaces import IProvider
 from services.database.config import DatabaseConfig
-from services.database.enums import DatabaseType, ConnectionStatus
-from services.database.exceptions import DatabaseError, ConfigurationError
+from services.database.enums import DatabaseType
+from services.database.exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
 

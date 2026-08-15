@@ -6,7 +6,6 @@ Web Admin Service — сервис для запуска админ-панели
 """
 
 import logging
-import asyncio
 import uvicorn
 from typing import Optional
 

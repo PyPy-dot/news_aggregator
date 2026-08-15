@@ -51,10 +51,8 @@ class NewsProcessingStrategy(ABC):
             post_id: ID поста
             **kwargs: Дополнительные параметры
         """
-        pass
 
     @property
     @abstractmethod
     def name(self) -> str:
         """Название стратегии."""
-        pass

@@ -6,10 +6,9 @@ Event Bus — шина событий для AI агентов.
 
 import asyncio
 import logging
-import heapq
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Callable, Coroutine, Optional, List, Tuple
+from typing import Callable, Coroutine, Optional, List
 
 from services.ai_agent.events import EventType, Event
 

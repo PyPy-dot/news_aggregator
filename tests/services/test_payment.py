@@ -3,11 +3,9 @@
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
-from services.payment.service import PaymentService
 from services.payment.test_provider import TestPaymentProvider
-from services.payment.abstractions import PaymentLink, PaymentData, PaymentStatus
+from services.payment.abstractions import PaymentStatus
 
 
 class TestTestPaymentProvider:

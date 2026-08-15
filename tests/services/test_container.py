@@ -3,13 +3,11 @@ Tests for DI Container and DatabaseService.
 """
 
 import pytest
-import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.core.container import Container
 from services.database import IDatabaseService, get_database_service
 from services.telegram.notification import NotificationService
-from database import RepositoryFactory
 
 # Для обратной совместимости в тестах
 DatabaseService = IDatabaseService

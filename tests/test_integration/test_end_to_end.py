@@ -18,7 +18,7 @@ import os
 import pytest
 import asyncio
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import Dict, Any
 
 # Пропускаем тесты если сервисы не настроены
 pytestmark = pytest.mark.skipif(

@@ -8,7 +8,6 @@ PostgreSQL Utilities — утилиты для администрировани�
 - Обслуживание (VACUUM, ANALYZE, REINDEX)
 """
 
-import asyncio
 import logging
 from typing import Optional, Dict, Any, List
 from datetime import datetime

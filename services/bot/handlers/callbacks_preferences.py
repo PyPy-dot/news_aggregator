@@ -14,11 +14,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
 from services.bot.handlers.router import admin
-from services.bot.handlers.states import UserPreferencesStates
 from database import RepositoryFactory
 from database.repositories.users import UserRepository
 from services.database import get_database_service
-from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -242,8 +240,7 @@ async def subscribe_buy_callback(callback: CallbackQuery):
     - Test provider: подписка оформляется мгновенно (бесплатно)
     - Telegram Stars: создаётся инвойс для оплаты
     """
-    from services.payment import get_payment_service, PaymentStatus
-    from services.bot.handlers.keyboards import create_subscription_kb
+    from services.payment import get_payment_service
 
     async with get_database_service().session_context() as session:
         user_repo = UserRepository(session)
@@ -320,7 +317,6 @@ async def _create_payment_link(
         )
 
         # Сохраняем payment_id в состоянии для отслеживания
-        from aiogram.fsm.context import FSMContext
         state_data = {'payment_id': payment_link.payment_id, 'amount': amount}
         # Note: FSM state management would need proper implementation
 

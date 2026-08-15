@@ -12,7 +12,6 @@
 import asyncio
 import aiohttp
 import subprocess
-import sys
 
 BOT_TOKEN = "8813165455:AAHVdNRZVK4ywuwhwyP_FmDg88ygHAFoPBE"
 

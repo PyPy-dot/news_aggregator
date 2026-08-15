@@ -17,10 +17,9 @@ import json
 import logging
 import time
 import uuid
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import Any, Callable, Coroutine, Optional, TypeVar, Dict, List
-from datetime import datetime
+from typing import Any, Callable, Coroutine, Optional, TypeVar
 
 import redis.asyncio as redis
 
@@ -726,7 +725,6 @@ class RedisTaskQueue:
 
 class QueueFullError(Exception):
     """Исключение при переполнении очереди."""
-    pass
 
 
 # Глобальный экземпляр очереди (singleton)

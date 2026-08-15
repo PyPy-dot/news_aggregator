@@ -5,7 +5,7 @@
 """
 
 import logging
-from aiogram import Router, F, types
+from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
@@ -13,13 +13,10 @@ from aiogram.fsm.context import FSMContext
 from services.database import get_database_service
 from database import RepositoryFactory
 from services.bot.handlers.keyboards import (
-    publishers_menu_kb,
     publishers_menu_inline_kb,
     publishers_list_view_kb,
     create_publisher_action_kb,
-    create_publishers_choice_kb,
     add_publisher_kb,
-    kb2,
     create_categories_select_kb,
 )
 from services.bot.handlers.states import PublisherStates
@@ -754,7 +751,7 @@ async def back_to_main_menu_from_publishers(message: Message, state: FSMContext)
 @router.message(F.text == '🔙 Назад')
 async def back_to_previous_from_publishers(message: Message, state: FSMContext):
     """Вернуться назад из текущего состояния publisher'ов."""
-    from services.bot.handlers.keyboards import publishers_menu_kb, add_publisher_kb
+    from services.bot.handlers.keyboards import publishers_menu_kb
 
     current_state = await state.get_state()
 

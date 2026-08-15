@@ -5,11 +5,9 @@ Moderation Notification Service — уведомления о модерации
 """
 
 import logging
-from typing import Optional, List
 
 from database.repositories.posts import PostRepository
 from database.repositories.channels import ChannelRepository
-from database.repositories.news import NewsRepository
 from services.telegram.notification import NotificationService
 
 logger = logging.getLogger(__name__)

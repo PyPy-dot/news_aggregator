@@ -39,7 +39,6 @@ async def main():
 
     try:
         from telethon import TelegramClient
-        from telethon.sessions import StringSession
 
         print(f"\n  🔑 Loading session...")
 

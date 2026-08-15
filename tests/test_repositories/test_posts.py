@@ -7,7 +7,6 @@ Tests for PostRepository.
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime, timezone, timedelta
 
 from database.repositories.posts import PostRepository
 
