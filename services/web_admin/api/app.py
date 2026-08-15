@@ -47,7 +47,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         path = request.url.path
 
         # Проверяем, является ли путь публичным
-        if path in PUBLIC_PATHS or path.startswith("/auth/") or path.startswith("/static") or path.startswith("/ws/"):
+        if path in PUBLIC_PATHS or path.startswith("/auth/") or path.startswith("/static"):
             return await call_next(request)
 
         # Проверяем наличие валидного токена
@@ -375,7 +375,7 @@ async def get_recent_news(limit: int = 5, user: Optional[dict] = Depends(get_opt
 # Включение роутов
 # =============================================================================
 
-from services.web_admin.routes import auth, dashboard, news, channels, users, tasks, rss, web, console, settings, listener_auth, listener_auth_ws
+from services.web_admin.routes import auth, dashboard, news, channels, users, tasks, rss, web, console, settings, listener_auth
 
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
@@ -387,7 +387,6 @@ app.include_router(rss.router, prefix="/rss", tags=["RSS"])
 app.include_router(web.router, prefix="/web", tags=["Web Parsing"])
 app.include_router(console.router, prefix="/console", tags=["Console"])
 app.include_router(listener_auth.router, prefix="/listener-auth", tags=["Listener Auth"])
-app.include_router(listener_auth_ws.router, prefix="/ws", tags=["Listener Auth WS"])
 app.include_router(settings.router, prefix="/settings", tags=["Settings"])
 
 

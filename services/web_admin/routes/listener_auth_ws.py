@@ -24,35 +24,25 @@ router = APIRouter()
 _active_connections: Set[WebSocket] = set()
 
 
-def _on_auth_state_change(state: dict) -> None:
+async def broadcast_state(state: dict) -> None:
     """
-    Callback для event-шины listener_auth.
+    Расслать обновление состояния всем подключенным WebSocket-клиентам.
 
-    Асинхронно рассылает обновления всем WebSocket-клиентам.
-    Вызывается синхронно из set_auth_step(), поэтому запускаем task.
+    Вызывается из listener_auth.py через event-шину при изменении _auth_state.
     """
-    if not _active_connections:
-        return
-
-    # Запускаем рассылку как background task (callback синхронный)
-    asyncio.get_event_loop().create_task(_broadcast(state))
-
-
-async def _broadcast(state: dict) -> None:
-    """Расслать обновление состояния всем подключенным клиентам."""
-    global _active_connections
     if not _active_connections:
         return
 
     message = {"type": "state_change", "state": state}
-    disconnected = set()
 
+    disconnected = set()
     for ws in _active_connections:
         try:
             await ws.send_json(message)
         except Exception:
             disconnected.add(ws)
 
+    # Чистим отключенных
     _active_connections -= disconnected
     if disconnected:
         logger.debug(f"🧹 Удалено {len(disconnected)} отключенных WebSocket клиентов")
@@ -60,7 +50,6 @@ async def _broadcast(state: dict) -> None:
 
 async def send_to_all(message: dict) -> None:
     """Расслать произвольное сообщение всем подключенным клиентам."""
-    global _active_connections
     disconnected = set()
     for ws in _active_connections:
         try:
@@ -69,21 +58,6 @@ async def send_to_all(message: dict) -> None:
             disconnected.add(ws)
 
     _active_connections -= disconnected
-
-
-# Подписаться на event-шину listener_auth
-def _subscribe_to_events() -> None:
-    """Подписаться на изменения состояния авторизации."""
-    try:
-        from services.web_admin.routes.listener_auth import on_state_change
-        on_state_change(_on_auth_state_change)
-        logger.info("✅ WebSocket подписан на события авторизации")
-    except ImportError as e:
-        logger.warning(f"⚠️ Не удалось подписаться на события: {e}")
-
-
-# Подписаться при импорте модуля
-_subscribe_to_events()
 
 
 @router.websocket("/listener-auth")

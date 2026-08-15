@@ -10,6 +10,7 @@ import logging
 from typing import Optional, Set, Any
 
 from telethon import TelegramClient, events
+from telethon.errors import SessionPasswordNeededError
 
 from typing import TYPE_CHECKING
 
@@ -253,7 +254,7 @@ class ListenerBot:
                 timeout=60,
                 use_ipv6=True,  # Требуется для работы в вашей сети
                 flood_sleep_threshold=300,
-                auto_reconnect=False,
+                auto_reconnect=True,
                 proxy=proxy,
                 # Указываем устройство как "официальный клиент" для доверия Telegram
                 device_model="Telegram Desktop",
@@ -303,7 +304,7 @@ class ListenerBot:
                             connection_retries=3,
                             retry_delay=1,
                             timeout=30,
-                            use_ipv6=True,
+                            use_ipv6=use_ipv6,
                             flood_sleep_threshold=60,
                             auto_reconnect=True,
                             proxy=proxy,
@@ -378,7 +379,7 @@ class ListenerBot:
                         connection_retries=3,
                         retry_delay=1,
                         timeout=30,
-                        use_ipv6=True,
+                        use_ipv6=use_ipv6,
                         flood_sleep_threshold=60,
                         auto_reconnect=True,
                         proxy=proxy,
@@ -407,7 +408,7 @@ class ListenerBot:
                         connection_retries=3,
                         retry_delay=1,
                         timeout=30,
-                        use_ipv6=True,
+                        use_ipv6=False,
                         flood_sleep_threshold=60,
                         auto_reconnect=True,
                         proxy=proxy,
@@ -433,29 +434,29 @@ class ListenerBot:
                 logger.warning("⚠️ Требуется авторизация!")
                 logger.info("📝 Для авторизации:")
                 logger.info("   1. Откройте веб-админку: http://localhost:8001/console")
-                logger.info("   2. Модальное окно появится автоматически")
-                logger.info("   3. Введите код из Telegram в модалке или в этой консоли")
+                logger.info("   2. Нажмите кнопку 'Telegram'")
+                logger.info("   3. Введите код из Telegram в модальном окне")
                 logger.info("")
+                logger.info("   ИЛИ введите код в этой консоли (ожидание 10 сек)...")
 
-                # Запускаем единый процесс авторизации (блокирующий)
-                # Поддерживает ввод кода из консоли ИЛИ из веб-интерфейса
-                from services.web_admin.routes.listener_auth import run_auth_process
+                # Запускаем авторизацию в фоне, чтобы не блокировать инициализацию
+                # Это позволяет веб-интерфейсу "перехватить" процесс авторизации
+                asyncio.create_task(self._console_auth())
 
-                auth_success = await run_auth_process(self)
-                if not auth_success:
-                    logger.error("❌ Авторизация не удалась — ListenerBot не будет работать")
-                    return
+                # Возвращаем сразу - не пытаемся получить me на неавторизованном клиенте
+                # Веб-интерфейс или консоль завершат авторизацию
+                logger.info("ℹ️ ListenerBot готов к авторизации - следите за уведомлениями")
+                return
 
-                # После успешной авторизации получаем информацию о пользователе
-                try:
-                    me = await self.client.get_me()
-                    if me:
-                        logger.info(f"✅ UserBot авторизован: @{me.username} (ID: {me.id})")
-                except Exception as e:
-                    logger.warning(f"⚠️ Не удалось получить информацию о пользователе: {e}")
-            else:
-                # Уже был авторизован — информация получена выше в блоке is_authorized
-                pass
+            # Получаем информацию о пользователе
+            try:
+                me = await self.client.get_me()
+                if me:
+                    logger.info(f"✅ UserBot авторизован: @{me.username} (ID: {me.id})")
+                else:
+                    logger.warning("⚠️ get_me() вернул None - возможна проблема с авторизацией")
+            except Exception as e:
+                logger.warning(f"⚠️ Не удалось получить информацию о пользователе: {e}")
 
             # Сохраняем строку сессии для будущего использования (опционально)
             # session_str = self.client.session.save()
@@ -517,6 +518,235 @@ class ListenerBot:
             # Не прерываем работу — ListenerBot может работать без авторизации
             # (будет пропущен при запуске в main.py)
             raise
+
+    async def _console_auth(self) -> None:
+        """
+        Авторизация через консольный ввод или веб-интерфейс.
+
+        Поддерживает ввод кода и пароля:
+        - Через консоль (input())
+        - Через веб-интерфейс (браузер)
+        """
+        logger.info("🔐 АВТОРИЗАЦИЯ TELEGRAM")
+        logger.info("📱 Код будет отправлен в ваше приложение Telegram")
+        logger.info("💻 Введите код в консоли ИЛИ в веб-интерфейсе (Админка → Консоль)")
+
+        # Запрашиваем код
+        sent = await self.client.send_code_request(settings.phone_number)
+        phone_code_hash = sent.phone_code_hash
+
+        # Ждем код из консоли или браузера
+        code = await self._wait_for_code(phone_code_hash)
+        if not code:
+            logger.error("❌ Авторизация отменена: код не получен")
+            return
+
+        try:
+            await self.client.sign_in(settings.phone_number, code, phone_code_hash=phone_code_hash)
+        except SessionPasswordNeededError:
+            logger.warning("🔒 Требуется облачный пароль Telegram")
+            logger.warning("💻 Введите пароль в консоли ИЛИ в веб-интерфейсе")
+
+            # Ждем пароль из консоли или браузера
+            password = await self._wait_for_password()
+            if not password:
+                logger.error("❌ Авторизация отменена: пароль не получен")
+                return
+
+            await self.client.sign_in(password=password)
+
+        logger.info("✅ АВТОРИЗАЦИЯ УСПЕШНА")
+
+    async def _wait_for_code(self, phone_code_hash: str) -> Optional[str]:
+        """
+        Ждать ввод кода из консоли или браузера.
+
+        Args:
+            phone_code_hash: Хэш кода подтверждения от Telegram
+
+        Returns:
+            Код подтверждения или None
+        """
+        # Запускаем задачу ожидания из браузера
+        browser_task = asyncio.create_task(
+            self._get_code_from_browser(phone_code_hash)
+        )
+
+        # Запускаем задачу ожидания из консоли
+        console_task = asyncio.create_task(
+            self._get_code_from_console()
+        )
+
+        # Ждем первый результат
+        done, pending = await asyncio.wait(
+            [browser_task, console_task],
+            return_when=asyncio.FIRST_COMPLETED
+        )
+
+        # Отменяем оставшуюся задачу
+        for task in pending:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        # Возвращаем первый полученный код
+        for task in done:
+            try:
+                code = task.result()
+                if code:
+                    return code
+            except Exception as e:
+                logger.debug(f"Ошибка получения кода: {e}")
+
+        return None
+
+    async def _get_code_from_browser(self, phone_code_hash: str) -> Optional[str]:
+        """
+        Ждать ввод кода из браузера.
+
+        Returns:
+            Код подтверждения или None
+        """
+        try:
+            from services.web_admin.routes.listener_auth import wait_for_code
+            logger.info("🌐 Ожидание кода из браузера...")
+            code = await wait_for_code()
+            if code:
+                logger.info(f"✅ Код получен из браузера")
+            return code
+        except Exception as e:
+            logger.debug(f"Ошибка ожидания кода из браузера: {e}")
+            return None
+
+    async def _get_code_from_console(self) -> Optional[str]:
+        """
+        Ждать ввод кода из консоли с таймаутом.
+
+        Returns:
+            Код подтверждения или None
+        """
+        try:
+            logger.info("⌨️  Ожидание кода из консоли (таймаут 10 сек)...")
+            import sys
+            loop = asyncio.get_event_loop()
+
+            def read_input():
+                print('Код из Telegram: ', end='', flush=True)
+                try:
+                    return sys.stdin.readline().strip()
+                except Exception:
+                    return None
+
+            # Таймаут 10 секунд на ввод кода из консоли
+            # Если код не введён, даём шанс браузеру
+            try:
+                code = await asyncio.wait_for(
+                    loop.run_in_executor(None, read_input),
+                    timeout=10.0
+                )
+                if code:
+                    logger.info(f"✅ Код получен из консоли")
+                    return code
+            except asyncio.TimeoutError:
+                logger.debug("⏰ Таймаут ожидания кода из консоли")
+                return None
+        except Exception as e:
+            logger.debug(f"Ошибка ожидания кода из консоли: {e}")
+            return None
+
+    async def _wait_for_password(self) -> Optional[str]:
+        """
+        Ждать ввод облачного пароля из консоли или браузера.
+
+        Returns:
+            Пароль или None
+        """
+        # Запускаем задачу ожидания из браузера
+        browser_task = asyncio.create_task(self._get_password_from_browser())
+
+        # Запускаем задачу ожидания из консоли
+        console_task = asyncio.create_task(self._get_password_from_console())
+
+        # Ждем первый результат
+        done, pending = await asyncio.wait(
+            [browser_task, console_task],
+            return_when=asyncio.FIRST_COMPLETED
+        )
+
+        # Отменяем оставшуюся задачу
+        for task in pending:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        # Возвращаем первый полученный пароль
+        for task in done:
+            try:
+                password = task.result()
+                if password:
+                    return password
+            except Exception as e:
+                logger.debug(f"Ошибка получения пароля: {e}")
+
+        return None
+
+    async def _get_password_from_browser(self) -> Optional[str]:
+        """
+        Ждать ввод пароля из браузера.
+
+        Returns:
+            Пароль или None
+        """
+        try:
+            from services.web_admin.routes.listener_auth import wait_for_password
+            logger.info("🌐 Ожидание пароля из браузера...")
+            password = await wait_for_password()
+            if password:
+                logger.info(f"✅ Пароль получен из браузера")
+            return password
+        except Exception as e:
+            logger.debug(f"Ошибка ожидания пароля из браузера: {e}")
+            return None
+
+    async def _get_password_from_console(self) -> Optional[str]:
+        """
+        Ждать ввод пароля из консоли с таймаутом.
+
+        Returns:
+            Пароль или None
+        """
+        try:
+            logger.info("⌨️  Ожидание пароля из консоли (таймаут 10 сек)...")
+            import sys
+            loop = asyncio.get_event_loop()
+
+            def read_input():
+                print('Облачный пароль: ', end='', flush=True)
+                try:
+                    return sys.stdin.readline().strip()
+                except Exception:
+                    return None
+
+            # Таймаут 10 секунд на ввод пароля из консоли
+            try:
+                password = await asyncio.wait_for(
+                    loop.run_in_executor(None, read_input),
+                    timeout=10.0
+                )
+                if password:
+                    logger.info(f"✅ Пароль получен из консоли")
+                    return password
+            except asyncio.TimeoutError:
+                logger.debug("⏰ Таймаут ожидания пароля из консоли")
+                return None
+        except Exception as e:
+            logger.debug(f"Ошибка ожидания пароля из консоли: {e}")
+            return None
+
 
     async def start(self) -> None:
         """

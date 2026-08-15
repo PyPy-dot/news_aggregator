@@ -14,6 +14,9 @@
 *.session*
 *.session-journal
 
+# Web admin sessions
+.web_admin_session*
+
 # Logs
 /logs/
 *.log
