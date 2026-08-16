@@ -402,68 +402,73 @@ async def generate_news_endpoint(
             return {"success": False, "error": "Выберите хотя бы один источник публикации"}
 
         # Получаем orchestrator из контейнера
-        from main import app as main_app
-        container = getattr(main_app, '_global_container', None) if main_app else None
+        import sys
+        main_mod = sys.modules.get('main')
+        container = getattr(main_mod, '_global_container', None) if main_mod else None
+
         if not container:
-            import sys
-            main_mod = sys.modules.get('main')
-            container = getattr(main_mod, '_global_container', None) if main_mod else None
+            # Fallback: попробовать импортировать напрямую
+            try:
+                from main import _global_container as gc
+                container = gc
+            except ImportError:
+                pass
 
-        if container:
-            async with container.session() as session:
-                from database import RepositoryFactory
-                factory = RepositoryFactory(session)
-                orchestrator = await container.create_orchestrator(session)
+        if not container:
+            return {"success": False, "error": "DI контейнер недоступен. Убедитесь что приложение запущено через main.py"}
 
-                # 1. Генерация + сохранение без публикации
-                news_id = await orchestrator.generate_direct_news(
-                    description=text,
-                    publisher_channel_id=None,
-                    publish_immediately=False,
-                )
-                await session.commit()
+        async with container.session() as session:
+            from database import RepositoryFactory
+            factory = RepositoryFactory(session)
+            orchestrator = await container.create_orchestrator(session)
 
-                if not news_id:
-                    return {"success": False, "error": "Не удалось сгенерировать новость"}
+            # 1. Генерация + сохранение без публикации
+            news_id = await orchestrator.generate_direct_news(
+                description=text,
+                publisher_channel_id=None,
+                publish_immediately=False,
+            )
+            await session.commit()
 
-                # 2. Читаем сгенерированный текст для публикации
-                news_repo = factory.news()
-                news_obj = await news_repo.get(news_id)
-                news_text = getattr(news_obj, 'text', '') if news_obj else text
+            if not news_id:
+                return {"success": False, "error": "Не удалось сгенерировать новость"}
 
-                # 3. Публикация в выбранные источники
-                results = {"bot": 0, "channels": 0, "errors": []}
+            # 2. Читаем сгенерированный текст для публикации
+            news_repo = factory.news()
+            news_obj = await news_repo.get(news_id)
+            news_text = getattr(news_obj, 'text', '') if news_obj else text
 
-                if send_to_bot:
-                    try:
-                        await orchestrator._publish_direct_to_bot(news_id, news_text)
-                        results["bot"] = 1
-                    except Exception as e:
-                        results["errors"].append(f"Бот: {e}")
+            # 3. Публикация в выбранные источники
+            results = {"bot": 0, "channels": 0, "errors": []}
 
-                if send_to_all_channels:
-                    try:
-                        await orchestrator._publish_direct_to_all_channels(news_id, news_text)
-                        publishers_repo = factory.publishers()
-                        publishers = await publishers_repo.get_all(active_only=True)
-                        results["channels"] = len(publishers)
-                    except Exception as e:
-                        results["errors"].append(f"Все каналы: {e}")
+            if send_to_bot:
+                try:
+                    await orchestrator._publish_direct_to_bot(news_id, news_text)
+                    results["bot"] = 1
+                except Exception as e:
+                    results["errors"].append(f"Бот: {e}")
 
-                for pub_id in publisher_ids:
-                    try:
-                        await orchestrator._publish_direct_to_channel(news_id, news_text, pub_id)
-                        results["channels"] += 1
-                    except Exception as e:
-                        results["errors"].append(f"Канал {pub_id}: {e}")
+            if send_to_all_channels:
+                try:
+                    await orchestrator._publish_direct_to_all_channels(news_id, news_text)
+                    publishers_repo = factory.publishers()
+                    publishers = await publishers_repo.get_all(active_only=True)
+                    results["channels"] = len(publishers)
+                except Exception as e:
+                    results["errors"].append(f"Все каналы: {e}")
 
-                return {
-                    "success": True,
-                    "news_id": news_id,
-                    "results": results,
-                }
-        else:
-            return {"success": False, "error": "DI контейнер не доступен"}
+            for pub_id in publisher_ids:
+                try:
+                    await orchestrator._publish_direct_to_channel(news_id, news_text, pub_id)
+                    results["channels"] += 1
+                except Exception as e:
+                    results["errors"].append(f"Канал {pub_id}: {e}")
+
+            return {
+                "success": True,
+                "news_id": news_id,
+                "results": results,
+            }
 
     except Exception as e:
         logger.error(f"Ошибка генерации новости: {e}", exc_info=True)
