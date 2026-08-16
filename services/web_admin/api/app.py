@@ -657,25 +657,48 @@ async def get_recent_news(limit: int = 5, user: Optional[dict] = Depends(get_opt
     """
     Получить последние новости для главной панели.
 
+    Возвращает сгенерированные новости (GeneratedNews) с кратким текстом.
+    Если сгенерированных новостей нет — fallback на последние посты (TelegramPost).
+
     Args:
         limit: Максимальное количество новостей (по умолчанию 5)
     """
     from sqlalchemy import select, desc
-    from database.models import TelegramPost
+    from database.models import GeneratedNews, TelegramPost
 
     db_service = get_database_service()
 
     try:
         async with db_service.session_context() as session:
+            # Сначала пытаемся получить сгенерированные новости
+            query = select(GeneratedNews).order_by(desc(GeneratedNews.created_at)).limit(limit)
+            result = await session.execute(query)
+            items = result.scalars().all()
+
+            if items:
+                news_list = []
+                for item in items:
+                    text_preview = (item.text or '')[:200]
+                    news_list.append({
+                        "id": item.id,
+                        "text_preview": text_preview,
+                        "category": item.category or 'Общее',
+                        "moderation_status": item.moderation_status or 'pending',
+                        "created_at": item.created_at.isoformat() if item.created_at else None,
+                    })
+                return {"news": news_list}
+
+            # Fallback: если GeneratedNews пустая, показываем последние посты
             query = select(TelegramPost).order_by(desc(TelegramPost.created_at)).limit(limit)
             result = await session.execute(query)
             posts = result.scalars().all()
 
             news_list = []
             for post in posts:
+                text_preview = (post.text or '')[:200]
                 news_list.append({
                     "id": post.id,
-                    "title": getattr(post, 'title', None) or 'Без названия',
+                    "text_preview": text_preview,
                     "category": getattr(post, 'category', None) or 'Общее',
                     "created_at": post.created_at.isoformat() if post.created_at else None,
                     "urgency": getattr(post, 'urgency', None),
