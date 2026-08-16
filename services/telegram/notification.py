@@ -12,6 +12,7 @@ import json
 from typing import Optional, List, TYPE_CHECKING
 
 import aiohttp
+from aiohttp import ClientTimeout, ClientConnectionError, ClientError
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -496,7 +497,7 @@ class NotificationService:
                             f"({news_id_str}таймаут после {retries} попыток)"
                         )
                         return False
-                except (aiohttp.ClientTimeout, aiohttp.ClientConnectionError, aiohttp.ClientError) as e:
+                except (ClientTimeout, ClientConnectionError, ClientError) as e:
                     # Сетевые ошибки aiohttp — пробуем снова
                     if attempt < retries - 1:
                         delay = 2 ** attempt
@@ -512,10 +513,26 @@ class NotificationService:
                         )
                         return False
                 except Exception as e:
+                    # TelegramNetworkError и другие сетевые ошибки aiogram — ретраим
+                    error_name = type(e).__name__
+                    if 'Network' in error_name or 'Connection' in error_name or 'Timeout' in error_name:
+                        if attempt < retries - 1:
+                            delay = 2 ** attempt
+                            logger.warning(
+                                f"⏳ Сетевая ошибка при отправке подписчику ID={telegram_id} "
+                                f"({news_id_str}попытка {attempt + 1}/{retries}, {error_name}), повтор через {delay}с..."
+                            )
+                            await asyncio.sleep(delay)
+                        else:
+                            logger.error(
+                                f"❌ Превышено количество попыток отправки подписчику ID={telegram_id} "
+                                f"({news_id_str}{error_name})"
+                            )
+                            return False
                     # Не временная ошибка — сразу логируем и прекращаем
                     logger.error(
                         f"❌ Ошибка отправки новости подписчику ID={telegram_id} "
-                        f"({news_id_str}ошибка: {type(e).__name__}: {e})"
+                        f"({news_id_str}ошибка: {error_name}: {e})"
                     )
                     return False
 
@@ -604,7 +621,7 @@ class NotificationService:
                                 f"({news_id_str}таймаут после {retries} попыток)"
                             )
                             return False
-                    except (aiohttp.ClientTimeout, aiohttp.ClientConnectionError, aiohttp.ClientError) as e:
+                    except (ClientTimeout, ClientConnectionError, ClientError) as e:
                         # Сетевые ошибки aiohttp — пробуем снова
                         if attempt < retries - 1:
                             delay = 2 ** attempt

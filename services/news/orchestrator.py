@@ -884,7 +884,10 @@ class NewsOrchestrator:
                 news_id=news_id,
                 ignore_preferences=True,  # Игнорируем категории и тэги
             )
-            logger.info(f"✅ Опубликована новость ID={news_id} через бот: отправлено {sent_count} уведомлений")
+            if sent_count > 0:
+                logger.info(f"✅ Опубликована новость ID={news_id} через бот: отправлено {sent_count} уведомлений")
+            else:
+                logger.warning(f"⚠️ Новость ID={news_id}: бот не отправил уведомления (0 из подписчиков получило)")
         except Exception as e:
             logger.error(f"Ошибка публикации новости через бот ID={news_id}: {e}")
 
