@@ -1,7 +1,7 @@
 # 🏥 Health Check — Мониторинг здоровья системы
 
-**Версия:** 1.0  
-**Дата:** 2026-08-10
+**Версия:** 2.0  
+**Дата:** 2026-08-16
 
 ---
 
@@ -14,6 +14,7 @@ Health Check система предоставляет API для проверк
 - ✅ Telegram бот (Admin Bot)
 - ✅ Векторный поиск (ChromaDB)
 - ✅ Circuit breaker'ы
+- ✅ Listener Bot (Telethon)
 - ✅ Планировщик задач
 - ✅ Очередь категоризации
 
@@ -122,8 +123,8 @@ checker.add_check("my_service", check_my_service, SeverityLevel.HIGH)
 ```json
 {
   "status": "healthy",
-  "healthy_components": 7,
-  "total_components": 8,
+  "healthy_components": 9,
+  "total_components": 10,
   "critical_issues": 0,
   "critical_issue_names": []
 }
@@ -146,8 +147,8 @@ checker.add_check("my_service", check_my_service, SeverityLevel.HIGH)
   "version": "3.5.0",
   "checked_at": "2026-08-10T12:00:00Z",
   "summary": {
-    "total_components": 8,
-    "healthy": 7,
+    "total_components": 10,
+    "healthy": 9,
     "unhealthy": 1,
     "critical_issues": 0
   },
@@ -217,6 +218,7 @@ curl http://localhost:8000/api/health/database
 - `vector_search`
 - `circuit_breakers`
 - `scheduler`
+- `listener`
 - `categorization_queue`
 
 ---
@@ -243,8 +245,8 @@ Readiness probe для Kubernetes. Проверяет критичные зав�
 ```json
 {
   "status": "ok",
-  "healthy_components": 7,
-  "total_components": 8,
+  "healthy_components": 9,
+  "total_components": 10,
   "critical_issues": 0
 }
 ```

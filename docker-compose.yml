@@ -58,7 +58,7 @@ services:
     command: python -m services.web_admin.api.app
     environment:
       - DATABASE_URL=postgresql+asyncpg://news:news_password@db:5432/news_aggregator
-      - JWT_SECRET=dev-secret-key-change-in-production
+      - WEB_ADMIN_JWT_SECRET=dev-secret-key-change-in-production
       - LOG_LEVEL=INFO
     depends_on:
       db:

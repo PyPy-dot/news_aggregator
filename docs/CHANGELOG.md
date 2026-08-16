@@ -6,6 +6,17 @@
 
 ## 2026-08-16 — v4.0.0 (hotfix) — Health Check, ServiceManager, Web Admin
 
+### Bugfix — Консоль управления
+
+- ✅ Исправлена кнопка «Стоп» в консоли — `disabled` логика была инвертирована (`some` → `every`): кнопка теперь активна когда есть запущенные сервисы, отключена когда все остановлены
+- ✅ Добавлен фолбек `|| 'stopped'` для отсутствующих статусов сервисов — `undefined` больше не ломает проверку
+
+### Web Admin — рефакторинг шаблонов
+
+- ✅ Вынесен `base.html` — единый layout (header, sidebar, footer, modals) для всех страниц
+- ✅ Компонент `components/sidebar.html` — навигация вынесена в отдельный шаблон
+- ✅ Консоль, главная, настройки — наследуются от base.html
+
 ### Health Check — проверка здоровья компонентов
 
 - ✅ Исправлен `check_database_health()` — добавлен import `get_database_service`, безопасный доступ к `db_type`
@@ -51,9 +62,10 @@
 ### Документация
 
 - ✅ README.md — полная актуализация
-- ✅ docs/ARCHITECTURE.md — полная актуализация (ServiceManager, Health Check, Web Admin)
+- ✅ docs/ARCHITECTURE.md — полная актуализация (ServiceManager, Health Check 10 компонентов, Web Admin v2)
 - ✅ docs/WEB_ADMIN_GUIDE.md — полная переработка (52 endpoint'а, 7+ страниц)
-- ✅ docs/CHANGELOG.md — добавлена запись за 2026-08-16
+- ✅ docs/RUNBOOK.md — обновление версии, переменных, ServiceManager
+- ✅ docs/CHANGELOG.md — добавлены записи для Stop All fix и шаблонов
 
 ---
 

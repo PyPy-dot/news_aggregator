@@ -175,7 +175,7 @@ docker-compose exec ollama ollama pull qwen2.5:7b
 | Основное приложение | http://localhost | 8000 |
 | Web админка | http://localhost:8001 | 8001 |
 | PostgreSQL | localhost | 5432 |
-| ChromaDB | http://localhost:8000 | 8000 |
+| ChromaDB | http://localhost:8002 | 8002 |
 | Ollama | http://localhost:11434 | 11434 |
 | Redis | localhost | 6379 |
 | Prometheus | http://localhost:9090 | 9090 |
@@ -239,11 +239,14 @@ python main.py
 | `ADMIN_ID` | Telegram ID администратора | ✅ |
 | `WEB_ADMIN_JWT_SECRET` | JWT секрет для веб-админки | ✅ |
 | `ENCRYPTION_KEY` | Ключ шифрования (32+ символа) | ✅ |
+| `TELEGRAM_USE_IPV6` | IPv6 для Telegram (true/false) | — |
 | `DATABASE_URL` | PostgreSQL URL (опционально) | — |
 | `REDIS_URL` | Redis URL (опционально) | — |
 | `LLM_PRIMARY_PROVIDER` | Основной LLM провайдер | — |
 | `OLLAMA_HOST` | URL Ollama API | — |
 | `OLLAMA_MODEL` | Модель Ollama | — |
+| `TELEGRAM_PROXY` | SOCKS/HTTP прокси для Telegram | — |
+| `CHROMA_HOST` | ChromaDB URL | — |
 
 ### Основные настройки
 

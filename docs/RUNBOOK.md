@@ -1,7 +1,7 @@
 # 🚀 Runbook: Запуск и обслуживание News Aggregator
 
-**Версия:** 3.5.0  
-**Дата:** 2026-08-10
+**Версия:** 4.0.0  
+**Дата:** 2026-08-16
 
 ---
 
@@ -10,7 +10,7 @@
 ### 1. Установка зависимостей
 
 ```bash
-cd /Users/vladvolk/Documents/проекты/news_aggregator
+cd news_aggregator
 
 # Создаём виртуальное окружение (если нет)
 python3 -m venv .venv
@@ -34,11 +34,13 @@ nano .env
 
 | Переменная | Описание | Пример |
 |------------|----------|--------|
-| `BOT_TOKEN` | Токен Telegram бота | `123456:ABC-DEF...` |
-| `API_ID` | Telegram API ID | `39156045` |
-| `API_HASH` | Telegram API hash | `6a097519...` |
-| `PHONE_NUMBER` | Номер для UserBot | `+79991234567` |
+| `TELEGRAM_BOT_TOKEN` | Токен Telegram бота | `123456:ABC-DEF...` |
+| `TELEGRAM_API_ID` | Telegram API ID | `39156045` |
+| `TELEGRAM_API_HASH` | Telegram API hash | `6a097519...` |
+| `TELEGRAM_PHONE_NUMBER` | Номер для UserBot | `+79991234567` |
 | `ADMIN_ID` | Ваш Telegram ID | `123456789` |
+| `WEB_ADMIN_JWT_SECRET` | JWT секрет для веб-админки | `openssl rand -hex 32` |
+| `ENCRYPTION_KEY` | Ключ шифрования (32+ символов) | `openssl rand -hex 32` |
 
 **Как получить:**
 - **BOT_TOKEN**: [@BotFather](https://t.me/BotFather) → `/newbot`
@@ -68,24 +70,33 @@ python3 main.py
 **Ожидаемый вывод:**
 ```
 [INFO] 🔧 Инициализация приложения...
-[INFO] ✅ БД подключена: SQLITE
-[INFO] ✅ Admin Bot инициализирован
-[INFO] ✅ Все сервисы запущены
-[INFO] 📍 Нажмите Ctrl+C для остановки
+[INFO] ✅ БД подключена: SQLITE (или PostgreSQL)
+[INFO] ✅ Web Admin запущен: http://localhost:8001
+[INFO] ✅ ServiceManager инициализирован
+[INFO] 📍 Сервисы остановлены - нажмите 'Старт' в консоли для запуска
 ```
+
+**Сервисы запускаются лениво** через веб-админку (`http://localhost:8001/console`):
+- Откройте консоль → нажмите **Старт** для запуска всех сервисов
+- Или запускайте отдельные сервисы: Bot, Listener, Scheduler
 
 ---
 
 ## 🔧 Управление сервисами
 
+### ServiceManager (через веб-админку)
+
+Сервисы управляются через консоль админки (`http://localhost:8001/console`):
+
+- **Старт** — запуск всех сервисов (Bot, Listener, Scheduler)
+- **Стоп** — остановка всех сервисов
+- **Бот / Лисенер / Шедулер** — индивидуальный рестарт
+
+Статусы обновляются автоматически каждые 5 секунд.
+
 ### Остановка
 
-Нажмите `Ctrl+C` в терминале — приложение корректно остановит все сервисы:
-- Admin Bot (aiogram)
-- Listener Bot (Telethon)
-- Scheduler (планировщик)
-- EventBus (шина событий)
-- RSS парсер
+Нажмите `Ctrl+C` в терминале — приложение корректно остановит все сервисы через ServiceManager.stop_all().
 
 ### Перезапуск
 
@@ -235,7 +246,8 @@ print('✅ Все импорты работают')
 ps aux | grep "python3 main.py" | grep -v grep
 
 # Проверка портов
-lsof -i :8000  # Admin Bot
+lsof -i :8000  # Main app
+lsof -i :8001  # Web Admin
 lsof -i :11434 # Ollama
 ```
 
@@ -292,7 +304,8 @@ curl http://localhost:11434/api/generate -d '{
 4. **Настройте firewall:**
    ```bash
    # Разрешите только необходимые порты
-   sudo ufw allow 8000  # Admin Bot
+   sudo ufw allow 8000  # Main app
+   sudo ufw allow 8001  # Web Admin
    sudo ufw allow 11434 # Ollama (локально)
    ```
 
@@ -353,6 +366,7 @@ kill -9 <PID>
 
 # Проверьте, освободился ли порт
 lsof -i :8000
+lsof -i :8001
 
 # Запустите заново
 python3 main.py

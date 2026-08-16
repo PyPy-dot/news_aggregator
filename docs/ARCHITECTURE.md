@@ -97,7 +97,7 @@
 │  ┌──────────────────┐  ┌────────────────┐  ┌────────────────┐  │
 │  │ Health Check     │  │ Monitoring     │  │ Logging        │  │
 │  │ ──────────────── │  │ ────────────── │  │ ────────────── │  │
-│  │ • 8 компонентов  │  │ • Prometheus   │  │ • RotatingFile │  │
+│  │ • 10 компонентов │  │ • Prometheus   │  │ • RotatingFile │  │
 │  │ • API endpoints  │  │ • Grafana      │  │ • JSON format  │  │
 │  └──────────────────┘  └────────────────┘  └────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
@@ -332,6 +332,7 @@ services/monitoring/
 | **llm_fallback** | HIGH | Проверка всех провайдеров |
 | **vector_search** | HIGH | `client.list_collections()` |
 | **circuit_breakers** | MEDIUM | Состояние всех breaker'ов |
+| **listener** | HIGH | Проверка подключения ListenerBot (Telethon) |
 | **scheduler** | MEDIUM | Подсчёт задач по статусам |
 | **categorization_queue** | MEDIUM | Наличие очереди |
 
@@ -384,9 +385,10 @@ services/web_admin/
 ├── config.py           # Конфигурация + load_dotenv
 ├── log_handler.py      # Логирование
 └── templates/
-    ├── index.html      # Главная панель
-    ├── console.html    # Консоль управления
-    ├── settings.html   # Настройки
+    ├── base.html       # Единый layout (header, sidebar, footer, modals)
+    ├── index.html      # Главная панель (extends base)
+    ├── console.html    # Консоль управления (extends base)
+    ├── settings.html   # Настройки (extends base)
     ├── login.html      # Страница входа
     ├── news.html       # Новости
     ├── channels.html   # Каналы
@@ -395,7 +397,8 @@ services/web_admin/
     ├── rss.html        # RSS
     ├── web.html        # Web источники
     └── components/
-        ├── footer.html # Футер с глобальным статусом
+        ├── sidebar.html             # Навигационная панель
+        ├── footer.html              # Футер с глобальным статусом
         ├── listener-auth-modal.html
         └── notifications-modal.html
 ```

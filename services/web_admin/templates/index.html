@@ -1,406 +1,215 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>News Aggregator — Админ-панель</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        primary: '#3B82F6',
-                        secondary: '#10B981',
-                        accent: '#8B5CF6',
-                        dark: '#1F2937',
-                    }
-                }
-            }
-        }
-    </script>
-    <style>
-        .sidebar-item:hover {
-            background: linear-gradient(90deg, rgba(59,130,246,0.1) 0%, transparent 100%);
-            border-left: 3px solid #3B82F6;
-        }
-        .sidebar-item.active {
-            background: linear-gradient(90deg, rgba(59,130,246,0.15) 0%, transparent 100%);
-            border-left: 3px solid #3B82F6;
-            color: #3B82F6;
-        }
-        .card-hover:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-        }
-        .stat-card {
-            transition: all 0.3s ease;
-        }
-        /* Кнопки-фильтры уведомлений */
-        .notif-filter-btn {
-            color: #4B5563;
-            border-color: #E5E7EB;
-        }
-        .notif-filter-btn.active {
-            background: #EFF6FF;
-            border-color: #93C5FD;
-            color: #1D4ED8;
-        }
-        /* Анимация появления */
-        .fade-in {
-            animation: fadeIn 0.5s ease-in;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-    </style>
-</head>
-<body class="bg-gray-50">
-    <div class="flex h-screen overflow-hidden">
+{% extends "base.html" %}
 
-        <!-- Боковая панель -->
-        <aside class="w-64 bg-dark text-white flex-shrink-0 overflow-y-auto">
-            <!-- Логотип -->
-            <div class="p-6 border-b border-gray-700">
-                <div class="flex items-center space-x-3">
-                    <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-                        <i class="fas fa-newspaper text-white"></i>
-                    </div>
-                    <div>
-                        <h1 class="text-lg font-bold">News Aggregator</h1>
-                        <p class="text-xs text-gray-400">Admin Panel v{{ version }}</p>
-                    </div>
+{% set active_page = '' %}
+
+{% block title %}News Aggregator — Главная{% endblock %}
+
+{% block page_title %}<h2 class="text-2xl font-bold text-gray-800">Главная панель</h2>{% endblock %}
+{% block page_subtitle %}<p class="text-sm text-gray-500 mt-1">Добро пожаловать в систему управления новостями</p>{% endblock %}
+
+{% block content %}
+    <!-- Карточки статистики -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <!-- Новости -->
+        <div class="bg-white rounded-xl shadow-sm p-6 card-hover stat-card border-l-4 border-blue-500">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-gray-500 uppercase tracking-wide">Всего новостей</p>
+                    <p class="text-3xl font-bold text-gray-800 mt-1" id="stat-news">&#8212;</p>
+                    <p class="text-xs text-green-600 mt-2"><i class="fas fa-arrow-up"></i> Обновляется</p>
+                </div>
+                <div class="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-newspaper text-blue-500 text-2xl"></i>
                 </div>
             </div>
+        </div>
 
-            <!-- Навигация -->
-            <nav class="mt-6 px-3">
-                <p class="text-xs text-gray-500 uppercase tracking-wider mb-3 px-3">Основное</p>
-
-                <a href="/" class="sidebar-item active flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
-                    <i class="fas fa-home w-5"></i>
-                    <span class="ml-3">Главная</span>
-                </a>
-
-                <a href="/dashboard" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
-                    <i class="fas fa-chart-line w-5"></i>
-                    <span class="ml-3">Дашборд</span>
-                </a>
-
-                <a href="/news" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
-                    <i class="fas fa-newspaper w-5"></i>
-                    <span class="ml-3">Новости</span>
-                </a>
-
-                <a href="/channels" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
-                    <i class="fas fa-broadcast-tower w-5"></i>
-                    <span class="ml-3">Каналы</span>
-                </a>
-
-                <a href="/users" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
-                    <i class="fas fa-users w-5"></i>
-                    <span class="ml-3">Пользователи</span>
-                </a>
-
-                <p class="text-xs text-gray-500 uppercase tracking-wider mb-3 px-3 mt-6">Источники</p>
-
-                <a href="/tasks" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
-                    <i class="fas fa-tasks w-5"></i>
-                    <span class="ml-3">Задачи</span>
-                </a>
-
-                <a href="/rss" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
-                    <i class="fas fa-rss w-5"></i>
-                    <span class="ml-3">RSS ленты</span>
-                </a>
-
-                <a href="/web" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
-                    <i class="fas fa-globe w-5"></i>
-                    <span class="ml-3">Web парсинг</span>
-                </a>
-
-                <p class="text-xs text-gray-500 uppercase tracking-wider mb-3 px-3 mt-6">Инструменты</p>
-
-                <a href="/console" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
-                    <i class="fas fa-terminal w-5"></i>
-                    <span class="ml-3">Консоль</span>
-                </a>
-
-                <a href="/settings" class="sidebar-item flex items-center px-3 py-3 rounded-lg mb-1 transition-all">
-                    <i class="fas fa-cog w-5"></i>
-                    <span class="ml-3">Настройки</span>
-                </a>
-            </nav>
-        </aside>
-
-        <!-- Основной контент -->
-        <div class="flex-1 flex flex-col overflow-hidden">
-
-            <!-- Верхняя панель -->
-            <header class="bg-white shadow-sm border-b border-gray-200">
-                <div class="px-6 py-4 flex items-center justify-between">
-                    <div>
-                        <h2 class="text-2xl font-bold text-gray-800">Главная панель</h2>
-                        <p class="text-sm text-gray-500 mt-1">Добро пожаловать в систему управления новостями</p>
-                    </div>
-                    <div class="flex items-center space-x-4">
-                        <!-- Уведомления -->
-                        <button onclick="openNotificationsModal()" class="relative p-2 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer" title="Уведомления">
-                            <i class="fas fa-bell text-xl"></i>
-                            <span id="notification-badge" class="absolute -top-0.5 -right-0.5 px-1.5 min-w-[18px] h-[18px] text-[11px] font-bold bg-red-500 text-white rounded-full flex items-center justify-center hidden">0</span>
-                        </button>
-
-                        <!-- Профиль / Вход -->
-                        {% if user and user.logged_in %}
-                        <div class="flex items-center space-x-4">
-                            <div class="flex items-center space-x-3 pl-4 border-l border-gray-200">
-                                <div class="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center text-white font-semibold">
-                                    {{ user.username[0].upper() if user.username else 'A' }}
-                                </div>
-                                <div>
-                                    <p class="text-sm font-medium text-gray-700">{{ user.username }}</p>
-                                    <p class="text-xs text-gray-500">Администратор</p>
-                                </div>
-                            </div>
-                            <a href="/auth/logout" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm font-medium">
-                                <i class="fas fa-sign-out-alt mr-2"></i>
-                                Выйти
-                            </a>
-                        </div>
-                        {% else %}
-                        <a href="/auth/login" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium">
-                            <i class="fas fa-sign-in-alt mr-2"></i>
-                            Войти
-                        </a>
-                        {% endif %}
-                    </div>
+        <!-- Каналы -->
+        <div class="bg-white rounded-xl shadow-sm p-6 card-hover stat-card border-l-4 border-purple-500">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-gray-500 uppercase tracking-wide">Каналы</p>
+                    <p class="text-3xl font-bold text-gray-800 mt-1" id="stat-channels">&#8212;</p>
+                    <p class="text-xs text-gray-400 mt-2"><i class="fas fa-circle text-green-500 text-xs"></i> Активные</p>
                 </div>
-            </header>
-
-            <!-- Контент страницы -->
-            <main class="flex-1 overflow-y-auto p-6 bg-gray-50">
-                <div class="max-w-7xl mx-auto fade-in">
-
-                    <!-- Карточки статистики -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                        <!-- Новости -->
-                        <div class="bg-white rounded-xl shadow-sm p-6 card-hover stat-card border-l-4 border-blue-500">
-                            <div class="flex items-center justify-between">
-                                <div>
-                                    <p class="text-sm text-gray-500 uppercase tracking-wide">Всего новостей</p>
-                                    <p class="text-3xl font-bold text-gray-800 mt-1" id="stat-news">—</p>
-                                    <p class="text-xs text-green-600 mt-2">
-                                        <i class="fas fa-arrow-up"></i> Обновляется
-                                    </p>
-                                </div>
-                                <div class="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center">
-                                    <i class="fas fa-newspaper text-blue-500 text-2xl"></i>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Каналы -->
-                        <div class="bg-white rounded-xl shadow-sm p-6 card-hover stat-card border-l-4 border-purple-500">
-                            <div class="flex items-center justify-between">
-                                <div>
-                                    <p class="text-sm text-gray-500 uppercase tracking-wide">Каналы</p>
-                                    <p class="text-3xl font-bold text-gray-800 mt-1" id="stat-channels">—</p>
-                                    <p class="text-xs text-gray-400 mt-2">
-                                        <i class="fas fa-circle text-green-500 text-xs"></i> Активные
-                                    </p>
-                                </div>
-                                <div class="w-14 h-14 bg-purple-100 rounded-xl flex items-center justify-center">
-                                    <i class="fas fa-broadcast-tower text-purple-500 text-2xl"></i>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Пользователи -->
-                        <div class="bg-white rounded-xl shadow-sm p-6 card-hover stat-card border-l-4 border-green-500">
-                            <div class="flex items-center justify-between">
-                                <div>
-                                    <p class="text-sm text-gray-500 uppercase tracking-wide">Пользователи</p>
-                                    <p class="text-3xl font-bold text-gray-800 mt-1" id="stat-users">—</p>
-                                    <p class="text-xs text-green-600 mt-2">
-                                        <i class="fas fa-star text-yellow-500"></i> Подписки
-                                    </p>
-                                </div>
-                                <div class="w-14 h-14 bg-green-100 rounded-xl flex items-center justify-center">
-                                    <i class="fas fa-users text-green-500 text-2xl"></i>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Задачи -->
-                        <div class="bg-white rounded-xl shadow-sm p-6 card-hover stat-card border-l-4 border-orange-500">
-                            <div class="flex items-center justify-between">
-                                <div>
-                                    <p class="text-sm text-gray-500 uppercase tracking-wide">Задачи</p>
-                                    <p class="text-3xl font-bold text-gray-800 mt-1" id="stat-tasks">—</p>
-                                    <p class="text-xs text-orange-600 mt-2">
-                                        <i class="fas fa-clock"></i> В очереди
-                                    </p>
-                                </div>
-                                <div class="w-14 h-14 bg-orange-100 rounded-xl flex items-center justify-center">
-                                    <i class="fas fa-tasks text-orange-500 text-2xl"></i>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Быстрые действия -->
-                    <div class="bg-white rounded-xl shadow-sm p-6 mb-8">
-                        <h3 class="text-lg font-bold text-gray-800 mb-4">
-                            <i class="fas fa-bolt text-yellow-500 mr-2"></i>
-                            Быстрые действия
-                        </h3>
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <button onclick="openQuickNewsModal()" class="flex items-center p-4 border border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all group cursor-pointer">
-                                <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-blue-200 transition-colors">
-                                    <i class="fas fa-plus text-blue-500"></i>
-                                </div>
-                                <div class="text-left">
-                                    <p class="font-medium text-gray-700">Создать новость</p>
-                                    <p class="text-xs text-gray-500">Генерация через AI</p>
-                                </div>
-                            </button>
-
-                            <button onclick="openQuickChannelModal()" class="flex items-center p-4 border border-gray-200 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition-all group cursor-pointer">
-                                <div class="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-purple-200 transition-colors">
-                                    <i class="fas fa-plus text-purple-500"></i>
-                                </div>
-                                <div class="text-left">
-                                    <p class="font-medium text-gray-700">Добавить канал</p>
-                                    <p class="text-xs text-gray-500">Мониторинг Telegram</p>
-                                </div>
-                            </button>
-
-                            <button onclick="location.href='/console'" class="flex items-center p-4 border border-gray-200 rounded-lg hover:border-green-500 hover:bg-green-50 transition-all group">
-                                <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-green-200 transition-colors">
-                                    <i class="fas fa-terminal text-green-500"></i>
-                                </div>
-                                <div class="text-left">
-                                    <p class="font-medium text-gray-700">Консоль</p>
-                                    <p class="text-xs text-gray-500">SQL, Python, БД</p>
-                                </div>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Основные разделы -->
-                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-                        <!-- Последние новости -->
-                        <div class="bg-white rounded-xl shadow-sm p-6">
-                            <div class="flex items-center justify-between mb-4">
-                                <h3 class="text-lg font-bold text-gray-800">
-                                    <i class="fas fa-clock text-blue-500 mr-2"></i>
-                                    Последние новости
-                                </h3>
-                                <a href="/news" class="text-sm text-blue-500 hover:text-blue-700">Все →</a>
-                            </div>
-                            <div class="space-y-3" id="recent-news">
-                                <div class="text-center py-8 text-gray-400">
-                                    <i class="fas fa-newspaper text-4xl mb-2"></i>
-                                    <p>Загрузка новостей...</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Статус сервисов -->
-                        <div class="bg-white rounded-xl shadow-sm p-6">
-                            <div class="flex items-center justify-between mb-4">
-                                <h3 class="text-lg font-bold text-gray-800">
-                                    <i class="fas fa-server text-green-500 mr-2"></i>
-                                    Статус сервисов
-                                </h3>
-                                <button onclick="loadDashboardStatuses()" class="text-xs text-blue-500 hover:text-blue-700">
-                                    <i class="fas fa-sync mr-1"></i>Обновить
-                                </button>
-                            </div>
-                            <div class="space-y-4">
-                                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                                    <div class="flex items-center space-x-3">
-                                        <i class="fas fa-robot text-blue-500"></i>
-                                        <span class="text-sm font-medium text-gray-700">Admin Bot</span>
-                                    </div>
-                                    <span id="status-bot" class="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full">...</span>
-                                </div>
-                                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                                    <div class="flex items-center space-x-3">
-                                        <i class="fas fa-eye text-purple-500"></i>
-                                        <span class="text-sm font-medium text-gray-700">Listener Bot</span>
-                                    </div>
-                                    <span id="status-listener" class="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full">...</span>
-                                </div>
-                                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                                    <div class="flex items-center space-x-3">
-                                        <i class="fas fa-clock text-orange-500"></i>
-                                        <span class="text-sm font-medium text-gray-700">Scheduler</span>
-                                    </div>
-                                    <span id="status-scheduler" class="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full">...</span>
-                                </div>
-                                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                                    <div class="flex items-center space-x-3">
-                                        <i class="fas fa-brain text-pink-500"></i>
-                                        <span class="text-sm font-medium text-gray-700">AI Агенты</span>
-                                    </div>
-                                    <span id="status-ai_agent" class="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full">...</span>
-                                </div>
-                                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                                    <div class="flex items-center space-x-3">
-                                        <i class="fas fa-database text-indigo-500"></i>
-                                        <span class="text-sm font-medium text-gray-700">База данных</span>
-                                    </div>
-                                    <span id="status-database" class="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full">...</span>
-                                </div>
-                                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                                    <div class="flex items-center space-x-3">
-                                        <i class="fas fa-search text-cyan-500"></i>
-                                        <span class="text-sm font-medium text-gray-700">ChromaDB</span>
-                                    </div>
-                                    <span id="status-chromadb" class="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full">...</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Информация о системе -->
-                    <div class="bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl shadow-lg p-6 text-white">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <h3 class="text-xl font-bold mb-2">
-                                    <i class="fas fa-info-circle mr-2"></i>
-                                    News Aggregator v{{ version }}
-                                </h3>
-                                <p class="text-blue-100">
-                                    Автоматизированная система сбора, анализа и публикации новостей с использованием AI-агентов
-                                </p>
-                                <div class="mt-4 flex flex-wrap gap-2">
-                                    <span class="px-3 py-1 bg-white/20 rounded-full text-xs">Telegram</span>
-                                    <span class="px-3 py-1 bg-white/20 rounded-full text-xs">RSS</span>
-                                    <span class="px-3 py-1 bg-white/20 rounded-full text-xs">Web Parsing</span>
-                                    <span class="px-3 py-1 bg-white/20 rounded-full text-xs">AI Agents</span>
-                                    <span class="px-3 py-1 bg-white/20 rounded-full text-xs">Vector Search</span>
-                                </div>
-                            </div>
-                            <div class="hidden lg:block">
-                                <i class="fas fa-newspaper text-8xl text-white/20"></i>
-                            </div>
-                        </div>
-                    </div>
-
+                <div class="w-14 h-14 bg-purple-100 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-broadcast-tower text-purple-500 text-2xl"></i>
                 </div>
-            </main>
+            </div>
+        </div>
 
-            {% include 'components/footer.html' %}
+        <!-- Пользователи -->
+        <div class="bg-white rounded-xl shadow-sm p-6 card-hover stat-card border-l-4 border-green-500">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-gray-500 uppercase tracking-wide">Пользователи</p>
+                    <p class="text-3xl font-bold text-gray-800 mt-1" id="stat-users">&#8212;</p>
+                    <p class="text-xs text-green-600 mt-2"><i class="fas fa-star text-yellow-500"></i> Подписки</p>
+                </div>
+                <div class="w-14 h-14 bg-green-100 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-users text-green-500 text-2xl"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- Задачи -->
+        <div class="bg-white rounded-xl shadow-sm p-6 card-hover stat-card border-l-4 border-orange-500">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-gray-500 uppercase tracking-wide">Задачи</p>
+                    <p class="text-3xl font-bold text-gray-800 mt-1" id="stat-tasks">&#8212;</p>
+                    <p class="text-xs text-orange-600 mt-2"><i class="fas fa-clock"></i> В очереди</p>
+                </div>
+                <div class="w-14 h-14 bg-orange-100 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-tasks text-orange-500 text-2xl"></i>
+                </div>
+            </div>
         </div>
     </div>
 
-    {% include 'components/listener-auth-modal.html' %}
-    {% include 'components/notifications-modal.html' %}
+    <!-- Быстрые действия -->
+    <div class="bg-white rounded-xl shadow-sm p-6 mb-8">
+        <h3 class="text-lg font-bold text-gray-800 mb-4">
+            <i class="fas fa-bolt text-yellow-500 mr-2"></i>
+            Быстрые действия
+        </h3>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <button onclick="openQuickNewsModal()" class="flex items-center p-4 border border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all group cursor-pointer">
+                <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-blue-200 transition-colors">
+                    <i class="fas fa-plus text-blue-500"></i>
+                </div>
+                <div class="text-left">
+                    <p class="font-medium text-gray-700">Создать новость</p>
+                    <p class="text-xs text-gray-500">Генерация через AI</p>
+                </div>
+            </button>
 
+            <button onclick="openQuickChannelModal()" class="flex items-center p-4 border border-gray-200 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition-all group cursor-pointer">
+                <div class="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-purple-200 transition-colors">
+                    <i class="fas fa-plus text-purple-500"></i>
+                </div>
+                <div class="text-left">
+                    <p class="font-medium text-gray-700">Добавить канал</p>
+                    <p class="text-xs text-gray-500">Мониторинг Telegram</p>
+                </div>
+            </button>
+
+            <button onclick="location.href='/console'" class="flex items-center p-4 border border-gray-200 rounded-lg hover:border-green-500 hover:bg-green-50 transition-all group">
+                <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-green-200 transition-colors">
+                    <i class="fas fa-terminal text-green-500"></i>
+                </div>
+                <div class="text-left">
+                    <p class="font-medium text-gray-700">Консоль</p>
+                    <p class="text-xs text-gray-500">SQL, Python, БД</p>
+                </div>
+            </button>
+        </div>
+    </div>
+
+    <!-- Основные разделы -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <!-- Последние новости -->
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-gray-800">
+                    <i class="fas fa-clock text-blue-500 mr-2"></i>
+                    Последние новости
+                </h3>
+                <a href="/news" class="text-sm text-blue-500 hover:text-blue-700">Все &rarr;</a>
+            </div>
+            <div class="space-y-3" id="recent-news">
+                <div class="text-center py-8 text-gray-400">
+                    <i class="fas fa-newspaper text-4xl mb-2"></i>
+                    <p>Загрузка новостей...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Статус сервисов -->
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-gray-800">
+                    <i class="fas fa-server text-green-500 mr-2"></i>
+                    Статус сервисов
+                </h3>
+                <button onclick="loadDashboardStatuses()" class="text-xs text-blue-500 hover:text-blue-700">
+                    <i class="fas fa-sync mr-1"></i>Обновить
+                </button>
+            </div>
+            <div class="space-y-4">
+                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div class="flex items-center space-x-3">
+                        <i class="fas fa-robot text-blue-500"></i>
+                        <span class="text-sm font-medium text-gray-700">Admin Bot</span>
+                    </div>
+                    <span id="status-bot" class="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full">&#8230;</span>
+                </div>
+                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div class="flex items-center space-x-3">
+                        <i class="fas fa-eye text-purple-500"></i>
+                        <span class="text-sm font-medium text-gray-700">Listener Bot</span>
+                    </div>
+                    <span id="status-listener" class="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full">&#8230;</span>
+                </div>
+                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div class="flex items-center space-x-3">
+                        <i class="fas fa-clock text-orange-500"></i>
+                        <span class="text-sm font-medium text-gray-700">Scheduler</span>
+                    </div>
+                    <span id="status-scheduler" class="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full">&#8230;</span>
+                </div>
+                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div class="flex items-center space-x-3">
+                        <i class="fas fa-brain text-pink-500"></i>
+                        <span class="text-sm font-medium text-gray-700">AI Агенты</span>
+                    </div>
+                    <span id="status-ai_agent" class="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full">&#8230;</span>
+                </div>
+                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div class="flex items-center space-x-3">
+                        <i class="fas fa-database text-indigo-500"></i>
+                        <span class="text-sm font-medium text-gray-700">База данных</span>
+                    </div>
+                    <span id="status-database" class="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full">&#8230;</span>
+                </div>
+                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div class="flex items-center space-x-3">
+                        <i class="fas fa-search text-cyan-500"></i>
+                        <span class="text-sm font-medium text-gray-700">ChromaDB</span>
+                    </div>
+                    <span id="status-chromadb" class="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full">&#8230;</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Информация о системе -->
+    <div class="bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl shadow-lg p-6 text-white">
+        <div class="flex items-center justify-between">
+            <div>
+                <h3 class="text-xl font-bold mb-2">
+                    <i class="fas fa-info-circle mr-2"></i>
+                    News Aggregator v{{ version }}
+                </h3>
+                <p class="text-blue-100">
+                    Автоматизированная система сбора, анализа и публикации новостей с использованием AI-агентов
+                </p>
+                <div class="mt-4 flex flex-wrap gap-2">
+                    <span class="px-3 py-1 bg-white/20 rounded-full text-xs">Telegram</span>
+                    <span class="px-3 py-1 bg-white/20 rounded-full text-xs">RSS</span>
+                    <span class="px-3 py-1 bg-white/20 rounded-full text-xs">Web Parsing</span>
+                    <span class="px-3 py-1 bg-white/20 rounded-full text-xs">AI Agents</span>
+                    <span class="px-3 py-1 bg-white/20 rounded-full text-xs">Vector Search</span>
+                </div>
+            </div>
+            <div class="hidden lg:block">
+                <i class="fas fa-newspaper text-8xl text-white/20"></i>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block scripts %}
     <!-- Модальное окно: быстрая генерация новости -->
     <div id="quick-news-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center">
         <div class="fixed inset-0 bg-black/40 backdrop-blur-sm" onclick="closeQuickNewsModal()"></div>
@@ -487,7 +296,6 @@
         </div>
     </div>
 
-    <!-- Скрипт для загрузки данных -->
     <script>
         // Загрузка статистики
         async function loadStats() {
@@ -530,8 +338,6 @@
                             </div>
                         `;
                     }
-                } else {
-                    throw new Error('API не доступен');
                 }
             } catch (error) {
                 document.getElementById('recent-news').innerHTML = `
@@ -543,12 +349,8 @@
             }
         }
 
-        // =========================================================================
-        // Статусы на дашборде (полная загрузка + обновление)
-        // =========================================================================
-
+        // Статусы на дашборде
         async function loadDashboardStatuses() {
-            // 1. Service manager (bot, listener, scheduler)
             try {
                 const resp = await fetch('/api/services/status');
                 if (resp.ok) {
@@ -561,7 +363,6 @@
                         _allNotifications = data.notifications.map(n => ({...n, timestamp: new Date().toISOString(), read: n.read ?? false}));
                         const unread = _allNotifications.filter(n => !n.read).length;
                         updateNotificationBadge(unread);
-                        // Добавить уведомления о сервис-ошибках если модалка открыта
                         if (!document.getElementById('notifications-modal')?.classList.contains('hidden')) {
                             renderNotifications();
                         }
@@ -569,43 +370,32 @@
                 }
             } catch(e) { console.error('[Dashboard] services/status error:', e); }
 
-            // 2. Health check (ai_agent, database, chromadb)
             try {
                 const resp = await fetch('/api/health/full?timeout=5');
-                if (!resp.ok) {
-                    console.error('[Dashboard] health check HTTP', resp.status);
-                } else if (resp.ok) {
+                if (resp.ok) {
                     const data = await resp.json();
-                    if (data.components) {
-                        renderHealthComponents(data.components);
-                    } else {
-                        console.warn('[Dashboard] health check returned no components:', data);
-                    }
+                    if (data.components) renderHealthComponents(data.components);
                 }
             } catch(e) { console.error('[Dashboard] health check error:', e); }
         }
 
         function renderHealthComponents(components) {
-            // Маппинг health-компонент → элементы дашборда
             const mapping = {
                 'ollama':        { el: 'status-ai_agent',  fallback_label: 'AI Агенты'  },
                 'database':      { el: 'status-database',  fallback_label: 'База данных' },
                 'vector_search': { el: 'status-chromadb',  fallback_label: 'ChromaDB'    },
             };
-
             for (const [compName, target] of Object.entries(mapping)) {
                 const comp = components.find(c => c.name === compName);
                 const el = document.getElementById(target.el);
                 if (!el) continue;
-
                 if (!comp) {
                     el.textContent = 'Не найден';
                     el.className = 'px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded-full';
                     continue;
                 }
-
                 const status = comp.status;
-                const latency = comp.latency_ms ? `· ${Math.round(comp.latency_ms)}мс` : '';
+                const latency = comp.latency_ms ? ` · ${Math.round(comp.latency_ms)}мс` : '';
                 if (status === 'healthy') {
                     el.textContent = `OK${latency}`;
                     el.className = 'px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full';
@@ -626,44 +416,23 @@
 
         function updateSystemStatusFromData(statuses) {
             const keys = ['bot', 'listener', 'scheduler'];
-
             const anyCrashed = keys.some(k => (statuses[k] || {}).state === 'crashed');
             const allStopped = keys.every(k => ((statuses[k] || {}).state || 'stopped') === 'stopped');
-            const allRunning = keys.every(k => {
-                const s = statuses[k];
-                return s && s.state === 'running' && s.healthy;
-            });
-
+            const allRunning = keys.every(k => { const s = statuses[k]; return s && s.state === 'running' && s.healthy; });
             const ind = document.getElementById('system-status-indicator');
             const txt = document.getElementById('system-status-text');
-
             if (ind && txt) {
-                if (anyCrashed) {
-                    ind.className = 'w-2 h-2 rounded-full bg-red-500 animate-pulse';
-                    txt.textContent = 'Есть сбои';
-                } else if (allRunning) {
-                    ind.className = 'w-2 h-2 rounded-full bg-green-500 animate-pulse';
-                    txt.textContent = 'Система активна';
-                } else if (allStopped) {
-                    ind.className = 'w-2 h-2 rounded-full bg-gray-500';
-                    txt.textContent = 'Сервисы остановлены';
-                } else {
-                    ind.className = 'w-2 h-2 rounded-full bg-yellow-500';
-                    txt.textContent = 'Частичная работа';
-                }
+                if (anyCrashed) { ind.className = 'w-2 h-2 rounded-full bg-red-500 animate-pulse'; txt.textContent = 'Есть сбои'; }
+                else if (allRunning) { ind.className = 'w-2 h-2 rounded-full bg-green-500 animate-pulse'; txt.textContent = 'Система активна'; }
+                else if (allStopped) { ind.className = 'w-2 h-2 rounded-full bg-gray-500'; txt.textContent = 'Сервисы остановлены'; }
+                else { ind.className = 'w-2 h-2 rounded-full bg-yellow-500'; txt.textContent = 'Частичная работа'; }
             }
         }
 
-        // =========================================================================
-        // Модальное окно: быстрая генерация новости
-        // =========================================================================
-
-        function openQuickNewsModal() {
-            document.getElementById('quick-news-modal').classList.remove('hidden');
-        }
+        // Модальные окна
+        function openQuickNewsModal() { document.getElementById('quick-news-modal').classList.remove('hidden'); }
         function closeQuickNewsModal() {
             document.getElementById('quick-news-modal').classList.add('hidden');
-            // Очищаем форму
             document.getElementById('qnews-text').value = '';
             document.getElementById('qnews-category').value = '';
             document.getElementById('qnews-output').innerHTML = '';
@@ -675,43 +444,21 @@
             const text = document.getElementById('qnews-text').value.trim();
             const category = document.getElementById('qnews-category').value;
             if (!text) { alert('Введите текст новости'); return; }
-
             const output = document.getElementById('qnews-output');
             const btn = document.getElementById('qnews-submit');
             const spinner = document.getElementById('qnews-spinner');
-
-            btn.disabled = true;
-            spinner.classList.remove('hidden');
+            btn.disabled = true; spinner.classList.remove('hidden');
             output.innerHTML = '<span class="text-gray-400"><i class="fas fa-spinner fa-spin mr-2"></i>Генерация новости через AI...</span>';
-
             try {
-                const resp = await fetch('/api/news/generate', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ text, category })
-                });
+                const resp = await fetch('/api/news/generate', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ text, category }) });
                 const data = await resp.json();
-                if (data.success) {
-                    output.innerHTML = `<span class="text-green-600"><i class="fas fa-check mr-1"></i>Новость создана (ID: ${data.news_id || '?'})</span>`;
-                    document.getElementById('qnews-text').value = '';
-                } else {
-                    output.innerHTML = `<span class="text-red-600">Ошибка: ${data.error || 'Не удалось создать'}</span>`;
-                }
-            } catch(e) {
-                output.innerHTML = `<span class="text-red-600">Ошибка: ${e.message}</span>`;
-            } finally {
-                btn.disabled = false;
-                spinner.classList.add('hidden');
-            }
+                if (data.success) { output.innerHTML = `<span class="text-green-600"><i class="fas fa-check mr-1"></i>Новость создана (ID: ${data.news_id || '?'})</span>`; document.getElementById('qnews-text').value = ''; }
+                else output.innerHTML = `<span class="text-red-600">Ошибка: ${data.error || 'Не удалось создать'}</span>`;
+            } catch(e) { output.innerHTML = `<span class="text-red-600">Ошибка: ${e.message}</span>`; }
+            finally { btn.disabled = false; spinner.classList.add('hidden'); }
         }
 
-        // =========================================================================
-        // Модальное окно: быстрое добавление канала
-        // =========================================================================
-
-        function openQuickChannelModal() {
-            document.getElementById('quick-channel-modal').classList.remove('hidden');
-        }
+        function openQuickChannelModal() { document.getElementById('quick-channel-modal').classList.remove('hidden'); }
         function closeQuickChannelModal() {
             document.getElementById('quick-channel-modal').classList.add('hidden');
             document.getElementById('qch-id').value = '';
@@ -727,53 +474,26 @@
             const title = document.getElementById('qch-title').value.trim();
             const desc = document.getElementById('qch-desc').value.trim();
             if (!channel_id || !title) { alert('Укажите ID и название канала'); return; }
-
             const output = document.getElementById('qch-output');
             const btn = document.getElementById('qch-submit');
             const spinner = document.getElementById('qch-spinner');
-
-            btn.disabled = true;
-            spinner.classList.remove('hidden');
+            btn.disabled = true; spinner.classList.remove('hidden');
             output.innerHTML = '<span class="text-gray-400"><i class="fas fa-spinner fa-spin mr-2"></i>Добавление канала...</span>';
-
             try {
-                const resp = await fetch('/api/channels', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ channel_id: parseInt(channel_id), title, description: desc })
-                });
+                const resp = await fetch('/api/channels', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ channel_id: parseInt(channel_id), title, description: desc }) });
                 const data = await resp.json();
-                if (data.success) {
-                    output.innerHTML = `<span class="text-green-600"><i class="fas fa-check mr-1"></i>Канал «${title}» добавлен</span>`;
-                    document.getElementById('qch-id').value = '';
-                    document.getElementById('qch-title').value = '';
-                    document.getElementById('qch-desc').value = '';
-                } else {
-                    output.innerHTML = `<span class="text-red-600">Ошибка: ${data.error || 'Не удалось добавить'}</span>`;
-                }
-            } catch(e) {
-                output.innerHTML = `<span class="text-red-600">Ошибка: ${e.message}</span>`;
-            } finally {
-                btn.disabled = false;
-                spinner.classList.add('hidden');
-            }
+                if (data.success) { output.innerHTML = `<span class="text-green-600"><i class="fas fa-check mr-1"></i>Канал «${title}» добавлен</span>`; document.getElementById('qch-id').value = ''; document.getElementById('qch-title').value = ''; document.getElementById('qch-desc').value = ''; }
+                else output.innerHTML = `<span class="text-red-600">Ошибка: ${data.error || 'Не удалось добавить'}</span>`;
+            } catch(e) { output.innerHTML = `<span class="text-red-600">Ошибка: ${e.message}</span>`; }
+            finally { btn.disabled = false; spinner.classList.add('hidden'); }
         }
-
-        // =========================================================================
-        // Инициализация
-        // =========================================================================
 
         document.addEventListener('DOMContentLoaded', () => {
             loadStats();
             loadRecentNews();
             startNotificationPolling();
             loadDashboardStatuses();
-
-            setInterval(() => {
-                loadStats();
-                loadRecentNews();
-            }, 30000);
+            setInterval(() => { loadStats(); loadRecentNews(); }, 30000);
         });
     </script>
-</body>
-</html>
+{% endblock %}

@@ -65,6 +65,7 @@ class Scheduler:
 
         self._running = False
         self._initialized = False
+        self._last_error: Optional[str] = None
 
     async def _init_components(self) -> None:
         """Инициализировать компоненты (ленивая инициализация)."""
@@ -98,6 +99,7 @@ class Scheduler:
         - Очистка просроченных задач (каждые 5 минут)
         """
         self._running = True
+        self._last_error = None
         logger.info("🕐 Планировщик запущен (архитектура v4.0 — задачи из БД)")
 
         # Инициализируем компоненты (после установки _running для избежания гонок)
@@ -111,6 +113,14 @@ class Scheduler:
 
         logger.info("✅ Все задачи планировщика запущены")
         logger.info("📋 Задачи выполняются из таблицы `tasks` (создаются через админ-интерфейс)")
+
+    def is_alive(self) -> bool:
+        """Проверить, действительно ли планировщик работает."""
+        if not self._running:
+            return False
+        if self._task_processor_task is None:
+            return False
+        return not self._task_processor_task.done()
 
     async def wait(self) -> None:
         """

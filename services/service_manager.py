@@ -80,6 +80,9 @@ class ServiceManager:
         # Блокировка для потокобезопасности
         self._lock = asyncio.Lock()
 
+        # Watchdog задача — следит за падением сервисов
+        self._watchdog_task: Optional[asyncio.Task] = None
+
         logger.info("✅ ServiceManager инициализирован")
         logger.info("📍 Сервисы остановлены - нажмите 'Старт' в консоли для запуска")
 
@@ -115,6 +118,69 @@ class ServiceManager:
     def is_running(self, service: str) -> bool:
         """Проверить, запущен ли сервис (по флагу, без проверки реальности)."""
         return self._states.get(service) == ServiceState.RUNNING
+
+    async def _watchdog_loop(self) -> None:
+        """
+        Watchdog — следит за задачами сервисов и фиксирует падения.
+
+        Каждые 5 секунд проверяет: если задача сервиса завершена (crashed),
+        сбрасывает состояние в STOPPED и сохраняет ошибку.
+        """
+        while True:
+            try:
+                await asyncio.sleep(5)
+
+                for name, task_attr in [
+                    ("bot", "_bot_task"),
+                    ("listener", "_listener_task"),
+                    ("scheduler", "_scheduler_task"),
+                ]:
+                    task = getattr(self, task_attr, None)
+                    if task is None:
+                        continue
+
+                    state = self._states.get(name)
+                    if state != ServiceState.RUNNING:
+                        continue
+
+                    # Задача завершена — сервис упал
+                    if task.done():
+                        # Извлекаем ошибку если есть
+                        last_error = None
+                        try:
+                            exc = task.exception()
+                            if exc is not None:
+                                last_error = f"{type(exc).__name__}: {exc}"
+                        except (asyncio.CancelledError, asyncio.InvalidStateError):
+                            last_error = "Task cancelled"
+
+                        if last_error is None:
+                            last_error = "Task completed unexpectedly"
+
+                        logger.warning(
+                            f"💥 Watchdog: сервис {name} упал! {last_error}"
+                        )
+                        self._states[name] = ServiceState.STOPPED
+                        self._started_at[name] = 0.0
+
+                        # Сохраняем ошибку на сервис
+                        svc = self._get_service(name)
+                        if svc is not None:
+                            svc._last_error = last_error
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"❌ Watchdog ошибка: {e}", exc_info=True)
+
+    def _ensure_watchdog(self) -> None:
+        """Запустить watchdog если ещё не запущен."""
+        if self._watchdog_task is None or self._watchdog_task.done():
+            self._watchdog_task = asyncio.create_task(
+                self._watchdog_loop(),
+                name="service_manager_watchdog",
+            )
+            logger.debug("👁️ Watchdog запущен")
 
     def _get_service(self, name: str):
         """Получить ссылку на сервис по имени."""
@@ -200,6 +266,9 @@ class ServiceManager:
 
             logger.info(f"🚀 Запуск сервиса: {service}")
             self._states[service] = ServiceState.STARTING
+
+            # Запускаем watchdog при первом запуске любого сервиса
+            self._ensure_watchdog()
 
             try:
                 if service == "scheduler":
@@ -315,6 +384,15 @@ class ServiceManager:
     async def stop_all(self) -> Dict[str, Any]:
         """Остановить все сервисы."""
         logger.info("🛑 Остановка всех сервисов...")
+
+        # Останавливаем watchdog
+        if self._watchdog_task and not self._watchdog_task.done():
+            self._watchdog_task.cancel()
+            try:
+                await asyncio.wait_for(self._watchdog_task, timeout=2.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+            self._watchdog_task = None
         results = []
 
         # Останавливаем в обратном порядке: listener -> bot -> scheduler

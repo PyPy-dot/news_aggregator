@@ -63,7 +63,7 @@ services:
     command: uvicorn services.web_admin.api.app:app --host 0.0.0.0 --port 8001
     environment:
       - DATABASE_URL=postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
-      - JWT_SECRET=${JWT_SECRET}
+      - WEB_ADMIN_JWT_SECRET=${WEB_ADMIN_JWT_SECRET}
       - LOG_LEVEL=${LOG_LEVEL:-WARNING}
     depends_on:
       db:

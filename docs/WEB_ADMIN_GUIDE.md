@@ -48,12 +48,20 @@ services/web_admin/
 ├── config.py               # Конфигурация + load_dotenv
 ├── log_handler.py          # Логирование
 └── templates/              # Jinja2 шаблоны
-    ├── index.html          # Главная панель
-    ├── console.html        # Консоль управления
-    ├── settings.html       # Настройки
+    ├── base.html           # Единый layout (header, sidebar, footer, modals)
+    ├── index.html          # Главная панель (extends base)
+    ├── console.html        # Консоль управления (extends base)
+    ├── settings.html       # Настройки (extends base)
     ├── login.html          # Страница входа
+    ├── news.html           # Новости
+    ├── channels.html       # Каналы
+    ├── users.html          # Пользователи
+    ├── tasks.html          # Задачи
+    ├── rss.html            # RSS
+    ├── web.html            # Web источники
     └── components/
-        ├── footer.html         # Футер с глобальным статусом
+        ├── sidebar.html            # Навигация
+        ├── footer.html             # Футер с глобальным статусом
         ├── listener-auth-modal.html
         └── notifications-modal.html  # Уведомления
 ```

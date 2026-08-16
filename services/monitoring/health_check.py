@@ -517,6 +517,8 @@ async def check_circuit_breakers_health() -> ComponentHealth:
 
 async def check_telegram_bot_health() -> ComponentHealth:
     """Проверка здоровья Telegram бота."""
+    start_time = time.time()
+
     try:
         from services.bot.bot import get_bot_instance_async
 
@@ -528,6 +530,7 @@ async def check_telegram_bot_health() -> ComponentHealth:
                 status=HealthStatus.UNHEALTHY,
                 severity=SeverityLevel.CRITICAL,
                 message="Бот не инициализирован или ещё не готов",
+                latency_ms=(time.time() - start_time) * 1000,
             )
 
         # Проверка сессии
@@ -537,12 +540,41 @@ async def check_telegram_bot_health() -> ComponentHealth:
                 status=HealthStatus.UNHEALTHY,
                 severity=SeverityLevel.CRITICAL,
                 message="HTTP сессия бота закрыта",
+                latency_ms=(time.time() - start_time) * 1000,
             )
 
+        # Проверка что polling активен через BotService.is_alive()
+        from services.service_manager import get_service_manager
+
+        manager = get_service_manager()
+        bot_service = manager._get_service("bot")
+
+        polling_alive = False
+        bot_error = None
+        if bot_service is not None:
+            polling_alive = bot_service.is_alive()
+            bot_error = getattr(bot_service, '_last_error', None)
+
         # Проверка connection через getMe
-        start_time = time.time()
         me = await bot.get_me()
         latency_ms = (time.time() - start_time) * 1000
+
+        if not polling_alive:
+            state = manager.get_state("bot").value
+            return ComponentHealth(
+                name="telegram_bot",
+                status=HealthStatus.UNHEALTHY,
+                severity=SeverityLevel.CRITICAL,
+                message=f"Бот @{me.username} жив, но polling не активен (состояние: {state})",
+                latency_ms=latency_ms,
+                details={
+                    "bot_id": me.id,
+                    "bot_name": me.first_name,
+                    "bot_username": me.username,
+                    "polling_active": False,
+                    "last_error": bot_error,
+                },
+            )
 
         return ComponentHealth(
             name="telegram_bot",
@@ -564,10 +596,12 @@ async def check_telegram_bot_health() -> ComponentHealth:
             status=HealthStatus.UNHEALTHY,
             severity=SeverityLevel.CRITICAL,
             message=f"Бот ошибка: {type(e).__name__}: {e}",
+            latency_ms=(time.time() - start_time) * 1000,
         )
 
 
 async def check_vector_search_health() -> ComponentHealth:
+    """Проверка здоровья ChromaDB с reconnect при сбое."""
     start_time = time.time()
 
     try:
@@ -583,9 +617,37 @@ async def check_vector_search_health() -> ComponentHealth:
         # list_collections() в ChromaDB 0.5.x — синхронный метод
         collections = client.list_collections()
 
+        collection_names = [c.name if hasattr(c, 'name') else str(c) for c in collections]
+
+        # Дополнительно проверяем что к коллекции можно обратиться через count()
+        counts: Dict[str, Any] = {}
+        try:
+            for name in collection_names:
+                try:
+                    counts[name] = store.count(name)
+                except Exception as count_err:
+                    counts[name] = f"error: {count_err}"
+        except Exception:
+            # Если collections не итерируются (пустой список) — пропускаем
+            pass
+
         latency_ms = (time.time() - start_time) * 1000
 
-        collection_names = [c.name if hasattr(c, 'name') else str(c) for c in collections]
+        # Проверяем есть ли ошибки в count — признак частичной деградации
+        has_errors = any(isinstance(v, str) for v in counts.values())
+
+        if has_errors:
+            return ComponentHealth(
+                name="vector_search",
+                status=HealthStatus.DEGRADED,
+                severity=SeverityLevel.HIGH,
+                message=f"ChromaDB подключён, но часть коллекций недоступна",
+                latency_ms=latency_ms,
+                details={
+                    "collections": collection_names,
+                    "collection_counts": counts,
+                },
+            )
 
         return ComponentHealth(
             name="vector_search",
@@ -595,31 +657,63 @@ async def check_vector_search_health() -> ComponentHealth:
             latency_ms=latency_ms,
             details={
                 "collections": collection_names,
+                "collection_counts": counts,
             },
         )
 
     except Exception as e:
-        return ComponentHealth(
-            name="vector_search",
-            status=HealthStatus.UNHEALTHY,
-            severity=SeverityLevel.HIGH,
-            message=f"Векторный поиск ошибка: {type(e).__name__}: {e}",
-            latency_ms=(time.time() - start_time) * 1000,
-        )
+        # Попытка пересоздать клиент — ChromaDB процесс мог перезапуститься
+        try:
+            logger.warning(f"⚠️ ChromaDB ошибка, пробую пересоздать клиент: {e}")
+            check_vector_search_health._store = ChromaVectorStore()
+            check_vector_search_health._store._client.list_collections()
+
+            latency_ms = (time.time() - start_time) * 1000
+            return ComponentHealth(
+                name="vector_search",
+                status=HealthStatus.DEGRADED,
+                severity=SeverityLevel.HIGH,
+                message=f"ChromaDB восстановлен после ошибки ({type(e).__name__})",
+                latency_ms=latency_ms,
+                details={"recovered_from": str(e)},
+            )
+        except Exception as reconnect_err:
+            latency_ms = (time.time() - start_time) * 1000
+            return ComponentHealth(
+                name="vector_search",
+                status=HealthStatus.UNHEALTHY,
+                severity=SeverityLevel.HIGH,
+                message=f"Векторный поиск ошибка: {type(e).__name__}: {e}",
+                latency_ms=latency_ms,
+                details={"original_error": str(e)},
+            )
 
 
 async def check_scheduler_health() -> ComponentHealth:
     """Проверка здоровья планировщика."""
+    start_time = time.time()
+
     try:
-        # Проверка наличия активных задач
+        # Проверка реального состояния scheduler через ServiceManager
+        from services.service_manager import get_service_manager
+
+        manager = get_service_manager()
+        scheduler = manager._get_service("scheduler")
+
+        scheduler_alive = False
+        scheduler_error = None
+        if scheduler is not None:
+            scheduler_alive = scheduler.is_alive()
+            scheduler_error = getattr(scheduler, '_last_error', None)
+
+        state = manager.get_state("scheduler").value
+
+        # Проверка наличия задач в БД
         from services.database import get_database_service
         from sqlalchemy import select, func
         from database.models import Task
 
-        start_time = time.time()
-
         async with get_database_service().session_context() as session:
-            # Подсчёт задач по статусам
             query = select(Task.status, func.count(Task.id)).group_by(Task.status)
             result = await session.execute(query)
             task_counts = {row[0]: row[1] for row in result.all()}
@@ -628,6 +722,33 @@ async def check_scheduler_health() -> ComponentHealth:
 
         pending = task_counts.get('pending', 0)
         active = task_counts.get('active', 0)
+
+        if not scheduler_alive and state != "stopped":
+            return ComponentHealth(
+                name="scheduler",
+                status=HealthStatus.UNHEALTHY,
+                severity=SeverityLevel.MEDIUM,
+                message=f"Планировщик упал (состояние: {state})",
+                latency_ms=latency_ms,
+                details={
+                    "task_counts": task_counts,
+                    "total_tasks": sum(task_counts.values()),
+                    "last_error": scheduler_error,
+                },
+            )
+
+        if state == "stopped":
+            return ComponentHealth(
+                name="scheduler",
+                status=HealthStatus.UNKNOWN,
+                severity=SeverityLevel.MEDIUM,
+                message=f"Планировщик остановлен ({pending} ожидает, {active} в работе)",
+                latency_ms=latency_ms,
+                details={
+                    "task_counts": task_counts,
+                    "total_tasks": sum(task_counts.values()),
+                },
+            )
 
         return ComponentHealth(
             name="scheduler",
@@ -647,29 +768,126 @@ async def check_scheduler_health() -> ComponentHealth:
             status=HealthStatus.UNHEALTHY,
             severity=SeverityLevel.MEDIUM,
             message=f"Планировщик ошибка: {type(e).__name__}: {e}",
+            latency_ms=(time.time() - start_time) * 1000,
+        )
+
+
+async def check_listener_health() -> ComponentHealth:
+    """Проверка здоровья ListenerBot (Telethon)."""
+    start_time = time.time()
+
+    try:
+        from services.service_manager import get_service_manager
+
+        manager = get_service_manager()
+        listener = manager._get_service("listener")
+
+        if listener is None:
+            return ComponentHealth(
+                name="listener",
+                status=HealthStatus.UNHEALTHY,
+                severity=SeverityLevel.HIGH,
+                message="ListenerBot не зарегистрирован в ServiceManager",
+                latency_ms=(time.time() - start_time) * 1000,
+            )
+
+        # is_alive() проверяет _running, client, и client.is_connected()
+        alive = listener.is_alive()
+
+        latency_ms = (time.time() - start_time) * 1000
+        details: Dict[str, Any] = {}
+
+        # Дополнительно: покажем последнюю ошибку если есть
+        last_error = getattr(listener, '_last_error', None)
+        if last_error:
+            details["last_error"] = last_error
+
+        if alive:
+            return ComponentHealth(
+                name="listener",
+                status=HealthStatus.HEALTHY,
+                severity=SeverityLevel.HIGH,
+                message="ListenerBot подключён к Telegram",
+                latency_ms=latency_ms,
+                details=details,
+            )
+        else:
+            state = manager.get_state("listener").value
+            return ComponentHealth(
+                name="listener",
+                status=HealthStatus.UNHEALTHY,
+                severity=SeverityLevel.HIGH,
+                message=f"ListenerBot не активен (состояние: {state})",
+                latency_ms=latency_ms,
+                details=details,
+            )
+
+    except Exception as e:
+        return ComponentHealth(
+            name="listener",
+            status=HealthStatus.UNHEALTHY,
+            severity=SeverityLevel.HIGH,
+            message=f"ListenerBot ошибка: {type(e).__name__}: {e}",
+            latency_ms=(time.time() - start_time) * 1000,
         )
 
 
 async def check_categorization_queue_health() -> ComponentHealth:
-    """Проверка здоровья очереди категоризации."""
+    """Проверка здоровья очереди категоризации и AI agent queue."""
+    start_time = time.time()
+
     try:
         from services.categorization.queue import CategorizationQueue
+        from services.ai_agent.agent_queue import get_agent_queue
 
-        # Кэшируем — singleton
+        # Кэшируем CategorizationQueue — singleton
         if not hasattr(check_categorization_queue_health, '_queue'):
             check_categorization_queue_health._queue = CategorizationQueue()
         queue = check_categorization_queue_health._queue
 
-        return ComponentHealth(
-            name="categorization_queue",
-            status=HealthStatus.HEALTHY,
-            severity=SeverityLevel.MEDIUM,
-            message=f"Очередь категоризации активна",
-            details={
-                "current_size": len(queue._queue) if hasattr(queue, '_queue') else 0,
-                "max_size": queue._maxlen if hasattr(queue, '_maxlen') else "N/A",
-            },
-        )
+        # Проверяем AgentTaskQueue — реальный статус воркеров
+        agent_queue = get_agent_queue()
+        agent_running = getattr(agent_queue, '_running', False)
+        agent_stats = {}
+        if hasattr(agent_queue, '_stats'):
+            agent_stats = dict(agent_queue._stats)
+
+        # Проверяем размер очереди
+        current_size = len(queue._queue) if hasattr(queue, '_queue') else 0
+        max_size = queue._maxlen if hasattr(queue, '_maxlen') else "N/A"
+
+        latency_ms = (time.time() - start_time) * 1000
+
+        if agent_running:
+            return ComponentHealth(
+                name="categorization_queue",
+                status=HealthStatus.HEALTHY,
+                severity=SeverityLevel.MEDIUM,
+                message=f"Очередь активна (AI воркеры работают, {current_size}/{max_size} задач)",
+                latency_ms=latency_ms,
+                details={
+                    "current_size": current_size,
+                    "max_size": max_size,
+                    "agent_queue_running": agent_running,
+                    "agent_stats": agent_stats,
+                },
+            )
+        else:
+            # AI воркеры не запущены — деградация, но не критично
+            # (очередь может работать локально без Redis воркеров)
+            return ComponentHealth(
+                name="categorization_queue",
+                status=HealthStatus.DEGRADED,
+                severity=SeverityLevel.MEDIUM,
+                message=f"Очередь существует, но AI воркеры не запущены ({current_size}/{max_size} задач)",
+                latency_ms=latency_ms,
+                details={
+                    "current_size": current_size,
+                    "max_size": max_size,
+                    "agent_queue_running": agent_running,
+                    "agent_stats": agent_stats,
+                },
+            )
 
     except Exception as e:
         return ComponentHealth(
@@ -677,6 +895,7 @@ async def check_categorization_queue_health() -> ComponentHealth:
             status=HealthStatus.UNHEALTHY,
             severity=SeverityLevel.MEDIUM,
             message=f"Очередь категоризации ошибка: {type(e).__name__}: {e}",
+            latency_ms=(time.time() - start_time) * 1000,
         )
 
 
@@ -698,6 +917,7 @@ def create_default_health_checker() -> HealthChecker:
     checker.add_check("telegram_bot", check_telegram_bot_health, SeverityLevel.CRITICAL)
 
     # Важные компоненты
+    checker.add_check("listener", check_listener_health, SeverityLevel.HIGH)
     checker.add_check("llm_fallback", check_llm_fallback_health, SeverityLevel.HIGH)
     checker.add_check("ollama", check_ollama_health, SeverityLevel.HIGH)
     checker.add_check("vector_search", check_vector_search_health, SeverityLevel.HIGH)
@@ -758,6 +978,7 @@ __all__ = [
     'check_llm_fallback_health',
     'check_circuit_breakers_health',
     'check_telegram_bot_health',
+    'check_listener_health',
     'check_vector_search_health',
     'check_scheduler_health',
     'check_categorization_queue_health',

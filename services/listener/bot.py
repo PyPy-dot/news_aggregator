@@ -36,7 +36,7 @@ class ListenerBot:
     Бот для мониторинга Telegram каналов.
 
     Делегирует обработку новостей сервисам:
-    - CategorizationService — категоризация
+    - CategorizationQueue + CategorizationProcessor — категоризация
     - NotificationService — уведомления админам
     """
 
@@ -54,7 +54,6 @@ class ListenerBot:
         self._client_initialized = False
 
         # Сервисы
-        self.categorization_service: Optional[CategorizationService] = None
         self._notification_service: Optional[NotificationService] = None
 
         # Кэш обработанных сообщений
@@ -66,6 +65,7 @@ class ListenerBot:
 
         # Флаг работы
         self._running = False
+        self._last_error: Optional[str] = None
 
         # Задача обработки очереди
         self._queue_task: Optional[asyncio.Task] = None
@@ -87,6 +87,17 @@ class ListenerBot:
         if self._notification_service is None and self._container:
             self._notification_service = self._container.get_notification_service()
         return self._notification_service
+
+    def is_alive(self) -> bool:
+        """Проверить, действительно ли listener работает (подключён к Telegram)."""
+        if not self._running:
+            return False
+        if self.client is None:
+            return False
+        try:
+            return self.client.is_connected()
+        except Exception:
+            return False
 
     async def get_repo_factory(self) -> RepositoryFactory:
         """Получить фабрику репозиториев."""
@@ -578,6 +589,7 @@ class ListenerBot:
         # ListenerBot только добавляет задачи в очередь категоризации
 
         self._running = True
+        self._last_error = None
         logger.info("👂 UserBot слушает события...")
 
         # Запускаем клиент Telethon в режиме прослушивания событий
@@ -739,6 +751,25 @@ class ListenerBot:
 
         # 7. Очищаем фабрику репозиториев
         self._repo_factory = None
+
+        # 8. Сбрасываем флаг инициализации и удаляем клиент целиком,
+        #    чтобы при рестарте создавался новый TelegramClient с чистой
+        #    aiohttp.ClientSession (иначе GC жалуется "Unclosed client session").
+        self._client_initialized = False
+        self.client = None
+
+        # 9. Сбрасываем сервисы (queue, processor) — они привязаны к сессиям БД
+        self.categorization_queue = None
+        self.categorization_processor = None
+        self.categorizer = None
+        self.categorization_classifier = None
+        self._notification_service = None
+
+        # 10. Принудительная сборка мусора — чтобы старые сессии и коннекторы
+        #     были освобождены до нового start() (иначе GC жалуется
+        #     "Unclosed client session" асинхронно).
+        import gc
+        gc.collect()
 
         logger.info("👋 ListenerBot полностью остановлен")
 
