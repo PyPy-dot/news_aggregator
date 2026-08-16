@@ -401,17 +401,32 @@ async def generate_news_endpoint(
         if not has_destination:
             return {"success": False, "error": "Выберите хотя бы один источник публикации"}
 
-        # Получаем orchestrator из контейнера
+        # Получаем orchestrator из контейнера.
+        # При запуске через "python main.py" модуль попадает как __main__,
+        # не как "main" — нужно проверять оба ключа.
         import sys
-        main_mod = sys.modules.get('main')
-        container = getattr(main_mod, '_global_container', None) if main_mod else None
+        container = None
+        for mod_name in ('main', '__main__'):
+            main_mod = sys.modules.get(mod_name)
+            if main_mod:
+                container = getattr(main_mod, '_global_container', None)
+                if container:
+                    break
 
         if not container:
-            # Fallback: попробовать импортировать напрямую
+            # Fallback: импорт напрямую
             try:
                 from main import _global_container as gc
                 container = gc
-            except ImportError:
+            except Exception:
+                pass
+
+        if not container:
+            # Ещё один fallback: через app instance (container атрибут Application)
+            try:
+                from main import app as main_application
+                container = getattr(main_application, 'container', None)
+            except Exception:
                 pass
 
         if not container:
