@@ -450,58 +450,74 @@ class NotificationService:
             if telegram_id is None:
                 return False
 
-            # Отправляем уведомление с retry logic для обработки таймаутов и сетевых ошибок
-            if self._bot:
-                message = _format_subscriber_message(news_text, urgency)
+            # Получаем бота: из контейнера или через глобальную ссылку
+            bot = self._bot
+            if bot is None:
+                try:
+                    from services.bot.bot import get_bot_instance_async
+                    bot = await get_bot_instance_async(wait=False, timeout=5.0)
+                except Exception:
+                    bot = None
 
-                # Retry logic: 3 попытки с экспоненциальной задержкой
-                retries = 3
-                for attempt in range(retries):
-                    try:
-                        await self._bot.send_message(
-                            telegram_id,
-                            message,
-                            parse_mode='HTML',
-                            request_timeout=60  # Увеличенный таймаут: 60 секунд
+            if bot is None:
+                news_id_str = f"news_id={news_id}, " if news_id else ""
+                logger.error(
+                    f"❌ Бот недоступен для отправки подписчику "
+                    f"({news_id_str}subscriber_id={subscriber.id})"
+                )
+                return False
+
+            # Отправляем уведомление с retry logic для обработки таймаутов и сетевых ошибок
+            message = _format_subscriber_message(news_text, urgency)
+
+            # Retry logic: 3 попытки с экспоненциальной задержкой
+            retries = 3
+            for attempt in range(retries):
+                try:
+                    await bot.send_message(
+                        telegram_id,
+                        message,
+                        parse_mode='HTML',
+                        request_timeout=60  # Увеличенный таймаут: 60 секунд
+                    )
+                    return True
+                except (asyncio.TimeoutError, TimeoutError) as e:
+                    # Таймаут — пробуем снова
+                    if attempt < retries - 1:
+                        delay = 2 ** attempt  # 1с, 2с, 4с
+                        logger.warning(
+                            f"⏳ Таймаут отправки подписчику ID={telegram_id} "
+                            f"({news_id_str}попытка {attempt + 1}/{retries}), повтор через {delay}с..."
                         )
-                        return True
-                    except (asyncio.TimeoutError, TimeoutError) as e:
-                        # Таймаут — пробуем снова
-                        if attempt < retries - 1:
-                            delay = 2 ** attempt  # 1с, 2с, 4с
-                            logger.warning(
-                                f"⏳ Таймаут отправки подписчику ID={telegram_id} "
-                                f"({news_id_str}попытка {attempt + 1}/{retries}), повтор через {delay}с..."
-                            )
-                            await asyncio.sleep(delay)
-                        else:
-                            logger.error(
-                                f"❌ Превышено количество попыток отправки подписчику ID={telegram_id} "
-                                f"({news_id_str}таймаут после {retries} попыток)"
-                            )
-                            return False
-                    except (aiohttp.ClientTimeout, aiohttp.ClientConnectionError, aiohttp.ClientError) as e:
-                        # Сетевые ошибки aiohttp — пробуем снова
-                        if attempt < retries - 1:
-                            delay = 2 ** attempt
-                            logger.warning(
-                                f"⏳ Сетевая ошибка при отправке подписчику ID={telegram_id} "
-                                f"({news_id_str}попытка {attempt + 1}/{retries}, {type(e).__name__}), повтор через {delay}с..."
-                            )
-                            await asyncio.sleep(delay)
-                        else:
-                            logger.error(
-                                f"❌ Превышено количество попыток отправки подписчику ID={telegram_id} "
-                                f"({news_id_str}сетевая ошибка: {type(e).__name__})"
-                            )
-                            return False
-                    except Exception as e:
-                        # Не временная ошибка — сразу логируем и прекращаем
+                        await asyncio.sleep(delay)
+                    else:
                         logger.error(
-                            f"❌ Ошибка отправки новости подписчику ID={telegram_id} "
-                            f"({news_id_str}ошибка: {type(e).__name__}: {e})"
+                            f"❌ Превышено количество попыток отправки подписчику ID={telegram_id} "
+                            f"({news_id_str}таймаут после {retries} попыток)"
                         )
                         return False
+                except (aiohttp.ClientTimeout, aiohttp.ClientConnectionError, aiohttp.ClientError) as e:
+                    # Сетевые ошибки aiohttp — пробуем снова
+                    if attempt < retries - 1:
+                        delay = 2 ** attempt
+                        logger.warning(
+                            f"⏳ Сетевая ошибка при отправке подписчику ID={telegram_id} "
+                            f"({news_id_str}попытка {attempt + 1}/{retries}, {type(e).__name__}), повтор через {delay}с..."
+                        )
+                        await asyncio.sleep(delay)
+                    else:
+                        logger.error(
+                            f"❌ Превышено количество попыток отправки подписчику ID={telegram_id} "
+                            f"({news_id_str}сетевая ошибка: {type(e).__name__})"
+                        )
+                        return False
+                except Exception as e:
+                    # Не временная ошибка — сразу логируем и прекращаем
+                    logger.error(
+                        f"❌ Ошибка отправки новости подписчику ID={telegram_id} "
+                        f"({news_id_str}ошибка: {type(e).__name__}: {e})"
+                    )
+                    return False
 
             return False
 
