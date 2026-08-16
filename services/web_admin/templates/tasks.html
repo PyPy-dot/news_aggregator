@@ -1,0 +1,1241 @@
+{% extends "base.html" %}
+
+{% set active_page = 'tasks' %}
+
+{% block title %}News Aggregator — Задачи{% endblock %}
+
+{% block page_title %}<h2 class="text-2xl font-bold text-gray-800">Задачи</h2>{% endblock %}
+{% block page_subtitle %}<p class="text-sm text-gray-500 mt-1">Управление задачами через календарь</p>{% endblock %}
+
+{% block content %}
+    <!-- Календарь -->
+    <div class="bg-white rounded-xl shadow-sm p-6 mb-8">
+        <!-- Навигация -->
+        <div class="flex items-center justify-between mb-6">
+            <button onclick="calendar.prevMonth()" class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-colors">
+                <i class="fas fa-chevron-left mr-2"></i>Назад
+            </button>
+            <h3 id="calendar-title" class="text-xl font-bold text-gray-800"></h3>
+            <div class="flex items-center space-x-2">
+                <button onclick="calendar.goToToday()" class="px-4 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
+                    Сегодня
+                </button>
+                <button onclick="calendar.nextMonth()" class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-colors">
+                    Вперёд<i class="fas fa-chevron-right ml-2"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Заголовки дней недели -->
+        <div class="grid grid-cols-7 gap-0 mb-2">
+            <div class="text-center text-xs font-semibold text-gray-400 uppercase tracking-wider py-2">Пн</div>
+            <div class="text-center text-xs font-semibold text-gray-400 uppercase tracking-wider py-2">Вт</div>
+            <div class="text-center text-xs font-semibold text-gray-400 uppercase tracking-wider py-2">Ср</div>
+            <div class="text-center text-xs font-semibold text-gray-400 uppercase tracking-wider py-2">Чт</div>
+            <div class="text-center text-xs font-semibold text-gray-400 uppercase tracking-wider py-2">Пт</div>
+            <div class="text-center text-xs font-semibold text-gray-400 uppercase tracking-wider py-2">Сб</div>
+            <div class="text-center text-xs font-semibold text-gray-400 uppercase tracking-wider py-2">Вс</div>
+        </div>
+
+        <!-- Сетка календаря -->
+        <div id="calendar-grid" class="grid grid-cols-7 gap-0 border-t border-l border-gray-200">
+            <!-- Дни генерируются JS -->
+        </div>
+
+        <!-- Легенда статусов -->
+        <div class="flex items-center justify-center gap-4 mt-4 pt-4 border-t border-gray-100 flex-wrap">
+            <span class="text-xs text-gray-400">Статусы:</span>
+            <span class="flex items-center gap-1 text-xs"><span class="w-3 h-3 rounded-full bg-blue-500 inline-block"></span>pending</span>
+            <span class="flex items-center gap-1 text-xs"><span class="w-3 h-3 rounded-full bg-yellow-500 inline-block"></span>active</span>
+            <span class="flex items-center gap-1 text-xs"><span class="w-3 h-3 rounded-full bg-green-500 inline-block"></span>completed</span>
+            <span class="flex items-center gap-1 text-xs"><span class="w-3 h-3 rounded-full bg-red-500 inline-block"></span>failed</span>
+            <span class="flex items-center gap-1 text-xs"><span class="w-3 h-3 rounded-full bg-gray-400 inline-block"></span>canceled</span>
+            <span class="flex items-center gap-1 text-xs"><span class="w-3 h-3 rounded-full bg-orange-400 inline-block"></span>expired</span>
+            <span class="flex items-center gap-1 text-xs"><span class="w-3 h-3 rounded-full border-2 border-dashed border-indigo-400 inline-block"></span>повтор</span>
+        </div>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+    <!-- ============================================================ -->
+    <!-- Модалка: создать задачу                                      -->
+    <!-- ============================================================ -->
+    <div id="task-create-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center">
+        <div class="fixed inset-0 bg-black/40 backdrop-blur-sm" onclick="closeCreateModal()"></div>
+        <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                <div class="flex items-center space-x-3">
+                    <div class="w-9 h-9 bg-blue-100 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-plus text-blue-500"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-gray-800">Новая задача</h3>
+                </div>
+                <button onclick="closeCreateModal()" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="px-6 py-5 space-y-4 max-h-[65vh] overflow-y-auto">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Тип задачи</label>
+                    <select id="create-type" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" onchange="toggleCreateFields()">
+                        <option value="direct_generation">Прямая генерация новости</option>
+                        <option value="scheduled_processing">Плановая обработка</option>
+                    </select>
+                </div>
+                <div id="create-description-wrapper">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Описание <span class="text-red-500">*</span></label>
+                    <textarea id="create-description" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Опишите задачу..."></textarea>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Дата <span class="text-red-500">*</span></label>
+                        <input type="date" id="create-date" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Время</label>
+                        <input type="time" id="create-time" value="09:00" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                </div>
+
+                <!-- Куда опубликовать (только для direct_generation) -->
+                <div id="create-publish-wrapper" class="border-t border-gray-200 pt-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Куда опубликовать</label>
+
+                    <label class="flex items-center space-x-2 cursor-pointer py-1">
+                        <input type="checkbox" id="create-send-bot" class="w-4 h-4 text-blue-500 rounded focus:ring-blue-500 border-gray-300">
+                        <span class="text-sm text-gray-700"><i class="fas fa-robot mr-1 text-blue-400"></i>Отправить через бота всем подписчикам</span>
+                    </label>
+
+                    <label class="flex items-center space-x-2 cursor-pointer py-1">
+                        <input type="checkbox" id="create-all-channels" class="w-4 h-4 text-purple-500 rounded focus:ring-purple-500 border-gray-300" onchange="toggleCreateAllChannels(this.checked)">
+                        <span class="text-sm text-gray-700"><i class="fas fa-broadcast-tower mr-1 text-purple-400"></i>Опубликовать во все каналы</span>
+                    </label>
+
+                    <div id="create-channels-wrapper" class="mt-2">
+                        <label class="block text-xs font-medium text-gray-500 mb-1">Или выберите конкретные каналы:</label>
+                        <input type="text" id="create-channel-search" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Поиск по названию..." oninput="filterCreatePublishers(this.value)">
+                        <div id="create-channel-list" class="mt-1 max-h-32 overflow-y-auto border border-gray-200 rounded-lg bg-gray-50 text-sm"></div>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="flex items-center space-x-2 cursor-pointer">
+                        <input type="checkbox" id="create-recurring" class="w-4 h-4 text-blue-500 rounded focus:ring-blue-500 border-gray-300" onchange="toggleCreateRecurrence()">
+                        <span class="text-sm text-gray-700">Повторяющаяся задача</span>
+                    </label>
+                </div>
+                <div id="create-recurrence-wrapper" class="hidden">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Повторять каждые (дней)</label>
+                    <input type="number" id="create-recurrence-pattern" min="1" max="365" value="1" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    <p class="text-xs text-gray-400 mt-1">1 = ежедневно, 7 = еженедельно, 30 = ежемесячно</p>
+                </div>
+                <div id="create-output"></div>
+            </div>
+            <div class="flex items-center justify-end space-x-3 px-6 py-4 bg-gray-50 border-t border-gray-200">
+                <button onclick="closeCreateModal()" class="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">Отмена</button>
+                <button id="create-submit-btn" onclick="submitCreateTask()" class="px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 font-medium">
+                    <i class="fas fa-plus mr-1"></i>Создать
+                </button>
+                <span id="create-spinner" class="hidden text-blue-500"><i class="fas fa-spinner fa-spin"></i></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- Модалка: детали задачи (просмотр + действия)                  -->
+    <!-- ============================================================ -->
+    <div id="task-detail-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center">
+        <div class="fixed inset-0 bg-black/40 backdrop-blur-sm" onclick="closeTaskDetailModal()"></div>
+        <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                <div class="flex items-center space-x-3">
+                    <div class="w-9 h-9 bg-indigo-100 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-info-circle text-indigo-500"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-gray-800">Детали задачи</h3>
+                </div>
+                <button onclick="closeTaskDetailModal()" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div id="task-detail-content" class="px-6 py-5 space-y-3">
+                <!-- Заполняется динамически -->
+            </div>
+            <div class="flex items-center justify-between px-6 py-4 bg-gray-50 border-t border-gray-200">
+                <div class="flex items-center space-x-2">
+                    <button id="detail-cancel-btn" onclick="cancelTaskFromDetail()" class="px-3 py-1.5 text-sm text-yellow-700 bg-yellow-100 hover:bg-yellow-200 rounded-lg transition-colors" title="Отменить задачу (status → canceled)">
+                        <i class="fas fa-ban mr-1"></i>Отменить
+                    </button>
+                    <button id="detail-delete-btn" onclick="deleteTaskFromDetail()" class="px-3 py-1.5 text-sm text-red-700 bg-red-100 hover:bg-red-200 rounded-lg transition-colors" title="Удалить задачу из базы">
+                        <i class="fas fa-trash mr-1"></i>Удалить
+                    </button>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <button onclick="closeTaskDetailModal()" class="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">Закрыть</button>
+                    <button id="detail-edit-btn" onclick="openEditFromDetail()" class="px-4 py-2 bg-indigo-500 text-white text-sm rounded-lg hover:bg-indigo-600 font-medium">
+                        <i class="fas fa-edit mr-1"></i>Редактировать
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- Модалка: редактирование задачи                               -->
+    <!-- ============================================================ -->
+    <div id="task-edit-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center">
+        <div class="fixed inset-0 bg-black/40 backdrop-blur-sm" onclick="closeEditModal()"></div>
+        <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                <div class="flex items-center space-x-3">
+                    <div class="w-9 h-9 bg-orange-100 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-edit text-orange-500"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-gray-800">Редактировать задачу</h3>
+                </div>
+                <button onclick="closeEditModal()" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="px-6 py-5 space-y-4 max-h-[65vh] overflow-y-auto">
+                <input type="hidden" id="edit-id" value="">
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Описание <span class="text-red-500">*</span></label>
+                    <textarea id="edit-description" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500" placeholder="Опишите задачу..."></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Тип задачи</label>
+                    <select id="edit-type" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500" onchange="toggleEditPublication()">
+                        <option value="custom_periodic">Пользовательская</option>
+                        <option value="direct_generation">Прямая генерация новости</option>
+                        <option value="scheduled_processing">Плановая обработка</option>
+                        <option value="event_processing">Обработка событий</option>
+                        <option value="daily_morning">Утренняя обработка</option>
+                        <option value="daily_evening">Вечерняя обработка</option>
+                    </select>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Дата <span class="text-red-500">*</span></label>
+                        <input type="date" id="edit-date" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Время</label>
+                        <input type="time" id="edit-time" value="09:00" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500">
+                    </div>
+                </div>
+
+                <!-- Куда опубликовать (только для direct_generation) -->
+                <div id="edit-publish-wrapper" class="hidden border-t border-gray-200 pt-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Куда опубликовать</label>
+
+                    <label class="flex items-center space-x-2 cursor-pointer py-1">
+                        <input type="checkbox" id="edit-send-bot" class="w-4 h-4 text-blue-500 rounded focus:ring-blue-500 border-gray-300">
+                        <span class="text-sm text-gray-700"><i class="fas fa-robot mr-1 text-blue-400"></i>Отправить через бота всем подписчикам</span>
+                    </label>
+
+                    <label class="flex items-center space-x-2 cursor-pointer py-1">
+                        <input type="checkbox" id="edit-all-channels" class="w-4 h-4 text-purple-500 rounded focus:ring-purple-500 border-gray-300" onchange="toggleEditAllChannels(this.checked)">
+                        <span class="text-sm text-gray-700"><i class="fas fa-broadcast-tower mr-1 text-purple-400"></i>Опубликовать во все каналы</span>
+                    </label>
+
+                    <div id="edit-channels-wrapper" class="mt-2">
+                        <label class="block text-xs font-medium text-gray-500 mb-1">Или выберите конкретные каналы:</label>
+                        <input type="text" id="edit-channel-search" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500" placeholder="Поиск по названию..." oninput="filterEditPublishers(this.value)">
+                        <div id="edit-channel-list" class="mt-1 max-h-32 overflow-y-auto border border-gray-200 rounded-lg bg-gray-50 text-sm"></div>
+                    </div>
+                </div>
+                <div>
+                    <label class="flex items-center space-x-2 cursor-pointer">
+                        <input type="checkbox" id="edit-recurring" class="w-4 h-4 text-orange-500 rounded focus:ring-orange-500 border-gray-300" onchange="toggleEditRecurrence()">
+                        <span class="text-sm text-gray-700">Повторяющаяся задача</span>
+                    </label>
+                </div>
+                <div id="edit-recurrence-wrapper" class="hidden">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Повторять каждые (дней)</label>
+                    <input type="number" id="edit-recurrence-pattern" min="1" max="365" value="1" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500">
+                    <p class="text-xs text-gray-400 mt-1">1 = ежедневно, 7 = еженедельно, 30 = ежемесячно</p>
+                </div>
+                <div id="edit-output"></div>
+            </div>
+            <div class="flex items-center justify-end space-x-3 px-6 py-4 bg-gray-50 border-t border-gray-200">
+                <button onclick="closeEditModal()" class="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">Отмена</button>
+                <button id="edit-submit-btn" onclick="submitEditTask()" class="px-4 py-2 bg-orange-500 text-white text-sm rounded-lg hover:bg-orange-600 font-medium">
+                    <i class="fas fa-save mr-1"></i>Сохранить
+                </button>
+                <span id="edit-spinner" class="hidden text-orange-500"><i class="fas fa-spinner fa-spin"></i></span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        // Утилиты
+        // ============================================================
+        const MONTHS_RU = [
+            'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+            'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
+        ];
+
+        const STATUS_COLORS = {
+            'pending': 'bg-blue-500',
+            'active': 'bg-yellow-500',
+            'completed': 'bg-green-500',
+            'failed': 'bg-red-500',
+            'canceled': 'bg-gray-400',
+            'expired': 'bg-orange-400',
+        };
+
+        const STATUS_LABELS = {
+            'pending': 'Ожидание',
+            'active': 'В работе',
+            'completed': 'Выполнена',
+            'failed': 'Ошибка',
+            'canceled': 'Отменена',
+            'expired': 'Просрочена',
+        };
+
+        // Терминальные статусы — для них не показываем «Отменить» и «Редактировать»
+        const TERMINAL_STATUSES = new Set(['completed', 'failed', 'expired', 'canceled']);
+
+        function escapeHtml(text) {
+            const d = document.createElement('div');
+            d.textContent = text || '';
+            return d.innerHTML;
+        }
+
+        // ============================================================
+        // Выпадающие списки задач в ячейках календаря
+        // ============================================================
+        let activeDayDropdown = null;
+
+        function toggleDayDropdown(dateStr) {
+            // Закрыть предыдущий
+            if (activeDayDropdown) {
+                closeDayDropdown();
+                return;
+            }
+
+            const dropdown = document.getElementById('dropdown-' + dateStr);
+            if (!dropdown) return;
+
+            dropdown.classList.remove('hidden');
+            activeDayDropdown = dateStr;
+
+            // Клик вне закроет
+            document.addEventListener('click', closeDayDropdownOutside);
+        }
+
+        function closeDayDropdown() {
+            if (activeDayDropdown) {
+                const dropdown = document.getElementById('dropdown-' + activeDayDropdown);
+                if (dropdown) dropdown.classList.add('hidden');
+                activeDayDropdown = null;
+            }
+            document.removeEventListener('click', closeDayDropdownOutside);
+        }
+
+        function closeDayDropdownOutside(e) {
+            if (activeDayDropdown) {
+                const dropdown = document.getElementById('dropdown-' + activeDayDropdown);
+                const trigger = document.getElementById('trigger-' + activeDayDropdown);
+                if (dropdown && trigger) {
+                    if (!dropdown.contains(e.target) && !trigger.contains(e.target)) {
+                        closeDayDropdown();
+                    }
+                }
+            }
+        }
+
+        // ============================================================
+        // Расширение recurring задач на весь видимый месяц
+        // ============================================================
+        function expandRecurringTasks(tasks, year, month) {
+            /**
+             * Раскрываем recurring задачи: для каждой recurring задачи
+             * с базовой scheduled_at рассчитываем все повторы, которые
+             * попадают в видимый месяц.
+             *
+             * Каждая «виртуальная» копия получает virtual: true и
+             * виртуальный ID вида `v-{date}-{realId}`.
+             */
+            const expanded = [];
+            const start = new Date(year, month, 1); // month is 0-based
+            const end = new Date(year, month + 1, 0, 23, 59, 59);
+
+            for (const task of tasks) {
+                if (!task.recurring || !task.recurrence_pattern || !task.scheduled_at) {
+                    expanded.push(task);
+                    continue;
+                }
+
+                const baseDate = new Date(task.scheduled_at);
+                const days = task.recurrence_pattern;
+
+                // Сама базовая задача
+                if (baseDate >= start && baseDate <= end) {
+                    expanded.push(task);
+                }
+
+                // Рассчитываем повторы
+                let d = new Date(baseDate);
+                d.setDate(d.getDate() + days); // первый повтор
+
+                while (d <= end) {
+                    if (d >= start) {
+                        const repeatDateStr = d.toISOString().substring(0, 10);
+                        const timePart = task.scheduled_at.substring(10);
+                        expanded.push({
+                            ...task,
+                            id: 'v-' + repeatDateStr + '-' + task.id, // виртуальный ID
+                            virtual: true,
+                            scheduled_at: repeatDateStr + timePart,
+                        });
+                    }
+                    d.setDate(d.getDate() + days);
+                }
+            }
+
+            return expanded;
+        }
+
+        // Извлечь реальный ID задачи из виртуального
+        function getRealTaskId(id) {
+            if (typeof id === 'string' && id.startsWith('v-')) {
+                const parts = id.split('-');
+                return parseInt(parts[parts.length - 1], 10);
+            }
+            return id;
+        }
+
+        // ============================================================
+        // Календарь
+        // ============================================================
+        const calendar = {
+            year: new Date().getFullYear(),
+            month: new Date().getMonth(), // 0-based
+            tasks: {}, // { 'YYYY-MM-DD': [task, ...] }
+
+            async init() {
+                await this.loadTasks();
+            },
+
+            nextMonth() {
+                this.month++;
+                if (this.month > 11) { this.month = 0; this.year++; }
+                closeDayDropdown();
+                this.loadTasks();
+            },
+
+            prevMonth() {
+                this.month--;
+                if (this.month < 0) { this.month = 11; this.year--; }
+                closeDayDropdown();
+                this.loadTasks();
+            },
+
+            goToToday() {
+                const now = new Date();
+                this.year = now.getFullYear();
+                this.month = now.getMonth();
+                closeDayDropdown();
+                this.loadTasks();
+            },
+
+            render() {
+                document.getElementById('calendar-title').textContent = `${MONTHS_RU[this.month]} ${this.year}`;
+
+                const firstDay = new Date(this.year, this.month, 1);
+                const lastDay = new Date(this.year, this.month + 1, 0);
+                const daysInMonth = lastDay.getDate();
+
+                let startDow = firstDay.getDay();
+                startDow = startDow === 0 ? 6 : startDow - 1;
+
+                const today = new Date();
+                const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+
+                let html = '';
+
+                for (let i = 0; i < startDow; i++) {
+                    html += '<div class="min-h-[100px] bg-gray-50 border border-gray-200"></div>';
+                }
+
+                for (let d = 1; d <= daysInMonth; d++) {
+                    const dateStr = `${this.year}-${String(this.month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                    const isToday = dateStr === todayStr;
+                    const dayTasks = this.tasks[dateStr] || [];
+
+                    // Прошедший день — не включая сегодня
+                    const cellDate = new Date(this.year, this.month, d);
+                    cellDate.setHours(0, 0, 0, 0);
+                    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                    const isPast = cellDate < todayStart;
+
+                    let dayClass = 'bg-white';
+                    if (isToday) {
+                        dayClass = 'bg-blue-50 border-blue-300';
+                    } else if (isPast) {
+                        dayClass = 'bg-gray-100';
+                    }
+
+                    // Показываем первые 2 задачи, остальные в дропдауне
+                    const visibleCount = 2;
+                    const overflowCount = dayTasks.length - visibleCount;
+
+                    let tasksHtml = '';
+                    dayTasks.slice(0, visibleCount).forEach(task => {
+                        tasksHtml += this.buildTaskChip(task, isPast);
+                    });
+
+                    if (overflowCount > 0) {
+                        // Кнопка-триггер для выпадающего списка
+                        tasksHtml += `
+                            <div id="trigger-${dateStr}"
+                                 class="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded cursor-pointer hover:bg-gray-200 transition-colors mb-0.5"
+                                 onclick="event.stopPropagation(); toggleDayDropdown('${dateStr}')"
+                                 title="${overflowCount} ещё">
+                                +${overflowCount} ещё ▾
+                            </div>
+                        `;
+
+                        // Выпадающий список
+                        tasksHtml += `
+                            <div id="dropdown-${dateStr}" class="hidden z-40 absolute bg-white border border-gray-200 rounded-lg shadow-lg p-2 space-y-1 min-w-[180px] max-h-[240px] overflow-y-auto">
+                        `;
+                        dayTasks.slice(visibleCount).forEach(task => {
+                            tasksHtml += this.buildDropdownItem(task);
+                        });
+                        tasksHtml += '</div>';
+                    }
+
+                    // Для прошедших дней — клик по ячейке не открывает модалку создания
+                    const clickAttr = isPast ? '' : `onclick="openCreateModal('${dateStr}')"`;
+                    const cursorStyle = isPast ? '' : 'cursor-pointer hover:bg-blue-50';
+
+                    html += `
+                        <div class="min-h-[100px] border border-gray-200 ${dayClass} p-1 ${cursorStyle} transition-colors relative"
+                             ${clickAttr}>
+                            <div class="text-sm text-gray-600 mb-1">${d}${isToday ? ' <span class="text-[10px] text-blue-500 font-semibold">сегодня</span>' : ''}</div>
+                            ${tasksHtml}
+                        </div>
+                    `;
+                }
+
+                document.getElementById('calendar-grid').innerHTML = html;
+
+                // Привязываем обработчики кликов на task-chip элементы
+                document.querySelectorAll('.task-chip').forEach(el => {
+                    el.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const ds = el.dataset;
+                        const id = parseInt(ds.taskId, 10);
+                        if (isNaN(id)) return;
+                        showTaskDetail(
+                            id,
+                            ds.taskStatus,
+                            ds.taskDescription,
+                            ds.taskScheduled,
+                            ds.taskType,
+                            ds.taskRecurring === 'true',
+                            ds.taskVirtual === 'true'
+                        );
+                    });
+                });
+            },
+
+            buildTaskChip(task, isPast) {
+                const realId = getRealTaskId(task.id);
+                const isVirtual = typeof task.id === 'string' && task.id.startsWith('v-');
+                const recurringBadge = (task.recurring && isVirtual) ? ' <span title="Повтор">↻</span>' : '';
+                const color = STATUS_COLORS[task.status] || 'bg-gray-400';
+                const label = (task.description || task.task_type).substring(0, 25);
+
+                // Для прошедших дней — чипы серые и без курсора
+                let chipClass = `${color} text-white`;
+                if (isPast) {
+                    chipClass = 'bg-gray-300 text-gray-500';
+                }
+
+                return `
+                    <div class="text-[10px] px-1.5 py-0.5 rounded ${chipClass} truncate cursor-pointer hover:opacity-80 mb-0.5 task-chip"
+                         data-task-id="${realId}"
+                         data-task-status="${task.status}"
+                         data-task-description="${escapeHtml(task.description || '')}"
+                         data-task-scheduled="${task.scheduled_at || ''}"
+                         data-task-type="${task.task_type}"
+                         data-task-recurring="${task.recurring ? 'true' : 'false'}"
+                         data-task-virtual="${isVirtual ? 'true' : 'false'}"
+                         title="${escapeHtml(task.description || task.task_type)}">
+                        ${escapeHtml(label)}${recurringBadge}
+                    </div>
+                `;
+            },
+
+            async loadTasks() {
+                try {
+                    const resp = await fetch(`/tasks/calendar?year=${this.year}&month=${this.month + 1}`);
+                    if (!resp.ok) return;
+                    const data = await resp.json();
+
+                    // Расширяем recurring задачи на весь видимый месяц
+                    const expanded = expandRecurringTasks(data.tasks || [], this.year, this.month);
+
+                    this.tasks = {};
+                    expanded.forEach(task => {
+                        if (!task.scheduled_at) return;
+                        const datePart = task.scheduled_at.substring(0, 10);
+                        if (!this.tasks[datePart]) this.tasks[datePart] = [];
+                        this.tasks[datePart].push(task);
+                    });
+
+                    this.render();
+                } catch (e) {
+                    console.error('Ошибка загрузки задач календаря:', e);
+                }
+            }
+        };
+
+        // ============================================================
+        // Модалка: создать задачу
+        // ============================================================
+        let _createPublishers = [];
+
+        function openCreateModal(dateStr) {
+            document.getElementById('task-create-modal').classList.remove('hidden');
+            document.getElementById('create-type').value = 'direct_generation';
+            document.getElementById('create-description').value = '';
+
+            // Дата: по умолчанию — сегодня (нельзя выбрать прошедшую)
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('create-date').value = dateStr || today;
+            document.getElementById('create-date').setAttribute('min', today);
+
+            document.getElementById('create-time').value = '09:00';
+            document.getElementById('create-send-bot').checked = false;
+            document.getElementById('create-all-channels').checked = false;
+            document.getElementById('create-channel-search').value = '';
+            document.getElementById('create-recurring').checked = false;
+            document.getElementById('create-recurrence-pattern').value = '1';
+            document.getElementById('create-recurrence-wrapper').classList.add('hidden');
+            document.getElementById('create-output').innerHTML = '';
+            toggleCreateFields();
+            loadCreatePublishers();
+
+            // Привязываем реактивную валидацию при ручном вводе даты/времени
+            document.getElementById('create-date').oninput = () => validateDateTimeFields('create');
+            document.getElementById('create-time').oninput = () => validateDateTimeFields('create');
+
+            // Первичная валидация (обновит min у time-поля)
+            validateDateTimeFields('create');
+        }
+
+        function closeCreateModal() {
+            document.getElementById('task-create-modal').classList.add('hidden');
+        }
+
+        // Показать/скрыть поля при смене типа задачи
+        function toggleCreateFields() {
+            const isDirect = document.getElementById('create-type').value === 'direct_generation';
+            const isScheduled = document.getElementById('create-type').value === 'scheduled_processing';
+
+            // Описание: показываем только для direct_generation
+            document.getElementById('create-description-wrapper').classList.toggle('hidden', isScheduled);
+
+            // Публикация: показываем только для direct_generation
+            document.getElementById('create-publish-wrapper').classList.toggle('hidden', !isDirect);
+        }
+
+        // Переключить «Все каналы»
+        function toggleCreateAllChannels(checked) {
+            const wrapper = document.getElementById('create-channels-wrapper');
+            const checkboxes = document.querySelectorAll('.create-publisher-cb');
+            if (checked) {
+                wrapper.classList.add('hidden');
+                checkboxes.forEach(cb => cb.checked = false);
+            } else {
+                wrapper.classList.remove('hidden');
+            }
+        }
+
+        // Загрузка списка каналов публикации
+        async function loadCreatePublishers() {
+            try {
+                const resp = await fetch('/api/publishers/list');
+                const data = await resp.json();
+                if (data.success) {
+                    _createPublishers = data.publishers || [];
+                    filterCreatePublishers('');
+                }
+            } catch(e) {
+                console.error('Ошибка загрузки каналов публикации:', e);
+            }
+        }
+
+        // Фильтрация каналов в дропдауне
+        function filterCreatePublishers(query) {
+            const list = document.getElementById('create-channel-list');
+            const q = (query || '').toLowerCase();
+            const filtered = _createPublishers.filter(p => p.title.toLowerCase().includes(q));
+
+            if (filtered.length === 0) {
+                list.innerHTML = '<div class="p-2 text-xs text-gray-400">Каналы не найдены</div>';
+                return;
+            }
+
+            list.innerHTML = filtered.map(p => `
+                <label class="flex items-center space-x-2 px-3 py-1.5 hover:bg-gray-100 cursor-pointer">
+                    <input type="checkbox" value="${p.id}" class="create-publisher-cb w-4 h-4 text-blue-500 rounded focus:ring-blue-500 border-gray-300">
+                    <span class="text-sm text-gray-700">${escapeHtml(p.title)}</span>
+                </label>
+            `).join('');
+        }
+
+        function getSelectedPublisherIds() {
+            const cbs = document.querySelectorAll('.create-publisher-cb:checked');
+            return Array.from(cbs).map(cb => parseInt(cb.value));
+        }
+
+        function toggleCreateRecurrence() {
+            const checked = document.getElementById('create-recurring').checked;
+            document.getElementById('create-recurrence-wrapper').classList.toggle('hidden', !checked);
+        }
+
+        async function submitCreateTask() {
+            const taskType = document.getElementById('create-type').value;
+            const date = document.getElementById('create-date').value;
+            const time = document.getElementById('create-time').value || '09:00';
+            const recurring = document.getElementById('create-recurring').checked;
+            const recurrencePattern = recurring ? (parseInt(document.getElementById('create-recurrence-pattern').value) || 1) : null;
+
+            // Для плановой обработки описание генерируется автоматически
+            let description = document.getElementById('create-description').value.trim();
+            if (taskType === 'scheduled_processing') {
+                description = 'Плановая обработка всех ожидающих новостей';
+            }
+
+            if (taskType === 'direct_generation' && !description) { alert('Введите описание задачи'); return; }
+            if (!date) { alert('Выберите дату'); return; }
+
+            // Проверка: нельзя создать задачу на прошедшее время
+            if (checkDatetimeBeforeSubmit('create')) return;
+
+            const output = document.getElementById('create-output');
+            const btn = document.getElementById('create-submit-btn');
+            const spinner = document.getElementById('create-spinner');
+            btn.disabled = true; spinner.classList.remove('hidden');
+
+            console.log('[Tasks] submitCreateTask:', { taskType, description: description.substring(0, 40), date, time, recurring });
+
+            try {
+                if (taskType === 'direct_generation') {
+                    // Для прямой генерации используем специализированный эндпоинт
+                    const sendToBot = document.getElementById('create-send-bot').checked;
+                    const sendToAll = document.getElementById('create-all-channels').checked;
+                    const publisherIds = getSelectedPublisherIds();
+
+                    const scheduledAt = `${date}T${time}:00`;
+
+                    // Определяем publisher_channel_id
+                    // Если бот + каналы: отправляем в каналы (channel_id), бот обрабатываем отдельно через null
+                    // Бот = null (не передаём параметр), -1 = все каналы, число = конкретный
+                    let pubChannelId = null;
+                    if (sendToAll) pubChannelId = -1;
+                    else if (publisherIds.length === 1) pubChannelId = publisherIds[0];
+                    else if (publisherIds.length > 1) pubChannelId = -1;
+                    // Если выбран только бот (ни каналов, ни «все») — pubChannelId остаётся null
+
+                    // Создаём задачу на прямую генерацию
+                    let url = `/tasks/create-direct?description=${encodeURIComponent(description)}&scheduled_at=${encodeURIComponent(scheduledAt)}&recurring=${recurring}`;
+                    if (pubChannelId !== null) url += `&publisher_channel_id=${pubChannelId}`;
+                    if (recurring && recurrencePattern) url += `&recurrence_pattern=${recurrencePattern}`;
+
+                    console.log('[Tasks] POST', url);
+                    const resp = await fetch(url, { method: 'POST' });
+                    console.log('[Tasks] response status:', resp.status);
+
+                    if (!resp.ok) {
+                        const err = await resp.json().catch(() => ({}));
+                        console.error('[Tasks] create-direct error:', err);
+                        throw new Error(err.detail || err.error || 'Ошибка сервера');
+                    }
+
+                    const taskData = await resp.json();
+                    console.log('[Tasks] direct_generation task created:', taskData.id, 'scheduled_at:', taskData.scheduled_at, 'publisher_channel_id:', taskData.publisher_channel_id);
+
+                    output.innerHTML = `<span class="text-green-600"><i class="fas fa-check mr-1"></i>Задача создана (ID: ${taskData.id}, запуск: ${new Date(taskData.scheduled_at).toLocaleString('ru-RU')})</span>`;
+                } else {
+                    // Плановая обработка и другие типы
+                    const payload = {
+                        task_type: taskType,
+                        description,
+                        scheduled_at: `${date}T${time}:00`,
+                        recurring,
+                        recurrence_pattern: recurring ? recurrencePattern : null,
+                    };
+
+                    console.log('[Tasks] POST /tasks/create', payload);
+                    const resp = await fetch('/tasks/create', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(payload)
+                    });
+                    console.log('[Tasks] response status:', resp.status);
+
+                    if (!resp.ok) {
+                        const err = await resp.json().catch(() => ({}));
+                        console.error('[Tasks] create error:', err);
+                        throw new Error(err.detail || err.error || 'Ошибка сервера');
+                    }
+
+                    const taskData = await resp.json();
+                    console.log('[Tasks] task created:', taskData.id, 'type:', taskData.task_type, 'scheduled_at:', taskData.scheduled_at);
+
+                    output.innerHTML = `<span class="text-green-600"><i class="fas fa-check mr-1"></i>Задача создана (ID: ${taskData.id}, запуск: ${new Date(taskData.scheduled_at).toLocaleString('ru-RU')})</span>`;
+                }
+
+                setTimeout(() => { closeCreateModal(); calendar.loadTasks(); }, 1000);
+            } catch (e) {
+                console.error('[Tasks] submitCreateTask exception:', e);
+                output.innerHTML = `<span class="text-red-600"><i class="fas fa-times mr-1"></i>${escapeHtml(e.message)}</span>`;
+            } finally {
+                btn.disabled = false; spinner.classList.add('hidden');
+            }
+        }
+
+        // ============================================================
+        // Модалка: детали задачи
+        // ============================================================
+        let currentDetailTaskId = null;
+
+        function showTaskDetail(realId, status, description, scheduledAt, taskType, recurring, isVirtual) {
+            currentDetailTaskId = realId;
+            const statusColor = STATUS_COLORS[status] || 'bg-gray-400';
+            const statusLabel = STATUS_LABELS[status] || status;
+
+            const virtualBadge = isVirtual
+                ? '<span class="ml-2 text-[10px] text-indigo-400" title="Это повтор периодической задачи">↻ повтор</span>'
+                : '';
+
+            // Кнопки действий в зависимости от статуса
+            const terminal = TERMINAL_STATUSES.has(status);
+            const isPending = status === 'pending';
+            const cancelBtnVisible = isPending ? '' : 'style="display:none"';
+            // Редактировать можно только pending задачи
+            const editBtnVisible = isPending ? '' : 'style="display:none"';
+
+            let detailHtml = `
+                <div class="flex items-center justify-between">
+                    <span class="text-sm text-gray-500">ID: ${realId}${virtualBadge}</span>
+                    <span class="px-2 py-1 ${statusColor} text-white text-xs rounded-full">${statusLabel}</span>
+                </div>
+                <div>
+                    <p class="text-xs text-gray-400 mb-1">Описание</p>
+                    <p class="text-sm text-gray-700">${escapeHtml(description)}</p>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <p class="text-xs text-gray-400 mb-1">Тип</p>
+                        <p class="text-sm text-gray-700">${escapeHtml(taskType)}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-gray-400 mb-1">Запланировано</p>
+                        <p class="text-sm text-gray-700">${scheduledAt ? new Date(scheduledAt).toLocaleString('ru-RU') : '—'}</p>
+                    </div>
+                </div>
+                <div>
+                    <p class="text-xs text-gray-400 mb-1">Периодичность</p>
+                    <p class="text-sm text-gray-700">${recurring ? 'Повторяющаяся' : 'Одноразовая'}</p>
+                </div>
+            `;
+
+            document.getElementById('task-detail-content').innerHTML = detailHtml;
+
+            // Показать/скрыть кнопки по статусу
+            document.getElementById('detail-cancel-btn').style.display = isPending ? '' : 'none';
+            document.getElementById('detail-delete-btn').style.display = ''; // Удалить можно всегда
+            document.getElementById('detail-edit-btn').style.display = isPending ? '' : 'none';
+
+            closeDayDropdown();
+            document.getElementById('task-detail-modal').classList.remove('hidden');
+        }
+
+        function closeTaskDetailModal() {
+            document.getElementById('task-detail-modal').classList.add('hidden');
+            currentDetailTaskId = null;
+        }
+
+        // «Отменить» задачу → POST /tasks/{id}/cancel
+        async function cancelTaskFromDetail() {
+            if (!currentDetailTaskId) return;
+            if (!confirm('Отменить эту задачу? Статус изменится на «canceled».')) return;
+            const id = currentDetailTaskId;
+
+            try {
+                console.log('[Tasks] cancel task:', id);
+                const resp = await fetch(`/tasks/${id}/cancel`, { method: 'POST' });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    console.error('[Tasks] cancel error:', err);
+                    throw new Error(err.detail || 'Ошибка отмены');
+                }
+                console.log('[Tasks] task canceled:', id);
+                closeTaskDetailModal();
+                calendar.loadTasks();
+            } catch (e) {
+                alert('Ошибка: ' + e.message);
+            }
+        }
+
+        // «Удалить» задачу → DELETE /tasks/{id}
+        async function deleteTaskFromDetail() {
+            if (!currentDetailTaskId) return;
+            if (!confirm('Удалить эту задачу из базы данных? Это действие нельзя отменить.')) return;
+            const id = currentDetailTaskId;
+
+            try {
+                console.log('[Tasks] delete task:', id);
+                const resp = await fetch(`/tasks/${id}`, { method: 'DELETE' });
+                if (!resp.ok) throw new Error('Ошибка удаления');
+                console.log('[Tasks] task deleted:', id);
+                closeTaskDetailModal();
+                calendar.loadTasks();
+            } catch (e) {
+                alert('Ошибка: ' + e.message);
+            }
+        }
+
+        // ============================================================
+        // Модалка: редактирование задачи
+        // ============================================================
+        function openEditFromDetail() {
+            if (!currentDetailTaskId) return;
+            const id = currentDetailTaskId;
+            console.log('[Tasks] openEditFromDetail, id:', id);
+            closeTaskDetailModal();
+            loadEditTask(id);
+        }
+
+        async function loadEditTask(id) {
+            try {
+                console.log('[Tasks] loadEditTask, fetching:', `/tasks/${id}`);
+                const resp = await fetch(`/tasks/${id}`);
+                console.log('[Tasks] loadEditTask response:', resp.status);
+                if (!resp.ok) {
+                    let errMsg = `HTTP ${resp.status}`;
+                    try {
+                        const err = await resp.json();
+                        console.error('[Tasks] loadEditTask error:', err);
+                        if (err && typeof err.detail === 'string') errMsg = err.detail;
+                        else if (err && typeof err.error === 'string') errMsg = err.error;
+                    } catch(_) {}
+                    alert('Ошибка загрузки задачи: ' + errMsg);
+                    return;
+                }
+                const task = await resp.json();
+                console.log('[Tasks] task loaded for edit:', task.id, task.task_type);
+                fillEditModal(task);
+            } catch (e) {
+                const msg = (e && typeof e.message === 'string') ? e.message : 'Неизвестная ошибка';
+                alert('Не удалось загрузить задачу: ' + msg);
+            }
+        }
+
+        function fillEditModal(task) {
+            document.getElementById('task-edit-modal').classList.remove('hidden');
+            document.getElementById('edit-id').value = task.id;
+            document.getElementById('edit-description').value = task.description || '';
+            document.getElementById('edit-type').value = task.task_type || 'custom_periodic';
+
+            if (task.scheduled_at) {
+                const dt = new Date(task.scheduled_at);
+                document.getElementById('edit-date').value = task.scheduled_at.substring(0, 10);
+                document.getElementById('edit-time').value = dt.toTimeString().substring(0, 5);
+            }
+
+            document.getElementById('edit-recurring').checked = !!task.recurring;
+            document.getElementById('edit-recurrence-pattern').value = task.recurrence_pattern || 1;
+            toggleEditRecurrence();
+            document.getElementById('edit-output').innerHTML = '';
+
+            // Запрещаем выбор прошедших дат для pending задач
+            const today = new Date().toISOString().split('T')[0];
+            if (task.status === 'pending') {
+                document.getElementById('edit-date').setAttribute('min', today);
+
+                // Привязываем реактивную валидацию при ручном вводе
+                document.getElementById('edit-date').oninput = () => validateDateTimeFields('edit');
+                document.getElementById('edit-time').oninput = () => validateDateTimeFields('edit');
+
+                // Первичная валидация — обновит min у time-поля
+                validateDateTimeFields('edit');
+            } else {
+                document.getElementById('edit-date').removeAttribute('min');
+                document.getElementById('edit-time').removeAttribute('min');
+            }
+
+            // Заполняем блок публикации для direct_generation
+            const isDirect = task.task_type === 'direct_generation';
+            toggleEditPublication();
+
+            if (isDirect) {
+                const pubId = task.publisher_channel_id;
+                // Интерпретация: null = бот, -1 = все каналы, число > 0 = конкретный
+                const isBotOnly = pubId === null;
+                const isAllChannels = pubId === -1;
+                const isSpecificChannel = pubId !== null && pubId > 0;
+
+                document.getElementById('edit-send-bot').checked = isBotOnly;
+                document.getElementById('edit-all-channels').checked = isAllChannels;
+
+                loadEditPublishers().then(() => {
+                    if (isSpecificChannel) {
+                        const cb = document.querySelector(`.edit-publisher-cb[value="${pubId}"]`);
+                        if (cb) cb.checked = true;
+                    }
+                    toggleEditAllChannels(document.getElementById('edit-all-channels').checked);
+                });
+            }
+        }
+
+        function closeEditModal() {
+            document.getElementById('task-edit-modal').classList.add('hidden');
+        }
+
+        function toggleEditRecurrence() {
+            const checked = document.getElementById('edit-recurring').checked;
+            document.getElementById('edit-recurrence-wrapper').classList.toggle('hidden', !checked);
+        }
+
+        // Показать/скрыть блок публикации при смене типа задачи
+        function toggleEditPublication() {
+            const isDirect = document.getElementById('edit-type').value === 'direct_generation';
+            document.getElementById('edit-publish-wrapper').classList.toggle('hidden', !isDirect);
+        }
+
+        // Переключить «Все каналы» в модалке редактирования
+        function toggleEditAllChannels(checked) {
+            const wrapper = document.getElementById('edit-channels-wrapper');
+            const checkboxes = document.querySelectorAll('.edit-publisher-cb');
+            if (checked) {
+                wrapper.classList.add('hidden');
+                checkboxes.forEach(cb => cb.checked = false);
+            } else {
+                wrapper.classList.remove('hidden');
+            }
+        }
+
+        // Загрузка каналов публикации для модалки редактирования
+        let _editPublishers = [];
+
+        async function loadEditPublishers() {
+            try {
+                const resp = await fetch('/api/publishers/list');
+                const data = await resp.json();
+                if (data.success) {
+                    _editPublishers = data.publishers || [];
+                    filterEditPublishers('');
+                }
+            } catch(e) {
+                console.error('[Tasks] ошибка загрузки каналов для редактирования:', e);
+            }
+        }
+
+        // Фильтрация каналов в модалке редактирования
+        function filterEditPublishers(query) {
+            const list = document.getElementById('edit-channel-list');
+            const q = (query || '').toLowerCase();
+            const filtered = _editPublishers.filter(p => p.title.toLowerCase().includes(q));
+
+            if (filtered.length === 0) {
+                list.innerHTML = '<div class="p-2 text-xs text-gray-400">Каналы не найдены</div>';
+                return;
+            }
+
+            list.innerHTML = filtered.map(p => `
+                <label class="flex items-center space-x-2 px-3 py-1.5 hover:bg-gray-100 cursor-pointer">
+                    <input type="checkbox" value="${p.id}" class="edit-publisher-cb w-4 h-4 text-orange-500 rounded focus:ring-orange-500 border-gray-300">
+                    <span class="text-sm text-gray-700">${escapeHtml(p.title)}</span>
+                </label>
+            `).join('');
+        }
+
+        function getSelectedEditPublisherIds() {
+            const cbs = document.querySelectorAll('.edit-publisher-cb:checked');
+            return Array.from(cbs).map(cb => parseInt(cb.value));
+        }
+
+        async function submitEditTask() {
+            const id = parseInt(document.getElementById('edit-id').value);
+            const description = document.getElementById('edit-description').value.trim();
+            const taskType = document.getElementById('edit-type').value;
+            const date = document.getElementById('edit-date').value;
+            const time = document.getElementById('edit-time').value || '09:00';
+            const recurring = document.getElementById('edit-recurring').checked;
+            const recurrencePattern = recurring ? (parseInt(document.getElementById('edit-recurrence-pattern').value) || 1) : null;
+
+            if (!description) { alert('Введите описание задачи'); return; }
+            if (!date) { alert('Выберите дату'); return; }
+
+            // Проверка: нельзя сохранить задачу на прошедшее время
+            if (checkDatetimeBeforeSubmit('edit')) return;
+
+            // Для direct_generation — определяем publisher_channel_id
+            let publisherChannelId = null;
+            if (taskType === 'direct_generation') {
+                const sendToBot = document.getElementById('edit-send-bot').checked;
+                const sendToAll = document.getElementById('edit-all-channels').checked;
+                const publisherIds = getSelectedEditPublisherIds();
+
+                if (sendToBot) publisherChannelId = null;
+                else if (sendToAll) publisherChannelId = -1;
+                else if (publisherIds.length === 1) publisherChannelId = publisherIds[0];
+                else if (publisherIds.length > 1) publisherChannelId = -1;
+            }
+
+            const payload = {
+                task_type: taskType,
+                description,
+                scheduled_at: `${date}T${time}:00`,
+                recurring,
+                recurrence_pattern: recurring ? recurrencePattern : null,
+                publisher_channel_id: publisherChannelId,
+            };
+
+            const output = document.getElementById('edit-output');
+            const btn = document.getElementById('edit-submit-btn');
+            const spinner = document.getElementById('edit-spinner');
+            btn.disabled = true; spinner.classList.remove('hidden');
+
+            try {
+                console.log('[Tasks] submitEditTask, id:', id, payload);
+                const resp = await fetch(`/tasks/${id}`, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                console.log('[Tasks] submitEditTask response:', resp.status);
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    console.error('[Tasks] submitEditTask error:', err);
+                    throw new Error(err.detail || err.error || 'Ошибка сервера');
+                }
+                const updated = await resp.json();
+                console.log('[Tasks] task updated:', updated.id, 'scheduled_at:', updated.scheduled_at);
+                output.innerHTML = '<span class="text-green-600"><i class="fas fa-check mr-1"></i>Сохранено!</span>';
+                setTimeout(() => { closeEditModal(); calendar.loadTasks(); }, 500);
+            } catch (e) {
+                console.error('[Tasks] submitEditTask exception:', e);
+                output.innerHTML = `<span class="text-red-600"><i class="fas fa-times mr-1"></i>${escapeHtml(e.message)}</span>`;
+            } finally {
+                btn.disabled = false; spinner.classList.add('hidden');
+            }
+        }
+
+        // ============================================================
+        // Экранирование для JS-строки (для onclick-хендлеров)
+        // ============================================================
+        function escapeJs(text) {
+            return (text || '')
+                .replace(/\\/g, '\\\\')
+                .replace(/'/g, "\\'")
+                .replace(/"/g, '\\"')
+                .replace(/\n/g, '\\n')
+                .replace(/\r/g, '\\r')
+                .replace(/\t/g, '\\t');
+        }
+
+        // ============================================================
+        // Валидация даты/времени: прошедшая или будущая?
+        // ============================================================
+
+        /**
+         * Проверить, является ли дата/время прошедшим относительно «сейчас».
+         * Принимает строки 'YYYY-MM-DD' и 'HH:MM' (из input[type=date/time]).
+         * Если время не указано — берёт 00:00.
+         */
+        function isDatetimePast(dateStr, timeStr) {
+            if (!dateStr) return false;
+            const dt = new Date(`${dateStr}T${timeStr || '00:00:00'}`);
+            if (isNaN(dt.getTime())) return false;
+            return dt < new Date();
+        }
+
+        /**
+         * Вернуть минимально допустимое время для указанной даты.
+         * Если дата — сегодня, возвращает текущее время в формате 'HH:MM'
+         * (округлено вверх до полной минуты). Если дата в будущем — '00:00'.
+         */
+        function getMinTimeForDate(dateStr) {
+            if (!dateStr) return null;
+            const today = new Date().toISOString().split('T')[0];
+            if (dateStr !== today) return '00:00';
+
+            const now = new Date();
+            const h = String(now.getHours()).padStart(2, '0');
+            const m = String(now.getMinutes()).padStart(2, '0');
+            return `${h}:${m}`;
+        }
+
+        /**
+         * Обновить валидацию полей даты/вреечения для модалки (create или edit).
+         * prefix — 'create' или 'edit'.
+         * Если выбранная дата — сегодня, time.min = текущее время.
+         * Иначе time.min = '00:00'.
+         * Проверяет текущие значения и показывает предупреждение, если прошли.
+         */
+        function validateDateTimeFields(prefix) {
+            const dateInput = document.getElementById(`${prefix}-date`);
+            const timeInput = document.getElementById(`${prefix}-time`);
+            const outputEl = document.getElementById(`${prefix}-output`);
+
+            const dateVal = dateInput.value;
+            const minTime = getMinTimeForDate(dateVal);
+            if (minTime) {
+                timeInput.setAttribute('min', minTime);
+            } else {
+                timeInput.removeAttribute('min');
+            }
+
+            // Если текущая комбинация уже прошла — показать предупреждение
+            const timeVal = timeInput.value;
+            if (dateVal && timeVal && isDatetimePast(dateVal, timeVal)) {
+                if (!outputEl.classList.contains('has-past-warning')) {
+                    outputEl.innerHTML = '<span class="text-amber-600 text-xs"><i class="fas fa-exclamation-triangle mr-1"></i>Выбранное время уже прошло. Выберите будущую дату/время.</span>';
+                    outputEl.classList.add('has-past-warning');
+                }
+            } else {
+                if (outputEl && outputEl.classList.contains('has-past-warning')) {
+                    outputEl.innerHTML = '';
+                    outputEl.classList.remove('has-past-warning');
+                }
+            }
+        }
+
+        /**
+         * Проверить дату/время при сабмите.
+         * prefix — 'create' или 'edit'.
+         * Возвращает true если валидно (останавливает сабмит).
+         */
+        function checkDatetimeBeforeSubmit(prefix) {
+            const date = document.getElementById(`${prefix}-date`).value;
+            const time = document.getElementById(`${prefix}-time`).value || '00:00';
+
+            if (!date) return false;
+
+            if (isDatetimePast(date, time)) {
+                alert('Нельзя запланировать задачу на прошедшее время. Выберите будущую дату/время.');
+                return true; // остановка
+            }
+            return false; // OK — продолжать
+        }
+
+        // ============================================================
+        // Инициализация
+        // ============================================================
+        document.addEventListener('DOMContentLoaded', () => {
+            calendar.init();
+        });
+    </script>
+{% endblock %}
