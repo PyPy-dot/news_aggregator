@@ -1,0 +1,213 @@
+<!-- Sidebar — боковая навигация News Aggregator Admin -->
+<!-- Подключается через: {% include 'components/sidebar.html' %} -->
+<!-- Передаёт: active_page (строка, без слэша), version -->
+
+<aside id="sidebar" class="bg-dark text-white flex-shrink-0 flex flex-col h-full transition-all duration-300" style="width: 260px;">
+    <!-- Логотип — статичный, не скроллится -->
+    <div class="p-5 border-b border-gray-700 flex-shrink-0">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center sidebar-logo-content min-w-0">
+                <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-newspaper text-white"></i>
+                </div>
+                <div class="ml-3 overflow-hidden sidebar-text">
+                    <h1 class="text-base font-bold truncate">News Aggregator</h1>
+                    <p class="text-xs text-gray-400 truncate">Admin v{{ version or '4.0.0' }}</p>
+                </div>
+            </div>
+            <button onclick="toggleSidebar()" class="text-gray-400 hover:text-white transition-colors flex-shrink-0 ml-2 p-1 rounded hover:bg-gray-700" title="Свернуть/развернуть">
+                <i class="fas fa-chevron-left sidebar-toggle-icon transition-transform duration-300"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Навигация — скроллится независимо -->
+    <nav class="flex-1 overflow-y-auto mt-4 px-2 scrollbar-thin">
+        <p class="text-[10px] text-gray-500 uppercase tracking-wider mb-2 px-3 sidebar-label">Основное</p>
+
+        <a href="/" class="sidebar-item flex items-center px-3 py-2.5 rounded-lg mb-0.5 transition-all"
+           data-page=""
+           {% if active_page == '' or active_page is none %}class="active"{% endif %}>
+            <i class="fas fa-home w-5 text-center flex-shrink-0"></i>
+            <span class="ml-3 sidebar-text">Главная</span>
+        </a>
+
+        <a href="/dashboard" class="sidebar-item flex items-center px-3 py-2.5 rounded-lg mb-0.5 transition-all"
+           data-page="dashboard"
+           {% if active_page == 'dashboard' %}class="active"{% endif %}>
+            <i class="fas fa-chart-line w-5 text-center flex-shrink-0"></i>
+            <span class="ml-3 sidebar-text">Дашборд</span>
+        </a>
+
+        <a href="/news" class="sidebar-item flex items-center px-3 py-2.5 rounded-lg mb-0.5 transition-all"
+           data-page="news"
+           {% if active_page == 'news' %}class="active"{% endif %}>
+            <i class="fas fa-newspaper w-5 text-center flex-shrink-0"></i>
+            <span class="ml-3 sidebar-text">Новости</span>
+        </a>
+
+        <a href="/channels" class="sidebar-item flex items-center px-3 py-2.5 rounded-lg mb-0.5 transition-all"
+           data-page="channels"
+           {% if active_page == 'channels' %}class="active"{% endif %}>
+            <i class="fas fa-broadcast-tower w-5 text-center flex-shrink-0"></i>
+            <span class="ml-3 sidebar-text">Каналы</span>
+        </a>
+
+        <a href="/users" class="sidebar-item flex items-center px-3 py-2.5 rounded-lg mb-0.5 transition-all"
+           data-page="users"
+           {% if active_page == 'users' %}class="active"{% endif %}>
+            <i class="fas fa-users w-5 text-center flex-shrink-0"></i>
+            <span class="ml-3 sidebar-text">Пользователи</span>
+        </a>
+
+        <p class="text-[10px] text-gray-500 uppercase tracking-wider mb-2 px-3 mt-5 sidebar-label">Источники</p>
+
+        <a href="/tasks" class="sidebar-item flex items-center px-3 py-2.5 rounded-lg mb-0.5 transition-all"
+           data-page="tasks"
+           {% if active_page == 'tasks' %}class="active"{% endif %}>
+            <i class="fas fa-tasks w-5 text-center flex-shrink-0"></i>
+            <span class="ml-3 sidebar-text">Задачи</span>
+        </a>
+
+        <a href="/rss" class="sidebar-item flex items-center px-3 py-2.5 rounded-lg mb-0.5 transition-all"
+           data-page="rss"
+           {% if active_page == 'rss' %}class="active"{% endif %}>
+            <i class="fas fa-rss w-5 text-center flex-shrink-0"></i>
+            <span class="ml-3 sidebar-text">RSS ленты</span>
+        </a>
+
+        <a href="/web" class="sidebar-item flex items-center px-3 py-2.5 rounded-lg mb-0.5 transition-all"
+           data-page="web"
+           {% if active_page == 'web' %}class="active"{% endif %}>
+            <i class="fas fa-globe w-5 text-center flex-shrink-0"></i>
+            <span class="ml-3 sidebar-text">Web парсинг</span>
+        </a>
+
+        <p class="text-[10px] text-gray-500 uppercase tracking-wider mb-2 px-3 mt-5 sidebar-label">Инструменты</p>
+
+        <a href="/console" class="sidebar-item flex items-center px-3 py-2.5 rounded-lg mb-0.5 transition-all"
+           data-page="console"
+           {% if active_page == 'console' %}class="active"{% endif %}>
+            <i class="fas fa-terminal w-5 text-center flex-shrink-0"></i>
+            <span class="ml-3 sidebar-text">Консоль</span>
+        </a>
+
+        <a href="/settings" class="sidebar-item flex items-center px-3 py-2.5 rounded-lg mb-0.5 transition-all"
+           data-page="settings"
+           {% if active_page == 'settings' %}class="active"{% endif %}>
+            <i class="fas fa-cog w-5 text-center flex-shrink-0"></i>
+            <span class="ml-3 sidebar-text">Настройки</span>
+        </a>
+    </nav>
+</aside>
+
+<style>
+    /* Sidebar item hover / active */
+    .sidebar-item {
+        color: #d1d5db;
+        text-decoration: none;
+    }
+    .sidebar-item:hover {
+        background: linear-gradient(90deg, rgba(59,130,246,0.15) 0%, transparent 100%);
+        border-left: 3px solid #3B82F6;
+        color: #fff;
+    }
+    .sidebar-item.active {
+        background: linear-gradient(90deg, rgba(59,130,246,0.18) 0%, transparent 100%);
+        border-left: 3px solid #3B82F6;
+        color: #60a5fa;
+    }
+
+    /* Collapsed sidebar */
+    #sidebar.collapsed {
+        width: 68px !important;
+    }
+    #sidebar.collapsed .sidebar-text,
+    #sidebar.collapsed .sidebar-label {
+        display: none;
+    }
+    #sidebar.collapsed .sidebar-item {
+        justify-content: center;
+        padding-left: 0;
+        padding-right: 0;
+    }
+    #sidebar.collapsed .sidebar-item i {
+        margin-left: 0;
+        font-size: 1.15rem;
+    }
+    #sidebar.collapsed .sidebar-item span {
+        display: none;
+    }
+    #sidebar.collapsed .sidebar-toggle-icon {
+        transform: rotate(180deg);
+    }
+    #sidebar.collapsed .sidebar-logo-content {
+        justify-content: center;
+    }
+
+    /* Custom scrollbar */
+    #sidebar nav::-webkit-scrollbar {
+        width: 4px;
+    }
+    #sidebar nav::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    #sidebar nav::-webkit-scrollbar-thumb {
+        background: #374151;
+        border-radius: 4px;
+    }
+
+    /* Tooltip on collapsed items */
+    #sidebar.collapsed .sidebar-item:hover::after {
+        content: attr(data-tooltip);
+        position: absolute;
+        left: 72px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: #1f2937;
+        color: #fff;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 12px;
+        white-space: nowrap;
+        z-index: 100;
+        pointer-events: none;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    #sidebar.collapsed .sidebar-item {
+        position: relative;
+    }
+</style>
+
+<script>
+    function toggleSidebar() {
+        const sb = document.getElementById('sidebar');
+        if (!sb) return;
+        sb.classList.toggle('collapsed');
+        // Сохраняем состояние
+        try {
+            localStorage.setItem('sidebar_collapsed', sb.classList.contains('collapsed') ? '1' : '0');
+        } catch(e) {}
+        // Пересчитываем fit терминала если есть
+        if (typeof fitAddon !== 'undefined' && fitAddon) {
+            setTimeout(() => fitAddon.fit(), 350);
+        }
+    }
+
+    // Восстановить состояние при загрузке
+    (function() {
+        try {
+            const saved = localStorage.getItem('sidebar_collapsed');
+            if (saved === '1') {
+                const sb = document.getElementById('sidebar');
+                if (sb) sb.classList.add('collapsed');
+            }
+        } catch(e) {}
+    })();
+
+    // Подписать tooltip'ы для компактного режима
+    document.querySelectorAll('#sidebar .sidebar-item[data-page]').forEach(function(el) {
+        const span = el.querySelector('span');
+        if (span) el.setAttribute('data-tooltip', span.textContent.trim());
+    });
+</script>
