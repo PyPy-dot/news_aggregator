@@ -225,7 +225,7 @@
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            <div class="px-6 py-5 space-y-4">
+            <div class="px-6 py-5 space-y-4 max-h-[65vh] overflow-y-auto">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Текст источника <span class="text-red-500">*</span></label>
                     <textarea id="qnews-text" rows="4" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Вставьте текст новости или основное сообщение..."></textarea>
@@ -243,12 +243,39 @@
                         <option value="Мир">Мир</option>
                     </select>
                 </div>
+
+                <!-- Куда опубликовать -->
+                <div class="border-t border-gray-200 pt-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Куда опубликовать <span class="text-red-500">*</span></label>
+
+                    <!-- Бот -->
+                    <label class="flex items-center space-x-2 cursor-pointer py-1">
+                        <input type="checkbox" id="qnews-send-bot" class="w-4 h-4 text-blue-500 rounded focus:ring-blue-500 border-gray-300">
+                        <span class="text-sm text-gray-700"><i class="fas fa-robot mr-1 text-blue-400"></i>Отправить через бота всем подписчикам</span>
+                    </label>
+
+                    <!-- Все каналы -->
+                    <label class="flex items-center space-x-2 cursor-pointer py-1">
+                        <input type="checkbox" id="qnews-all-channels" class="w-4 h-4 text-purple-500 rounded focus:ring-purple-500 border-gray-300" onchange="toggleNewsAllChannels(this.checked)">
+                        <span class="text-sm text-gray-700"><i class="fas fa-broadcast-tower mr-1 text-purple-400"></i>Опубликовать во все каналы</span>
+                    </label>
+
+                    <!-- Конкретные каналы (searchable dropdown) -->
+                    <div id="qnews-channels-wrapper" class="mt-2">
+                        <label class="block text-xs font-medium text-gray-500 mb-1">Или выберите конкретные каналы:</label>
+                        <div class="relative">
+                            <input type="text" id="qnews-channel-search" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Поиск по названию..." oninput="filterPublishersDropdown(this.value)">
+                            <div id="qnews-channel-list" class="mt-1 max-h-32 overflow-y-auto border border-gray-200 rounded-lg bg-gray-50 text-sm"></div>
+                        </div>
+                    </div>
+                </div>
+
                 <div id="qnews-output"></div>
             </div>
             <div class="flex items-center justify-end space-x-3 px-6 py-4 bg-gray-50 border-t border-gray-200">
                 <button onclick="closeQuickNewsModal()" class="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">Отмена</button>
                 <button id="qnews-submit" onclick="submitQuickNews()" class="px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 font-medium">
-                    <i class="fas fa-magic mr-1"></i>Сгенерировать
+                    <i class="fas fa-magic mr-1"></i>Сгенерировать и опубликовать
                 </button>
                 <span id="qnews-spinner" class="hidden text-blue-500"><i class="fas fa-spinner fa-spin"></i></span>
             </div>
@@ -270,20 +297,62 @@
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            <div class="px-6 py-5 space-y-4">
+            <div class="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
+                <!-- Ссылка на канал + кнопка Найти -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Ссылка на канал</label>
+                    <div class="flex space-x-2">
+                        <input id="qch-link" type="text" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500" placeholder="@channelname или t.me/channelname">
+                        <button onclick="resolveChannelLink()" id="qch-resolve-btn" class="px-4 py-2 bg-indigo-500 text-white text-sm rounded-lg hover:bg-indigo-600 font-medium whitespace-nowrap">
+                            <i class="fas fa-search mr-1"></i>Найти
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-400 mt-1">Для каналов публикации бот должен быть участником. Для источников мониторинга — не обязательно.</p>
+                </div>
+
+                <!-- Разделитель для ручного ввода -->
+                <div class="flex items-center space-x-3">
+                    <div class="flex-1 border-t border-gray-200"></div>
+                    <span class="text-xs text-gray-400">или введите вручную</span>
+                    <div class="flex-1 border-t border-gray-200"></div>
+                </div>
+
+                <!-- Telegram ID (скрыто если автоматически определён, но доступно для редактирования) -->
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Telegram ID канала <span class="text-red-500">*</span></label>
                     <input id="qch-id" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500" placeholder="-1001234567890">
-                    <p class="text-xs text-gray-400 mt-1">Отрицательное число, например: -1001234567890</p>
                 </div>
+
+                <!-- Название -->
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Название <span class="text-red-500">*</span></label>
                     <input id="qch-title" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500" placeholder="Новости мира">
                 </div>
+
+                <!-- Описание -->
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Описание</label>
                     <textarea id="qch-desc" rows="2" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500" placeholder="Краткое описание канала..."></textarea>
                 </div>
+
+                <!-- Тип канала -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Тип <span class="text-red-500">*</span></label>
+                    <select id="qch-target-table" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500" onchange="toggleTrustedCheckbox()">
+                        <option value="channels">Источник мониторинга (channels)</option>
+                        <option value="publishers">Канал публикации (publishers)</option>
+                    </select>
+                </div>
+
+                <!-- Доверенный источник (только для channels) -->
+                <div id="qch-trusted-wrapper" class="hidden">
+                    <label class="flex items-center space-x-2 cursor-pointer">
+                        <input type="checkbox" id="qch-is-trusted" class="w-4 h-4 text-green-500 rounded focus:ring-green-500 border-gray-300">
+                        <span class="text-sm text-gray-700"><i class="fas fa-shield-alt mr-1 text-green-500"></i>Доверенный источник</span>
+                    </label>
+                    <p class="text-xs text-gray-400 mt-1 ml-6">Новости от этого канала публикуются без модерации</p>
+                </div>
+
                 <div id="qch-output"></div>
             </div>
             <div class="flex items-center justify-end space-x-3 px-6 py-4 bg-gray-50 border-t border-gray-200">
@@ -429,63 +498,250 @@
             }
         }
 
-        // Модальные окна
-        function openQuickNewsModal() { document.getElementById('quick-news-modal').classList.remove('hidden'); }
+        // ============================================================
+        // Модалка «Создать новость»
+        // ============================================================
+        let _allPublishers = [];  // кэш списка publishers
+
+        async function openQuickNewsModal() {
+            document.getElementById('quick-news-modal').classList.remove('hidden');
+            await loadPublishersForDropdown();
+        }
+
         function closeQuickNewsModal() {
             document.getElementById('quick-news-modal').classList.add('hidden');
             document.getElementById('qnews-text').value = '';
             document.getElementById('qnews-category').value = '';
+            document.getElementById('qnews-send-bot').checked = false;
+            document.getElementById('qnews-all-channels').checked = false;
+            document.getElementById('qnews-channel-search').value = '';
             document.getElementById('qnews-output').innerHTML = '';
             document.getElementById('qnews-submit').disabled = false;
             document.getElementById('qnews-spinner').classList.add('hidden');
+            toggleNewsAllChannels(false);
+            filterPublishersDropdown('');
+        }
+
+        async function loadPublishersForDropdown() {
+            try {
+                const resp = await fetch('/api/publishers/list');
+                const data = await resp.json();
+                if (data.success) {
+                    _allPublishers = data.publishers || [];
+                    filterPublishersDropdown('');
+                }
+            } catch(e) {
+                console.error('Ошибка загрузки каналов:', e);
+            }
+        }
+
+        function filterPublishersDropdown(query) {
+            const list = document.getElementById('qnews-channel-list');
+            const q = (query || '').toLowerCase();
+            const filtered = _allPublishers.filter(p => p.title.toLowerCase().includes(q));
+
+            if (filtered.length === 0) {
+                list.innerHTML = '<div class="p-2 text-xs text-gray-400">Каналы не найдены</div>';
+                return;
+            }
+
+            list.innerHTML = filtered.map(p => `
+                <label class="flex items-center space-x-2 px-3 py-1.5 hover:bg-gray-100 cursor-pointer">
+                    <input type="checkbox" value="${p.id}" class="qnews-publisher-cb w-4 h-4 text-blue-500 rounded focus:ring-blue-500 border-gray-300">
+                    <span class="text-sm text-gray-700">${escapeHtmlAttr(p.title)}</span>
+                </label>
+            `).join('');
+        }
+
+        function toggleNewsAllChannels(checked) {
+            const wrapper = document.getElementById('qnews-channels-wrapper');
+            const checkboxes = document.querySelectorAll('.qnews-publisher-cb');
+            if (checked) {
+                wrapper.classList.add('hidden');
+                checkboxes.forEach(cb => cb.checked = false);
+            } else {
+                wrapper.classList.remove('hidden');
+            }
+        }
+
+        function getSelectedPublisherIds() {
+            const cbs = document.querySelectorAll('.qnews-publisher-cb:checked');
+            return Array.from(cbs).map(cb => parseInt(cb.value));
         }
 
         async function submitQuickNews() {
             const text = document.getElementById('qnews-text').value.trim();
             const category = document.getElementById('qnews-category').value;
+            const sendToBot = document.getElementById('qnews-send-bot').checked;
+            const sendToAll = document.getElementById('qnews-all-channels').checked;
+            const publisherIds = getSelectedPublisherIds();
+
             if (!text) { alert('Введите текст новости'); return; }
+            if (!sendToBot && !sendToAll && publisherIds.length === 0) {
+                alert('Выберите хотя бы один источник публикации');
+                return;
+            }
+
             const output = document.getElementById('qnews-output');
             const btn = document.getElementById('qnews-submit');
             const spinner = document.getElementById('qnews-spinner');
             btn.disabled = true; spinner.classList.remove('hidden');
             output.innerHTML = '<span class="text-gray-400"><i class="fas fa-spinner fa-spin mr-2"></i>Генерация новости через AI...</span>';
+
             try {
-                const resp = await fetch('/api/news/generate', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ text, category }) });
+                const resp = await fetch('/api/news/generate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        text,
+                        category,
+                        send_to_bot: sendToBot,
+                        send_to_all_channels: sendToAll,
+                        publisher_ids: publisherIds,
+                    })
+                });
                 const data = await resp.json();
-                if (data.success) { output.innerHTML = `<span class="text-green-600"><i class="fas fa-check mr-1"></i>Новость создана (ID: ${data.news_id || '?'})</span>`; document.getElementById('qnews-text').value = ''; }
-                else output.innerHTML = `<span class="text-red-600">Ошибка: ${data.error || 'Не удалось создать'}</span>`;
-            } catch(e) { output.innerHTML = `<span class="text-red-600">Ошибка: ${e.message}</span>`; }
-            finally { btn.disabled = false; spinner.classList.add('hidden'); }
+                if (data.success) {
+                    let detail = '';
+                    if (data.results) {
+                        const parts = [];
+                        if (data.results.bot) parts.push('бот');
+                        if (data.results.channels) parts.push(`${data.results.channels} канал(ов)`);
+                        detail = ` → ${parts.join(', ')}`;
+                        if (data.results.errors && data.results.errors.length) {
+                            detail += `<br><span class="text-yellow-600 text-xs">Ошибки: ${data.results.errors.join('; ')}</span>`;
+                        }
+                    }
+                    output.innerHTML = `<span class="text-green-600"><i class="fas fa-check mr-1"></i>Новость создана (ID: ${data.news_id || '?'})${detail}</span>`;
+                    document.getElementById('qnews-text').value = '';
+                } else {
+                    output.innerHTML = `<span class="text-red-600">Ошибка: ${data.error || 'Не удалось создать'}</span>`;
+                }
+            } catch(e) {
+                output.innerHTML = `<span class="text-red-600">Ошибка: ${e.message}</span>`;
+            } finally {
+                btn.disabled = false; spinner.classList.add('hidden');
+            }
         }
 
-        function openQuickChannelModal() { document.getElementById('quick-channel-modal').classList.remove('hidden'); }
+        // ============================================================
+        // Модалка «Добавить канал»
+        // ============================================================
+        function openQuickChannelModal() {
+            document.getElementById('quick-channel-modal').classList.remove('hidden');
+        }
+
         function closeQuickChannelModal() {
             document.getElementById('quick-channel-modal').classList.add('hidden');
+            document.getElementById('qch-link').value = '';
             document.getElementById('qch-id').value = '';
             document.getElementById('qch-title').value = '';
             document.getElementById('qch-desc').value = '';
             document.getElementById('qch-output').innerHTML = '';
             document.getElementById('qch-submit').disabled = false;
             document.getElementById('qch-spinner').classList.add('hidden');
+            document.getElementById('qch-target-table').value = 'channels';
+            toggleTrustedCheckbox();
+        }
+
+        async function resolveChannelLink() {
+            const link = document.getElementById('qch-link').value.trim();
+            if (!link) { alert('Введите ссылку на канал'); return; }
+
+            const btn = document.getElementById('qch-resolve-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Ищу...';
+
+            try {
+                const resp = await fetch('/api/channels/resolve-link', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ link })
+                });
+                const data = await resp.json();
+
+                if (data.success) {
+                    document.getElementById('qch-id').value = data.channel_id;
+                    document.getElementById('qch-title').value = data.title || '';
+                    document.getElementById('qch-desc').value = data.description || '';
+                    document.getElementById('qch-output').innerHTML = `<span class="text-green-600 text-sm"><i class="fas fa-check mr-1"></i>Канал найден: ${data.title}</span>`;
+                } else {
+                    const partial = data.partial || false;
+                    if (partial) {
+                        document.getElementById('qch-output').innerHTML = `<span class="text-yellow-600 text-sm"><i class="fas fa-exclamation-triangle mr-1"></i>${data.error}<br>Введите данные вручную.</span>`;
+                    } else {
+                        document.getElementById('qch-output').innerHTML = `<span class="text-red-600 text-sm"><i class="fas fa-times mr-1"></i>${data.error}</span>`;
+                    }
+                }
+            } catch(e) {
+                document.getElementById('qch-output').innerHTML = `<span class="text-red-600 text-sm"><i class="fas fa-times mr-1"></i>Ошибка: ${e.message}</span>`;
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-search mr-1"></i>Найти';
+            }
+        }
+
+        function toggleTrustedCheckbox() {
+            const table = document.getElementById('qch-target-table').value;
+            const wrapper = document.getElementById('qch-trusted-wrapper');
+            if (table === 'channels') {
+                wrapper.classList.remove('hidden');
+            } else {
+                wrapper.classList.add('hidden');
+                document.getElementById('qch-is-trusted').checked = false;
+            }
         }
 
         async function submitQuickChannel() {
             const channel_id = document.getElementById('qch-id').value.trim();
             const title = document.getElementById('qch-title').value.trim();
             const desc = document.getElementById('qch-desc').value.trim();
+            const target_table = document.getElementById('qch-target-table').value;
+            const is_trusted = document.getElementById('qch-is-trusted').checked;
+
             if (!channel_id || !title) { alert('Укажите ID и название канала'); return; }
+
             const output = document.getElementById('qch-output');
             const btn = document.getElementById('qch-submit');
             const spinner = document.getElementById('qch-spinner');
             btn.disabled = true; spinner.classList.remove('hidden');
-            output.innerHTML = '<span class="text-gray-400"><i class="fas fa-spinner fa-spin mr-2"></i>Добавление канала...</span>';
+
+            const tableLabel = target_table === 'publishers' ? 'каналы публикации' : 'источники мониторинга';
+            output.innerHTML = `<span class="text-gray-400"><i class="fas fa-spinner fa-spin mr-2"></i>Добавление в ${tableLabel}...</span>`;
+
             try {
-                const resp = await fetch('/api/channels', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ channel_id: parseInt(channel_id), title, description: desc }) });
+                const resp = await fetch('/api/channels', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        channel_id: parseInt(channel_id),
+                        title,
+                        description: desc,
+                        target_table,
+                        is_trusted: target_table === 'channels' ? is_trusted : false,
+                    })
+                });
                 const data = await resp.json();
-                if (data.success) { output.innerHTML = `<span class="text-green-600"><i class="fas fa-check mr-1"></i>Канал «${title}» добавлен</span>`; document.getElementById('qch-id').value = ''; document.getElementById('qch-title').value = ''; document.getElementById('qch-desc').value = ''; }
-                else output.innerHTML = `<span class="text-red-600">Ошибка: ${data.error || 'Не удалось добавить'}</span>`;
-            } catch(e) { output.innerHTML = `<span class="text-red-600">Ошибка: ${e.message}</span>`; }
-            finally { btn.disabled = false; spinner.classList.add('hidden'); }
+                if (data.success) {
+                    output.innerHTML = `<span class="text-green-600"><i class="fas fa-check mr-1"></i>«${title}» добавлен в ${tableLabel}</span>`;
+                    document.getElementById('qch-link').value = '';
+                    document.getElementById('qch-id').value = '';
+                    document.getElementById('qch-title').value = '';
+                    document.getElementById('qch-desc').value = '';
+                } else {
+                    output.innerHTML = `<span class="text-red-600">Ошибка: ${data.error || 'Не удалось добавить'}</span>`;
+                }
+            } catch(e) {
+                output.innerHTML = `<span class="text-red-600">Ошибка: ${e.message}</span>`;
+            } finally {
+                btn.disabled = false; spinner.classList.add('hidden');
+            }
+        }
+
+        function escapeHtmlAttr(text) {
+            const d = document.createElement('div');
+            d.textContent = text || '';
+            return d.innerHTML;
         }
 
         document.addEventListener('DOMContentLoaded', () => {

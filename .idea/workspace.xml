@@ -5,20 +5,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="f50a90aa-42af-4089-8f79-0b118ce41214" name="Changes" comment="0.1">
-      <change afterPath="$PROJECT_DIR$/services/web_admin/templates/base.html" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/web_admin/templates/components/sidebar.html" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/tests/test_service_manager.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/news_aggregator.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/news_aggregator.iml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/listener/bot.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/listener/bot.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/monitoring/health_check.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/monitoring/health_check.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/scheduler/scheduler.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/scheduler/scheduler.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/service_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/service_manager.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/web_admin/templates/console.html" beforeDir="false" afterPath="$PROJECT_DIR$/services/web_admin/templates/console.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/web_admin/templates/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/services/web_admin/templates/index.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/web_admin/templates/settings.html" beforeDir="false" afterPath="$PROJECT_DIR$/services/web_admin/templates/settings.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/vector_store/chroma.sqlite3" beforeDir="false" afterPath="$PROJECT_DIR$/vector_store/chroma.sqlite3" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

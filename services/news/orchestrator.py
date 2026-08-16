@@ -764,6 +764,7 @@ class NewsOrchestrator:
         self,
         description: str,
         publisher_channel_id: Optional[int] = None,
+        publish_immediately: bool = True,
     ) -> Optional[int]:
         """
         Сгенерировать новость по прямому описанию админа.
@@ -772,10 +773,12 @@ class NewsOrchestrator:
         1. Использовать DirectNewsEditorAgent для генерации SMM-поста
         2. Запустить ArchivistAgent для создания контекста
         3. Сохранить новость в БД
-        4. Если publisher_channel_id=None (бот) — отправить всем пользователям сразу
+        4. Если publish_immediately=True — опубликовать:
+           Если publisher_channel_id=None (бот) — отправить всем пользователям сразу
            Если publisher_channel_id=-1 (все каналы) — опубликовать во все каналы
            Если publisher_channel_id=<конкретный> — опубликовать в конкретный канал
            Иначе — отправить на модерацию
+           Если publish_immediately=False — только генерация + сохранение без публикации
 
         Args:
             description: Описание новости от админа
@@ -783,6 +786,7 @@ class NewsOrchestrator:
                 None = публикация через бота всем пользователям
                 -1 = публикация во все каналы
                 int > 0 = публикация в конкретный канал
+            publish_immediately: Если False — только генерация и сохранение, публикация пропускается
 
         Returns:
             ID сгенерированной новости или None при ошибке

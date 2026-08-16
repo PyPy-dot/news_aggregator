@@ -82,6 +82,40 @@ class ChannelRepository(BaseRepository[Channel]):
         await self.session.refresh(channel)
         return channel
 
+    async def add_channel(
+        self,
+        channel_id: int,
+        title: str,
+        description: str = '',
+        is_trusted: bool = False,
+        trust_rating: float = 0.5,
+    ) -> int:
+        """
+        Создать канал и вернуть его DB ID (обёртка для API endpoint).
+
+        Args:
+            channel_id: ID канала в Telegram
+            title: Название канала
+            description: Описание канала
+            is_trusted: Флаг доверенного источника
+            trust_rating: Рейтинг доверия
+
+        Returns:
+            ID созданной записи в БД
+        """
+        channel = await self.create_channel(
+            channel_id=channel_id,
+            title=title,
+            description=description,
+            is_trusted=is_trusted,
+        )
+        if is_trusted:
+            channel.trust_rating = 1.0
+        else:
+            channel.trust_rating = trust_rating
+        await self.session.commit()
+        return channel.id
+
     async def delete_channel(self, channel_id: int) -> bool:
         """
         Удалить канал по Telegram ID.

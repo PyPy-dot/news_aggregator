@@ -375,23 +375,36 @@ async def generate_news_endpoint(
     user: Optional[dict] = Depends(get_optional_user),
 ):
     """
-    Быстрая генерация новости из текста.
+    Быстрая генерация новости из текста с публикацией в выбранные источники.
 
-    Body: { "text": "...", "category": "..." }
+    Body: {
+        "text": "...",
+        "category": "...",
+        "send_to_bot": false,
+        "publisher_ids": [1, 3],
+        "send_to_all_channels": false
+    }
     """
     try:
         data = await request.json()
         text = data.get("text", "").strip()
         category = data.get("category", "") or None
+        send_to_bot = data.get("send_to_bot", False)
+        publisher_ids = data.get("publisher_ids", []) or []
+        send_to_all_channels = data.get("send_to_all_channels", False)
 
         if not text:
             return {"success": False, "error": "Текст не указан"}
+
+        # Проверяем что хотя бы один источник выбран
+        has_destination = send_to_bot or send_to_all_channels or len(publisher_ids) > 0
+        if not has_destination:
+            return {"success": False, "error": "Выберите хотя бы один источник публикации"}
 
         # Получаем orchestrator из контейнера
         from main import app as main_app
         container = getattr(main_app, '_global_container', None) if main_app else None
         if not container:
-            # Fallback: ищем контейнер из модуля main
             import sys
             main_mod = sys.modules.get('main')
             container = getattr(main_mod, '_global_container', None) if main_mod else None
@@ -401,12 +414,54 @@ async def generate_news_endpoint(
                 from database import RepositoryFactory
                 factory = RepositoryFactory(session)
                 orchestrator = await container.create_orchestrator(session)
+
+                # 1. Генерация + сохранение без публикации
                 news_id = await orchestrator.generate_direct_news(
                     description=text,
-                    publisher_channel_id=None,  # всем пользователям через бота
+                    publisher_channel_id=None,
+                    publish_immediately=False,
                 )
                 await session.commit()
-                return {"success": True, "news_id": news_id}
+
+                if not news_id:
+                    return {"success": False, "error": "Не удалось сгенерировать новость"}
+
+                # 2. Читаем сгенерированный текст для публикации
+                news_repo = factory.news()
+                news_obj = await news_repo.get(news_id)
+                news_text = getattr(news_obj, 'text', '') if news_obj else text
+
+                # 3. Публикация в выбранные источники
+                results = {"bot": 0, "channels": 0, "errors": []}
+
+                if send_to_bot:
+                    try:
+                        await orchestrator._publish_direct_to_bot(news_id, news_text)
+                        results["bot"] = 1
+                    except Exception as e:
+                        results["errors"].append(f"Бот: {e}")
+
+                if send_to_all_channels:
+                    try:
+                        await orchestrator._publish_direct_to_all_channels(news_id, news_text)
+                        publishers_repo = factory.publishers()
+                        publishers = await publishers_repo.get_all(active_only=True)
+                        results["channels"] = len(publishers)
+                    except Exception as e:
+                        results["errors"].append(f"Все каналы: {e}")
+
+                for pub_id in publisher_ids:
+                    try:
+                        await orchestrator._publish_direct_to_channel(news_id, news_text, pub_id)
+                        results["channels"] += 1
+                    except Exception as e:
+                        results["errors"].append(f"Канал {pub_id}: {e}")
+
+                return {
+                    "success": True,
+                    "news_id": news_id,
+                    "results": results,
+                }
         else:
             return {"success": False, "error": "DI контейнер не доступен"}
 
@@ -421,42 +476,160 @@ async def create_channel_endpoint(
     user: Optional[dict] = Depends(get_optional_user),
 ):
     """
-    Быстрое добавление канала.
+    Добавление канала (источник мониторинга или канал публикации).
 
-    Body: { "channel_id": -100..., "title": "...", "description": "..." }
+    Body: {
+        "channel_id": -100...,
+        "title": "...",
+        "description": "...",
+        "target_table": "channels" | "publishers",
+        "is_trusted": false  # только для channels
+    }
     """
     try:
         data = await request.json()
         channel_id = data.get("channel_id")
         title = data.get("title", "").strip()
         description = data.get("description", "").strip()
+        target_table = data.get("target_table", "channels")
+        is_trusted = data.get("is_trusted", False)
 
         if not channel_id or not title:
             return {"success": False, "error": "Укажите channel_id и title"}
 
         db_service = get_database_service()
         async with db_service.session_context() as session:
-            from database.repositories.channels import ChannelRepository
-            repo = ChannelRepository(session)
-            # Проверка дубликата
-            existing = await repo.get_by_telegram_id(int(channel_id))
-            if existing:
-                return {"success": False, "error": f"Канал с ID {channel_id} уже существует"}
+            if target_table == "publishers":
+                from database.repositories.publishers import PublisherRepository
+                repo = PublisherRepository(session)
+                existing = await repo.get_by_telegram_id(int(channel_id))
+                if existing:
+                    return {"success": False, "error": f"Канал с ID {channel_id} уже существует в publishers"}
 
-            ch_id = await repo.add_channel(
-                channel_id=int(channel_id),
-                title=title,
-                description=description,
-                trust_rating=0.5,
-                is_trusted=False,
-            )
-            await session.commit()
+                pub = await repo.create(
+                    channel_id=int(channel_id),
+                    title=title,
+                    description=description,
+                )
+                await session.commit()
+                return {"success": True, "id": pub.id, "table": "publishers"}
 
-        return {"success": True, "channel_id": ch_id}
+            else:  # channels
+                from database.repositories.channels import ChannelRepository
+                repo = ChannelRepository(session)
+                existing = await repo.get_by_telegram_id(int(channel_id))
+                if existing:
+                    return {"success": False, "error": f"Канал с ID {channel_id} уже существует в channels"}
+
+                ch_id = await repo.add_channel(
+                    channel_id=int(channel_id),
+                    title=title,
+                    description=description,
+                    is_trusted=is_trusted,
+                    trust_rating=1.0 if is_trusted else 0.5,
+                )
+                await session.commit()
+                return {"success": True, "id": ch_id, "table": "channels"}
 
     except Exception as e:
         logger.error(f"Ошибка добавления канала: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
+
+
+@app.post("/api/channels/resolve-link", tags=["API"], response_class=JSONResponse)
+async def resolve_channel_link(
+    request: Request,
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    """
+    Получить ID, название и описание канала по Telegram-ссылке или @username.
+
+    Body: { "link": "@channelname" или "t.me/channelname" }
+
+    Requires: Bot должен быть участником канала.
+    """
+    try:
+        data = await request.json()
+        link = data.get("link", "").strip()
+
+        if not link:
+            return {"success": False, "error": "Укажите ссылку на канал"}
+
+        # Парсим ссылку → username
+        username = link
+        if link.startswith("t.me/"):
+            username = link.split("/")[1].split("/")[0].split("?")[0]
+        elif link.startswith("https://t.me/"):
+            username = link.split("/")[3].split("/")[0].split("?")[0]
+        elif not link.startswith("@"):
+            username = "@" + link
+
+        if not username.startswith("@"):
+            username = "@" + username
+
+        # Пытаемся получить информацию через бота
+        from services.bot.bot import get_bot_instance_async
+
+        bot = await get_bot_instance_async(wait=False, timeout=5.0)
+        if not bot:
+            return {"success": False, "error": "Бот не запущен. Запустите бота через консоль."}
+
+        try:
+            chat = await bot.get_chat(chat_id=username)
+            return {
+                "success": True,
+                "channel_id": chat.id,
+                "title": chat.title or "",
+                "description": chat.description or "",
+            }
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "not_found" in error_msg or "user not found" in error_msg:
+                return {"success": False, "error": f"Канал @{username} не найден. Проверьте ссылку."}
+            elif "chat_action_is_not_allowed" in error_msg or "privacy" in error_msg:
+                return {
+                    "success": False,
+                    "error": "Бот не может получить данные канала. Для добавления в publishers бот должен быть участником канала.",
+                    "partial": True,
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": f"Не удалось получить данные: {e}. Для publishers бот должен быть участником канала.",
+                    "partial": True,
+                }
+
+    except Exception as e:
+        logger.error(f"Ошибка резолва ссылки: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/publishers/list", tags=["API"], response_class=JSONResponse)
+async def list_publishers(
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    """Получить список каналов публикации (для dropdown в модалке)."""
+    try:
+        db_service = get_database_service()
+        async with db_service.session_context() as session:
+            from database.repositories.publishers import PublisherRepository
+            repo = PublisherRepository(session)
+            publishers = await repo.get_all(active_only=True)
+
+        result = []
+        for p in publishers:
+            result.append({
+                "id": p.id,
+                "channel_id": p.channel_id,
+                "title": p.title,
+                "description": p.description or "",
+            })
+
+        return {"success": True, "publishers": result}
+
+    except Exception as e:
+        logger.error(f"Ошибка получения publishers: {e}", exc_info=True)
+        return {"success": False, "error": str(e), "publishers": []}
 
 
 @app.get("/api/news/recent", tags=["API"], response_class=JSONResponse)
