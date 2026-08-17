@@ -8,6 +8,7 @@ Dashboard — API и страница аналитики.
 
 import json
 import logging
+import time
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -990,3 +991,211 @@ async def dashboard_time_series(
         except Exception as e2:
             logger.error(f"Time series PG fallback error: {e2}")
             return JSONResponse(content={"success": True, "labels": [], "series": {}, "stats": {}})
+
+
+# =============================================================================
+# API — Performance metrics (перенесено из performance.py)
+# =============================================================================
+
+@router.get("/api/performance/circuit-breakers")
+async def perf_circuit_breakers(user: Optional[dict] = Depends(get_optional_user)):
+    try:
+        from services.core.circuit_breaker import get_circuit_breaker_manager
+        manager = get_circuit_breaker_manager()
+        states = manager.get_all_states()
+        breakers = []
+        for name, s in states.items():
+            stats = s.get("stats", {})
+            total = stats.get("total_calls", 0)
+            successful = stats.get("successful_calls", 0)
+            success_rate = round(successful / total * 100, 1) if total > 0 else 100.0
+            breakers.append({
+                "name": name, "state": s.get("state", "closed"),
+                "avg_response_time_ms": stats.get("avg_response_time_ms", 0),
+                "success_rate": success_rate, "total_calls": total,
+                "successful": successful, "failed": stats.get("failed_calls", 0),
+                "rejected": stats.get("rejected_calls", 0),
+                "timeout": stats.get("timeout_calls", 0),
+                "consecutive_failures": stats.get("consecutive_failures", 0),
+                "state_changes": stats.get("state_changes", 0),
+            })
+        return JSONResponse(content={"success": True, "breakers": breakers})
+    except Exception as e:
+        logger.error(f"Circuit breakers error: {e}")
+        return JSONResponse(content={"success": True, "breakers": []})
+
+
+@router.get("/api/performance/queues")
+async def perf_queues(user: Optional[dict] = Depends(get_optional_user)):
+    result = {}
+    try:
+        from services.categorization.queue import CategorizationQueue
+        queue = CategorizationQueue()
+        result["categorization"] = {
+            "current": len(queue._queue) if hasattr(queue, '_queue') else 0,
+            "max": getattr(queue, '_maxlen', 0) or 'N/A',
+        }
+    except Exception as e:
+        result["categorization"] = {"current": 0, "error": str(e)}
+
+    try:
+        from services.ai_agent.agent_queue import get_agent_queue
+        aq = get_agent_queue()
+        pending = len(aq._queue) if hasattr(aq, '_queue') else 0
+        workers = len([w for w in getattr(aq, '_workers', []) if not w.done()]) if hasattr(aq, '_workers') else 0
+        result["agent_queue"] = {
+            "pending": pending, "active": getattr(aq, '_stats', {}).get("active", 0),
+            "workers": workers, "running": getattr(aq, '_running', False),
+            "total_processed": getattr(aq, '_stats', {}).get("total_processed", 0),
+        }
+    except Exception as e:
+        result["agent_queue"] = {"error": str(e)}
+
+    return JSONResponse(content={"success": True, **result})
+
+
+@router.get("/api/performance/vector-search")
+async def perf_vector_search(user: Optional[dict] = Depends(get_optional_user)):
+    try:
+        from services.vector_search.chroma_client import ChromaVectorStore
+        import os
+        store = ChromaVectorStore()
+        collections = store._client.list_collections()
+        coll_data = []
+        total = 0
+        for c in collections:
+            name = c.name if hasattr(c, 'name') else str(c)
+            try:
+                count = store.count(name); total += count
+                coll_data.append({"name": name, "count": count})
+            except Exception:
+                coll_data.append({"name": name, "count": 0})
+        return JSONResponse(content={"success": True, "collections": coll_data, "total_vectors": total,
+            "reindexed": os.path.exists('vector_store/.reindexed')})
+    except Exception as e:
+        return JSONResponse(content={"success": True, "collections": [], "total_vectors": 0, "error": str(e)})
+
+
+@router.get("/api/performance/service-uptime")
+async def perf_service_uptime(user: Optional[dict] = Depends(get_optional_user)):
+    try:
+        import time
+        from services.service_manager import get_service_manager
+        manager = get_service_manager()
+        statuses = manager.get_all_statuses()
+        start = getattr(perf_service_uptime, '_start_time', time.time())
+        if not hasattr(perf_service_uptime, '_start_time'):
+            perf_service_uptime._start_time = start
+        return JSONResponse(content={"success": True, "services": statuses,
+            "web_admin": {"uptime_sec": round(time.time() - start, 0)}})
+    except Exception as e:
+        return JSONResponse(content={"success": True, "services": {}, "error": str(e)})
+
+
+@router.get("/api/performance/llm-stats")
+async def perf_llm_stats(user: Optional[dict] = Depends(get_optional_user)):
+    result = {}
+    try:
+        from services.core.llm_provider import get_llm_provider, FallbackLLMProvider
+        provider = get_llm_provider()
+        if isinstance(provider, FallbackLLMProvider):
+            all_stats = provider.get_all_stats()
+            providers_list = []
+            for name, stats in all_stats.items():
+                providers_list.append({"name": name, "healthy": stats.is_healthy,
+                    "latency_ms": round(getattr(stats, 'last_latency_ms', 0), 1),
+                    "fallback_count": stats.fallback_count,
+                    "model": getattr(stats, 'model', '')})
+            result["primary"] = providers_list[0] if providers_list else {}
+            result["fallback"] = {"providers": providers_list}
+        else:
+            stats = provider.get_stats()
+            result["primary"] = {"name": type(provider).__name__,
+                "model": getattr(stats, 'model', getattr(provider, 'default_model', '')),
+                "healthy": stats.is_healthy,
+                "latency_ms": round(getattr(stats, 'last_latency_ms', 0), 1)}
+            result["fallback"] = {"providers": []}
+    except Exception as e:
+        result["error"] = str(e)
+
+    try:
+        from services.core.circuit_breaker import get_circuit_breaker_manager
+        result["open_breakers"] = get_circuit_breaker_manager().get_open_breakers()
+    except Exception:
+        result["open_breakers"] = []
+    return JSONResponse(content={"success": True, **result})
+
+
+@router.get("/api/performance/db-metrics")
+async def perf_db_metrics(user: Optional[dict] = Depends(get_optional_user)):
+    try:
+        from database.models import (Channel, TelegramPost, GeneratedNews, EventContext,
+            Publisher, User, Task, NewsCategory, RSSSource, RSSNews, WebSource, WebNews)
+        table_models = [("channels", Channel), ("posts", TelegramPost), ("generated_news", GeneratedNews),
+            ("events", EventContext), ("publishers", Publisher), ("users", User),
+            ("tasks", Task), ("categories", NewsCategory), ("rss_sources", RSSSource),
+            ("rss_news", RSSNews), ("web_sources", WebSource), ("web_news", WebNews)]
+
+        db = get_database_service()
+        db_type = getattr(db, 'db_type', None)
+        if db_type is None and hasattr(db, '_service') and db._service:
+            db_type = db._service.db_type
+        db_type_label = db_type.name if db_type else "unknown"
+
+        tables = {}
+        async with db.session_context() as session:
+            for name, model in table_models:
+                try:
+                    r = await session.execute(select(func.count()).select_from(model))
+                    tables[name] = r.scalar() or 0
+                except Exception:
+                    tables[name] = 0
+
+        db_size_mb = 0
+        if db_type:
+            from services.database.enums import DatabaseType
+            if db_type == DatabaseType.SQLITE:
+                import os
+                from config.settings import settings
+                if os.path.exists(settings.db_path):
+                    db_size_mb = round(os.path.getsize(settings.db_path) / (1024*1024), 1)
+            elif db_type == DatabaseType.POSTGRESQL:
+                try:
+                    async with db.session_context() as session:
+                        r = await session.execute(text("SELECT pg_database_size(current_database())/1024/1024"))
+                        row = r.scalar()
+                        if row: db_size_mb = round(float(row), 1)
+                except Exception: pass
+
+        return JSONResponse(content={"success": True, "db_type": db_type_label,
+            "tables": tables, "db_size_mb": db_size_mb})
+    except Exception as e:
+        return JSONResponse(content={"success": True, "db_type": "error", "tables": {}, "error": str(e)})
+
+
+@router.get("/api/performance/prometheus")
+async def perf_prometheus(user: Optional[dict] = Depends(get_optional_user)):
+    try:
+        from services.monitoring.metrics import get_metrics
+        return JSONResponse(content={"success": True, "content": get_metrics().decode('utf-8')})
+    except Exception as e:
+        return JSONResponse(content={"success": True, "content": str(e)})
+
+
+@router.get("/api/performance/system-info")
+async def perf_system_info(user: Optional[dict] = Depends(get_optional_user)):
+    import sys, platform, os
+    try:
+        import psutil
+        process = psutil.Process(os.getpid())
+        rss_mb = round(process.memory_info().rss / (1024*1024), 1)
+    except Exception:
+        rss_mb = None
+
+    start = getattr(perf_system_info, '_start_time', None)
+    if start is None:
+        perf_system_info._start_time = time.time(); start = perf_system_info._start_time
+
+    return JSONResponse(content={"success": True, "python_version": sys.version,
+        "platform": platform.platform(), "app_version": get_version(),
+        "uptime_sec": round(time.time() - start, 0), "memory_rss_mb": rss_mb, "cwd": os.getcwd()})

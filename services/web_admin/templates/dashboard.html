@@ -724,7 +724,7 @@ async function loadPerformance() {
 }
 
 async function loadPerfSystemInfo() {
-    const d=await jf('/performance/api/system-info'); if(!d) return;
+    const d=await jf('/dashboard/api/performance/system-info'); if(!d) return;
     const parts=[`<span class="font-semibold text-gray-600">v${d.app_version||'?'}</span>`,
         `<span>Python ${d.python_version?.split(' ')[0]||'?'}</span>`,
         `<span>${d.platform||''}</span>`,
@@ -734,7 +734,7 @@ async function loadPerfSystemInfo() {
 }
 
 async function loadPerfServiceUptime() {
-    const d=await jf('/performance/api/service-uptime'); if(!d||!d.services) return;
+    const d=await jf('/dashboard/api/performance/service-uptime'); if(!d||!d.services) return;
     for(const svc of ['bot','listener','scheduler']){
         const info=d.services[svc]||{}, state=info.state||'stopped', uptime=info.uptime_sec||0;
         const badge=document.getElementById(`perf-uptime-${svc}-badge`);
@@ -751,7 +751,7 @@ async function loadPerfServiceUptime() {
 }
 
 async function loadPerfCircuitBreakers() {
-    const d=await jf('/performance/api/circuit-breakers'); if(!d) return;
+    const d=await jf('/dashboard/api/performance/circuit-breakers'); if(!d) return;
     const el=document.getElementById('perf-circuit-breakers');
     if(!d.breakers.length){el.innerHTML='<div class="text-center py-4 text-gray-400 col-span-full">Circuit breaker\'ы не настроены</div>';return;}
     const sc={closed:{bg:'bg-green-50',border:'border-green-200',badge:'bg-green-100 text-green-700',icon:'fa-check-circle text-green-500'},
@@ -778,7 +778,7 @@ async function loadPerfCircuitBreakers() {
 }
 
 async function loadPerfQueues() {
-    const d=await jf('/performance/api/queues'); if(!d) return;
+    const d=await jf('/dashboard/api/performance/queues'); if(!d) return;
     const cq=d.categorization||{}, aq=d.agent_queue||{};
     const running=aq.running?'text-green-600':'text-gray-400';
     document.getElementById('perf-queues-panel').innerHTML=`
@@ -797,7 +797,7 @@ async function loadPerfQueues() {
 }
 
 async function loadPerfLLMStats() {
-    const d=await jf('/performance/api/llm-stats'); if(!d) return;
+    const d=await jf('/dashboard/api/performance/llm-stats'); if(!d) return;
     let html='';
     const show=(p)=>{const h=p.healthy;return`<div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg mb-2">
         <div class="flex items-center space-x-2"><i class="fas ${h?'fa-check-circle text-green-500':'fa-times-circle text-red-500'}"></i>
@@ -812,7 +812,7 @@ async function loadPerfLLMStats() {
 }
 
 async function loadPerfChromaDB() {
-    const d=await jf('/performance/api/vector-search'); if(!d) return;
+    const d=await jf('/dashboard/api/performance/vector-search'); if(!d) return;
     let html='';
     for(const c of (d.collections||[])) html+=`<div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg mb-2">
         <div class="flex items-center space-x-2"><i class="fas fa-cube text-cyan-500"></i><span class="text-sm font-medium text-gray-800">${esc(c.name)}</span></div>
@@ -824,7 +824,7 @@ async function loadPerfChromaDB() {
 }
 
 async function loadPerfDBMetrics() {
-    const d=await jf('/performance/api/db-metrics'); if(!d) return;
+    const d=await jf('/dashboard/api/performance/db-metrics'); if(!d) return;
     document.getElementById('perf-db-type-badge').textContent=d.db_type?`${d.db_type} (${d.db_size_mb} MB)`:'—';
     const labels={channels:'Каналы',posts:'Посты',generated_news:'AI новости',events:'События',publishers:'Паблишеры',
         users:'Пользователи',tasks:'Задачи',categories:'Категории',rss_sources:'RSS источники',rss_news:'RSS новости',web_sources:'Web источники',web_news:'Web новости'};
@@ -839,7 +839,7 @@ async function loadPerfDBMetrics() {
 
 let chartLLMLatency=null;
 async function loadPerfLLMLatency() {
-    const d=await jf('/performance/api/prometheus'); if(!d||!d.content) return;
+    const d=await jf('/dashboard/api/performance/prometheus'); if(!d||!d.content) return;
     const lines=d.content.split('\n'); const agentData={};
     for(const line of lines){
         const m=line.match(/agent_tasks_total{agent_name="([^"]+)",status="([^"]+)"} ([\d.]+)/);
