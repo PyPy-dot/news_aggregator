@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 # Пути, не требующие авторизации
 PUBLIC_PATHS = {"/", "/auth/login", "/auth/logout", "/health", "/docs", "/openapi.json"}
+PUBLIC_PREFIXES = ("/api/", "/dashboard/api/", "/ws/", "/static/", "/auth/")
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -49,7 +50,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         path = request.url.path
 
         # Проверяем, является ли путь публичным
-        if path in PUBLIC_PATHS or path.startswith("/auth/") or path.startswith("/static") or path.startswith("/ws/"):
+        if path in PUBLIC_PATHS or any(path.startswith(p) for p in ("/auth/", "/static/", "/ws/") + PUBLIC_PREFIXES):
             return await call_next(request)
 
         # Проверяем наличие валидного токена
