@@ -544,3 +544,234 @@ async def dashboard_sources_overview(user: Optional[dict] = Depends(get_optional
     except Exception as e:
         logger.error(f"Sources overview error: {e}")
         return JSONResponse(content={"success": True, "rss_active": 0, "web_active": 0})
+
+
+# =============================================================================
+# API — источники по дням (30 дней)
+# =============================================================================
+
+@router.get("/api/sources-30d")
+async def dashboard_sources_30d(user: Optional[dict] = Depends(get_optional_user)):
+    """
+    Посты по источникам (Telegram, RSS, Web) за 30 дней.
+
+    Returns:
+        {"days": [...], "telegram": [...], "rss": [...], "web": [...]}
+    """
+    from database.models import TelegramPost, RSSNews, WebNews
+
+    db = get_database_service()
+    now = datetime.now()
+    days_ago = now - timedelta(days=30)
+
+    try:
+        async with db.session_context() as session:
+            tg_result = await session.execute(
+                select(
+                    func.strftime('%m.%d', TelegramPost.created_at).label('day'),
+                    func.count(TelegramPost.id)
+                )
+                .where(TelegramPost.created_at >= days_ago)
+                .group_by(func.strftime('%m.%d', TelegramPost.created_at))
+                .order_by(text('1'))
+            )
+            tg_by_day = {row[0]: row[1] for row in tg_result.all()}
+
+            rss_result = await session.execute(
+                select(
+                    func.strftime('%m.%d', RSSNews.created_at).label('day'),
+                    func.count(RSSNews.id)
+                )
+                .where(RSSNews.created_at >= days_ago)
+                .group_by(func.strftime('%m.%d', RSSNews.created_at))
+                .order_by(text('1'))
+            )
+            rss_by_day = {row[0]: row[1] for row in rss_result.all()}
+
+            web_result = await session.execute(
+                select(
+                    func.strftime('%m.%d', WebNews.created_at).label('day'),
+                    func.count(WebNews.id)
+                )
+                .where(WebNews.created_at >= days_ago)
+                .group_by(func.strftime('%m.%d', WebNews.created_at))
+                .order_by(text('1'))
+            )
+            web_by_day = {row[0]: row[1] for row in web_result.all()}
+
+        days = [(now - timedelta(days=29 - i)).strftime('%m.%d') for i in range(30)]
+        return JSONResponse(content={
+            "success": True,
+            "days": days,
+            "telegram": [tg_by_day.get(d, 0) for d in days],
+            "rss": [rss_by_day.get(d, 0) for d in days],
+            "web": [web_by_day.get(d, 0) for d in days],
+        })
+    except Exception as e:
+        logger.error(f"Sources 30d error: {e}")
+        days = [(now - timedelta(days=29 - i)).strftime('%m.%d') for i in range(30)]
+        return JSONResponse(content={"success": True, "days": days, "telegram": [0]*30, "rss": [0]*30, "web": [0]*30})
+
+
+# =============================================================================
+# API — обработка постов (пайплайн статистика)
+# =============================================================================
+
+@router.get("/api/processing-stats")
+async def dashboard_processing_stats(user: Optional[dict] = Depends(get_optional_user)):
+    """
+    Статистика пайплайна обработки: от поста до генерации.
+
+    Returns:
+        total_posts, checked_posts, unchecked_posts, generated_news,
+        bypass_ara_count, posts_by_urgency, processing_rate (avg posts->news ratio)
+    """
+    from database.models import TelegramPost, GeneratedNews
+
+    db = get_database_service()
+    try:
+        async with db.session_context() as session:
+            # Posts
+            r = await session.execute(select(func.count()).select_from(TelegramPost))
+            total_posts = r.scalar() or 0
+
+            r = await session.execute(
+                select(func.count()).select_from(TelegramPost).where(TelegramPost.checked_at == True)
+            )
+            checked = r.scalar() or 0
+
+            r = await session.execute(
+                select(func.count()).select_from(TelegramPost).where(TelegramPost.bypass_ara == True)
+            )
+            bypass = r.scalar() or 0
+
+            r = await session.execute(select(func.count()).select_from(GeneratedNews))
+            total_gen = r.scalar() or 0
+
+            # Urgency breakdown
+            result = await session.execute(
+                select(TelegramPost.urgency, func.count(TelegramPost.id))
+                .group_by(TelegramPost.urgency)
+            )
+            urgency = {row[0] or "unknown": row[1] for row in result.all()}
+
+        return JSONResponse(content={
+            "success": True,
+            "total_posts": total_posts,
+            "checked": checked,
+            "unchecked": total_posts - checked,
+            "generated_news": total_gen,
+            "bypass_ara": bypass,
+            "processing_rate": round(total_gen / total_posts * 100, 1) if total_posts > 0 else 0,
+            "urgency": urgency,
+        })
+    except Exception as e:
+        logger.error(f"Processing stats error: {e}")
+        return JSONResponse(content={"success": True, "total_posts": 0, "generated_news": 0})
+
+
+# =============================================================================
+# API — AI агенты статистика (из Prometheus)
+# =============================================================================
+
+@router.get("/api/agent-stats")
+async def dashboard_agent_stats(user: Optional[dict] = Depends(get_optional_user)):
+    """
+    Статистика AI-агентов из Prometheus метрик.
+
+    Returns:
+        agents: [{name, total, success, failed, avg_duration_ms}]
+    """
+    try:
+        from services.monitoring.metrics import get_metrics
+        import re
+        metrics_text = get_metrics().decode('utf-8')
+
+        agents = {}
+        for line in metrics_text.split('\n'):
+            # agent_tasks_total{agent_name="Analyst",status="success"} 42
+            m = re.match(r'agent_tasks_total{agent_name="([^"]+)",status="([^"]+)"} ([\d.]+)', line)
+            if m:
+                name, status, val = m.groups()
+                if name not in agents:
+                    agents[name] = {"name": name, "success": 0, "failed": 0, "retried": 0}
+                agents[name][status] = int(float(val))
+
+            # agent_task_duration_seconds_sum/count
+            m = re.match(r'agent_task_duration_seconds_sum{agent_name="([^"]+)",method_name="[^"]+"} ([\d.]+)', line)
+            if m:
+                name, val = m.groups()
+                if name not in agents:
+                    agents[name] = {"name": name, "success": 0, "failed": 0, "retried": 0}
+                agents[name]._sum = float(val)
+
+            m = re.match(r'agent_task_duration_seconds_count{agent_name="([^"]+)",method_name="[^"]+"} ([\d.]+)', line)
+            if m:
+                name, val = m.groups()
+                if name in agents:
+                    agents[name]._count = int(float(val))
+
+        result = []
+        for a in agents.values():
+            s = getattr(a, '_sum', 0)
+            c = getattr(a, '_count', 0)
+            result.append({
+                "name": a["name"],
+                "total": a["success"] + a["failed"] + a["retried"],
+                "success": a["success"],
+                "failed": a["failed"],
+                "retried": a["retried"],
+                "avg_duration_ms": round(s / c * 1000, 1) if c > 0 else 0,
+            })
+
+        return JSONResponse(content={"success": True, "agents": result})
+    except Exception as e:
+        logger.error(f"Agent stats error: {e}")
+        return JSONResponse(content={"success": True, "agents": []})
+
+
+# =============================================================================
+# API — urgency × category matrix
+# =============================================================================
+
+@router.get("/api/posts-by-category-urgency")
+async def dashboard_posts_by_category_urgency(user: Optional[dict] = Depends(get_optional_user)):
+    """
+    Матрица: посты по категориям × срочности.
+
+    Returns:
+        matrix: [{category, u1, u2, u3, u4, u5}]
+    """
+    from database.models import TelegramPost
+
+    db = get_database_service()
+    try:
+        async with db.session_context() as session:
+            result = await session.execute(
+                select(
+                    TelegramPost.category,
+                    TelegramPost.urgency,
+                    func.count(TelegramPost.id)
+                )
+                .group_by(TelegramPost.category, TelegramPost.urgency)
+            )
+            rows = result.all()
+
+        # Build matrix
+        cat_data = {}
+        for cat, urg, count in rows:
+            if cat not in cat_data:
+                cat_data[cat] = {"category": cat or "Без категории", "u1": 0, "u2": 0, "u3": 0, "u4": 0, "u5": 0}
+            key = f"u{urg}" if urg in ("1", "2", "3", "4", "5") else None
+            if key:
+                cat_data[cat][key] = count
+            elif isinstance(urg, int) and 1 <= urg <= 5:
+                cat_data[cat][f"u{urg}"] = count
+
+        # Sort by total
+        matrix = sorted(cat_data.values(), key=lambda r: sum(r[f"u{i}"] for i in range(1, 6)), reverse=True)
+
+        return JSONResponse(content={"success": True, "matrix": matrix})
+    except Exception as e:
+        logger.error(f"Category urgency matrix error: {e}")
+        return JSONResponse(content={"success": True, "matrix": []})

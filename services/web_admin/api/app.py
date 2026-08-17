@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 # Пути, не требующие авторизации
 PUBLIC_PATHS = {"/", "/auth/login", "/auth/logout", "/health", "/docs", "/openapi.json"}
-PUBLIC_PREFIXES = ("/api/", "/dashboard/api/", "/performance/api/", "/ws/", "/static/", "/auth/")
+PUBLIC_PREFIXES = ("/api/", "/dashboard/api/", "/ws/", "/static/", "/auth/")
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -571,7 +571,7 @@ async def get_recent_news(limit: int = 5, user: Optional[dict] = Depends(get_opt
 # Включение роутов
 # =============================================================================
 
-from services.web_admin.routes import auth, dashboard, news, channels, users, tasks, rss, web, console, settings, listener_auth, listener_auth_ws, performance
+from services.web_admin.routes import auth, dashboard, news, channels, users, tasks, rss, web, console, settings, listener_auth, listener_auth_ws
 from services.web_admin import health_router
 
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
@@ -586,7 +586,6 @@ app.include_router(console.router, prefix="/console", tags=["Console"])
 app.include_router(listener_auth.router, prefix="/listener-auth", tags=["Listener Auth"])
 app.include_router(listener_auth_ws.router, prefix="/ws", tags=["Listener Auth WS"])
 app.include_router(settings.router, prefix="/settings", tags=["Settings"])
-app.include_router(performance.router, prefix="/performance", tags=["Performance"])
 app.include_router(health_router.router, prefix="/api", tags=["Health"])
 
 
