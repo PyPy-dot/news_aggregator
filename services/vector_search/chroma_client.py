@@ -21,6 +21,9 @@ from chromadb.config import Settings as ChromaSettings
 
 from services.logging_config import get_logger
 
+# Forward import to avoid circular deps; resolved at runtime.
+EmbeddingService = Any
+
 logger = get_logger(__name__)
 
 # Отключаем логирование телеметрии на уровне logging
@@ -51,18 +54,21 @@ class ChromaVectorStore:
     def __init__(
         self,
         persist_directory: Optional[Path] = None,
+        embedding_service: Any = None,  # EmbeddingService for dimension validation
     ) -> None:
         """
         Инициализация ChromaDB хранилища.
 
         Args:
             persist_directory: Директория для хранения (по умолчанию: ./vector_store)
+            embedding_service: Сервис эмбеддингов для валидации размерности векторов
         """
         if persist_directory is None:
             persist_directory = Path(__file__).parent.parent.parent / 'vector_store'
 
         self.persist_directory = persist_directory
         self.persist_directory.mkdir(parents=True, exist_ok=True)
+        self._embedding_service = embedding_service
 
         logger.info(f"📁 ChromaDB хранилище: {self.persist_directory}")
 
@@ -140,6 +146,9 @@ class ChromaVectorStore:
             embedding: Векторный эмбеддинг
             metadata: Дополнительные метаданные
         """
+        # Валидация размерности эмбеддинга
+        self._validate_embedding_dim(embedding)
+
         collection = self.get_collection(collection_name)
 
         # Подготавливаем метаданные
@@ -166,6 +175,10 @@ class ChromaVectorStore:
             collection_name: Имя коллекции
             items: Список dict с полями {id, text, embedding, metadata}
         """
+        # Валидация размерности каждого эмбеддинга
+        for item in items:
+            self._validate_embedding_dim(item['embedding'])
+
         collection = self.get_collection(collection_name)
 
         ids = [item['id'] for item in items]
@@ -321,6 +334,29 @@ class ChromaVectorStore:
         self._collections.clear()
         # ChromaDB не поддерживает reset для PersistentClient без пересоздания
         logger.warning("⚠️ Сброс хранилища требует пересоздания клиента")
+
+    def _validate_embedding_dim(self, embedding: list[float]) -> None:
+        """
+        Проверить размерность эмбеддинга.
+
+        Raises:
+            ValueError: Если размерность не совпадает с ожидаемой.
+        """
+        if self._embedding_service is None:
+            return
+
+        expected = self._embedding_service.embedding_dim
+        actual = len(embedding)
+        if actual != expected:
+            raise ValueError(
+                f"Embedding dimension mismatch: expected {expected}, got {actual}. "
+                "The vector store was created with a different model. "
+                "Re-run full reindex after changing the embedding model."
+            )
+
+        logger.debug(
+            f"✅ Embedding dim={actual}/{expected} OK"
+        )
 
     def get_hnsw_config(self, collection_name: str) -> Optional[dict[str, Any]]:
         """

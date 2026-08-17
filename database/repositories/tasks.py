@@ -577,6 +577,31 @@ class TaskRepository(BaseRepository[Task]):
         result = await self.session.execute(query)
         return list(result.scalars().all())
 
+    async def get_tasks_by_date_range(
+        self,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> List[Task]:
+        """
+        Получить задачи по диапазону дат (для календаря).
+
+        Args:
+            start_date: Начальная дата (включительно)
+            end_date: Конечная дата (включительно)
+
+        Returns:
+            Список задач, scheduled_at которых попадает в диапазон
+        """
+        result = await self.session.execute(
+            select(Task)
+            .where(
+                (Task.scheduled_at >= start_date) &
+                (Task.scheduled_at <= end_date)
+            )
+            .order_by(Task.scheduled_at)
+        )
+        return list(result.scalars().all())
+
     async def get_tasks_count_by_status(self) -> dict[str, int]:
         """
         Получить количество задач по статусам.

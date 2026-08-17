@@ -28,7 +28,7 @@ from typing import Callable, Optional, Dict, Any, List
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import JSONResponse
 
-from services.web_admin.api.app import get_optional_user
+from services.web_admin.auth_dependency import get_optional_user
 
 logger = logging.getLogger(__name__)
 

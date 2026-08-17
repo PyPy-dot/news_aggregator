@@ -122,7 +122,7 @@ class UserRepository(BaseRepository[User]):
                 ensure_ascii=False
             ),
             preferred_categories=json.dumps(
-                [cat.lower() for cat in preferred_categories] if preferred_categories else [],
+                preferred_categories if preferred_categories else [],
                 ensure_ascii=False
             ),
         )
@@ -219,9 +219,8 @@ class UserRepository(BaseRepository[User]):
             )
 
         if preferred_categories is not None:
-            # Нормализация категорий к нижнему регистру
             user.preferred_categories = json.dumps(
-                [cat.lower() for cat in preferred_categories], ensure_ascii=False
+                preferred_categories, ensure_ascii=False
             )
 
         await self.session.commit()
@@ -276,7 +275,7 @@ class UserRepository(BaseRepository[User]):
 
     async def add_preferred_category(self, telegram_id: int, category: str) -> bool:
         """
-        Добавить предпочтительную категорию (case-insensitive).
+        Добавить предпочтительную категорию (case-insensitive dedup).
 
         Args:
             telegram_id: ID пользователя в Telegram
@@ -289,10 +288,10 @@ class UserRepository(BaseRepository[User]):
         if not user:
             return False
 
-        category_normalized = category.lower()
-        categories = [c.lower() for c in json.loads(user.preferred_categories or '[]')]
-        if category_normalized not in categories:
-            categories.append(category_normalized)
+        categories = json.loads(user.preferred_categories or '[]')
+        existing_lower = {c.lower() for c in categories}
+        if category.lower() not in existing_lower:
+            categories.append(category)
             user.preferred_categories = json.dumps(categories, ensure_ascii=False)
             await self.session.commit()
         return True
@@ -312,13 +311,13 @@ class UserRepository(BaseRepository[User]):
         if not user:
             return False
 
-        category_normalized = category.lower()
-        categories = [c.lower() for c in json.loads(user.preferred_categories or '[]')]
-        if category_normalized in categories:
-            categories.remove(category_normalized)
-            user.preferred_categories = json.dumps(categories, ensure_ascii=False)
+        categories = json.loads(user.preferred_categories or '[]')
+        new_categories = [c for c in categories if c.lower() != category.lower()]
+        if len(new_categories) < len(categories):
+            user.preferred_categories = json.dumps(new_categories, ensure_ascii=False)
             await self.session.commit()
-        return True
+            return True
+        return False
 
     async def get_preferences(self, telegram_id: int) -> dict:
         """

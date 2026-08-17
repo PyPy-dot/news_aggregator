@@ -105,6 +105,11 @@ class Settings(BaseSettings):
     categorizer_history_limit: int = Field(default=2, description='Лимит истории для категоризатора')
 
     # Vector search settings
+    vector_search_persist_directory: str = Field(
+        default='vector_store',
+        alias='VECTOR_SEARCH_DIR',
+        description='Директория для хранения ChromaDB индексов'
+    )
     vector_search_events_limit: int = Field(default=5, description='Лимит похожих событий')
     vector_search_posts_limit: int = Field(default=10, description='Лимит похожих постов')
     vector_search_min_score_events: float = Field(

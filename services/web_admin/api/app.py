@@ -24,13 +24,15 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from services.database import get_database_service
+from services.web_admin.auth_dependency import (
+    COOKIE_NAME,
+    get_optional_user,
+    get_required_user,
+)
 from services.web_admin.session_manager import get_session_manager
 from services.web_admin.config import get_version
 
 logger = logging.getLogger(__name__)
-
-# Cookie название
-COOKIE_NAME = "web_admin_session"
 
 # Пути, не требующие авторизации
 PUBLIC_PATHS = {"/", "/auth/login", "/auth/logout", "/health", "/docs", "/openapi.json"}
@@ -78,47 +80,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # Пользователь авторизован — продолжаем запрос
         return await call_next(request)
-
-
-async def get_optional_user(request: Request) -> Optional[dict]:
-    """
-    Получить пользователя если авторизован, иначе None.
-
-    Для страниц, которые должны работать без обязательной авторизации.
-    """
-    # Пробуем получить токен из cookies
-    token = request.cookies.get(COOKIE_NAME)
-    if not token:
-        return None
-
-    # Проверяем токен через менеджер сессий
-    manager = get_session_manager()
-    payload = manager.verify_token(token)
-
-    if not payload:
-        return None
-
-    return {
-        "username": payload.get("sub"),
-        "logged_in": True
-    }
-
-
-async def get_required_user(request: Request) -> dict:
-    """
-    Получить текущего пользователя.
-
-    Для защищённых страниц, требующих авторизации.
-    """
-    user = await get_optional_user(request)
-    if not user:
-        # Middleware должен был сделать редирект, но на всякий случай
-        from fastapi import HTTPException, status
-        raise HTTPException(
-            status_code=status.HTTP_303_SEE_OTHER,
-            headers={"Location": "/auth/login"}
-        )
-    return user
 
 
 async def get_current_user(request: Request) -> Optional[dict]:
@@ -212,6 +173,58 @@ async def root(request: Request, user: dict = Depends(get_required_user)):
     return templates.TemplateResponse(
         request=request,
         name="index.html",
+        context={
+            "user": user,
+            "version": get_version()
+        }
+    )
+
+
+@app.get("/tasks", response_class=HTMLResponse, tags=["Tasks"])
+async def tasks_page(request: Request, user: dict = Depends(get_required_user)):
+    """HTML страница с календарём задач."""
+    return templates.TemplateResponse(
+        request=request,
+        name="tasks.html",
+        context={
+            "user": user,
+            "version": get_version()
+        }
+    )
+
+
+@app.get("/news", response_class=HTMLResponse, tags=["News"])
+async def news_page(request: Request, user: dict = Depends(get_required_user)):
+    """HTML страница со списками новостей (посты, RSS, Web, сгенерированные)."""
+    return templates.TemplateResponse(
+        request=request,
+        name="news.html",
+        context={
+            "user": user,
+            "version": get_version()
+        }
+    )
+
+
+@app.get("/users", response_class=HTMLResponse, tags=["Users"])
+async def users_page(request: Request, user: dict = Depends(get_required_user)):
+    """HTML страница со списком пользователей."""
+    return templates.TemplateResponse(
+        request=request,
+        name="users.html",
+        context={
+            "user": user,
+            "version": get_version()
+        }
+    )
+
+
+@app.get("/channels", response_class=HTMLResponse, tags=["Channels"])
+async def channels_page(request: Request, user: dict = Depends(get_required_user)):
+    """HTML страница со списком каналов (источники + публикация)."""
+    return templates.TemplateResponse(
+        request=request,
+        name="channels.html",
         context={
             "user": user,
             "version": get_version()
@@ -490,166 +503,8 @@ async def generate_news_endpoint(
         return {"success": False, "error": str(e)}
 
 
-@app.post("/api/channels", tags=["API"], response_class=JSONResponse)
-async def create_channel_endpoint(
-    request: Request,
-    user: Optional[dict] = Depends(get_optional_user),
-):
-    """
-    Добавление канала (источник мониторинга или канал публикации).
-
-    Body: {
-        "channel_id": -100...,
-        "title": "...",
-        "description": "...",
-        "target_table": "channels" | "publishers",
-        "is_trusted": false  # только для channels
-    }
-    """
-    try:
-        data = await request.json()
-        channel_id = data.get("channel_id")
-        title = data.get("title", "").strip()
-        description = data.get("description", "").strip()
-        target_table = data.get("target_table", "channels")
-        is_trusted = data.get("is_trusted", False)
-
-        if not channel_id or not title:
-            return {"success": False, "error": "Укажите channel_id и title"}
-
-        db_service = get_database_service()
-        async with db_service.session_context() as session:
-            if target_table == "publishers":
-                from database.repositories.publishers import PublisherRepository
-                repo = PublisherRepository(session)
-                existing = await repo.get_by_telegram_id(int(channel_id))
-                if existing:
-                    return {"success": False, "error": f"Канал с ID {channel_id} уже существует в publishers"}
-
-                pub = await repo.create(
-                    channel_id=int(channel_id),
-                    title=title,
-                    description=description,
-                )
-                await session.commit()
-                return {"success": True, "id": pub.id, "table": "publishers"}
-
-            else:  # channels
-                from database.repositories.channels import ChannelRepository
-                repo = ChannelRepository(session)
-                existing = await repo.get_by_telegram_id(int(channel_id))
-                if existing:
-                    return {"success": False, "error": f"Канал с ID {channel_id} уже существует в channels"}
-
-                ch_id = await repo.add_channel(
-                    channel_id=int(channel_id),
-                    title=title,
-                    description=description,
-                    is_trusted=is_trusted,
-                    trust_rating=1.0 if is_trusted else 0.5,
-                )
-                await session.commit()
-                return {"success": True, "id": ch_id, "table": "channels"}
-
-    except Exception as e:
-        logger.error(f"Ошибка добавления канала: {e}", exc_info=True)
-        return {"success": False, "error": str(e)}
-
-
-@app.post("/api/channels/resolve-link", tags=["API"], response_class=JSONResponse)
-async def resolve_channel_link(
-    request: Request,
-    user: Optional[dict] = Depends(get_optional_user),
-):
-    """
-    Получить ID, название и описание канала по Telegram-ссылке или @username.
-
-    Body: { "link": "@channelname" или "t.me/channelname" }
-
-    Requires: Bot должен быть участником канала.
-    """
-    try:
-        data = await request.json()
-        link = data.get("link", "").strip()
-
-        if not link:
-            return {"success": False, "error": "Укажите ссылку на канал"}
-
-        # Парсим ссылку → username
-        username = link
-        if link.startswith("t.me/"):
-            username = link.split("/")[1].split("/")[0].split("?")[0]
-        elif link.startswith("https://t.me/"):
-            username = link.split("/")[3].split("/")[0].split("?")[0]
-        elif not link.startswith("@"):
-            username = "@" + link
-
-        if not username.startswith("@"):
-            username = "@" + username
-
-        # Пытаемся получить информацию через бота
-        from services.bot.bot import get_bot_instance_async
-
-        bot = await get_bot_instance_async(wait=False, timeout=5.0)
-        if not bot:
-            return {"success": False, "error": "Бот не запущен. Запустите бота через консоль."}
-
-        try:
-            chat = await bot.get_chat(chat_id=username)
-            return {
-                "success": True,
-                "channel_id": chat.id,
-                "title": chat.title or "",
-                "description": chat.description or "",
-            }
-        except Exception as e:
-            error_msg = str(e).lower()
-            if "not_found" in error_msg or "user not found" in error_msg:
-                return {"success": False, "error": f"Канал @{username} не найден. Проверьте ссылку."}
-            elif "chat_action_is_not_allowed" in error_msg or "privacy" in error_msg:
-                return {
-                    "success": False,
-                    "error": "Бот не может получить данные канала. Для добавления в publishers бот должен быть участником канала.",
-                    "partial": True,
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": f"Не удалось получить данные: {e}. Для publishers бот должен быть участником канала.",
-                    "partial": True,
-                }
-
-    except Exception as e:
-        logger.error(f"Ошибка резолва ссылки: {e}", exc_info=True)
-        return {"success": False, "error": str(e)}
-
-
-@app.get("/api/publishers/list", tags=["API"], response_class=JSONResponse)
-async def list_publishers(
-    user: Optional[dict] = Depends(get_optional_user),
-):
-    """Получить список каналов публикации (для dropdown в модалке)."""
-    try:
-        db_service = get_database_service()
-        async with db_service.session_context() as session:
-            from database.repositories.publishers import PublisherRepository
-            repo = PublisherRepository(session)
-            publishers = await repo.get_all(active_only=True)
-
-        result = []
-        for p in publishers:
-            result.append({
-                "id": p.id,
-                "channel_id": p.channel_id,
-                "title": p.title,
-                "description": p.description or "",
-            })
-
-        return {"success": True, "publishers": result}
-
-    except Exception as e:
-        logger.error(f"Ошибка получения publishers: {e}", exc_info=True)
-        return {"success": False, "error": str(e), "publishers": []}
+# API эндпоинты каналов (создание, resolve-link, список publishers)
+# теперь живут в services/web_admin/routes/channels.py
 
 
 @app.get("/api/news/recent", tags=["API"], response_class=JSONResponse)

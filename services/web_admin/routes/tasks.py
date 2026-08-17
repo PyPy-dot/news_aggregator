@@ -102,6 +102,67 @@ async def list_tasks(
         }
 
 
+@router.get('/calendar')
+async def get_calendar_tasks(
+    year: int = Query(..., description="Год"),
+    month: int = Query(..., ge=1, le=12, description="Месяц"),
+):
+    """
+    Получить задачи за месяц (для календаря).
+
+    Возвращает:
+    - Все задачи, scheduled_at которых попадает в указанный месяц.
+    - Все активные recurring задачи, чья scheduled_at НЕ старше запрашиваемого месяца
+      (фронтенд сам рассчитает будущие повторы внутри месяца).
+    """
+    start_date = datetime(year, month, 1)
+    if month == 12:
+        end_date = datetime(year + 1, 1, 1) - timedelta(microseconds=1)
+    else:
+        end_date = datetime(year, month + 1, 1) - timedelta(microseconds=1)
+
+    async with get_database_service().session_context() as session:
+        factory = RepositoryFactory(session)
+        task_repo = factory.tasks()
+
+        # Задачи, запланированные в этом месяце
+        tasks = await task_repo.get_tasks_by_date_range(start_date, end_date)
+
+        # Плюс активные recurring задачи, созданные ДО этого месяца
+        # (чтобы фронтенд мог рассчитать их повторы)
+        from sqlalchemy import select as sa_select
+        from database.models import Task as TaskModel
+        recurring_result = await session.execute(
+            sa_select(TaskModel)
+            .where(
+                (TaskModel.recurring == True) &
+                (TaskModel.scheduled_at < start_date) &
+                (TaskModel.status.notin_(['completed', 'failed', 'expired', 'canceled']))
+            )
+            .order_by(TaskModel.scheduled_at)
+        )
+        past_recurring = list(recurring_result.scalars().all())
+        tasks.extend(past_recurring)
+
+        return {
+            'tasks': [
+                {
+                    'id': t.id,
+                    'task_type': t.task_type,
+                    'description': t.description,
+                    'scheduled_at': t.scheduled_at.isoformat() if t.scheduled_at else None,
+                    'status': t.status,
+                    'recurring': t.recurring,
+                    'recurrence_pattern': t.recurrence_pattern,
+                    'created_at': t.created_at.isoformat() if t.created_at else None,
+                }
+                for t in tasks
+            ],
+            'month': month,
+            'year': year,
+        }
+
+
 @router.get('/stats')
 async def get_tasks_stats():
     """
@@ -249,7 +310,7 @@ async def create_periodic_task(
         return new_task
 
 
-@router.get('/{task_id}', response_model=TaskResponse)
+@router.get('/{task_id}')
 async def get_task(task_id: int):
     """Получить задачу по ID."""
     async with get_database_service().session_context() as session:
@@ -260,7 +321,20 @@ async def get_task(task_id: int):
         if not task:
             raise HTTPException(status_code=404, detail="Задача не найдена")
 
-        return task
+        return {
+            'id': task.id,
+            'task_type': task.task_type,
+            'description': task.description,
+            'post_id': task.post_id,
+            'news_id': task.news_id,
+            'scheduled_at': task.scheduled_at.isoformat() if task.scheduled_at else None,
+            'status': task.status,
+            'recurring': task.recurring,
+            'recurrence_pattern': task.recurrence_pattern,
+            'publisher_channel_id': task.publisher_channel_id,
+            'created_at': task.created_at.isoformat() if task.created_at else None,
+            'completed_at': task.completed_at.isoformat() if task.completed_at else None,
+        }
 
 
 @router.post('/{task_id}/cancel')
@@ -316,12 +390,12 @@ async def reschedule_task(task_id: int, scheduled_at: datetime):
         }
 
 
-@router.delete('/{task_id}')
-async def delete_task(task_id: int):
+@router.put('/{task_id}', response_model=TaskResponse)
+async def update_task(task_id: int, task_data: TaskCreate):
     """
-    Удалить задачу.
+    Обновить задачу.
 
-    Можно удалять только задачи со статусами: completed, failed, expired, canceled
+    Обновляет описание, тип, время выполнения, периодичность.
     """
     async with get_database_service().session_context() as session:
         factory = RepositoryFactory(session)
@@ -331,11 +405,36 @@ async def delete_task(task_id: int):
         if not task:
             raise HTTPException(status_code=404, detail="Задача не найдена")
 
-        if task.status not in ('completed', 'failed', 'expired', 'canceled'):
-            raise HTTPException(
-                status_code=400,
-                detail="Можно удалять только завершённые задачи (completed/failed/expired/canceled)"
-            )
+        # Валидация времени
+        if task_data.scheduled_at and task_data.scheduled_at < datetime.now():
+            raise HTTPException(status_code=400, detail="scheduled_at не может быть в прошлом")
+
+        await task_repo.update_task(
+            task_id=task_id,
+            task_type=task_data.task_type,
+            description=task_data.description,
+            scheduled_at=task_data.scheduled_at,
+            recurring=task_data.recurring,
+            recurrence_pattern=task_data.recurrence_pattern,
+            publisher_channel_id=task_data.publisher_channel_id,
+        )
+
+        updated = await task_repo.get(task_id)
+        return updated
+
+
+@router.delete('/{task_id}')
+async def delete_task(task_id: int):
+    """
+    Удалить задачу.
+    """
+    async with get_database_service().session_context() as session:
+        factory = RepositoryFactory(session)
+        task_repo = factory.tasks()
+
+        task = await task_repo.get(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Задача не найдена")
 
         await task_repo.delete_task(task_id)
 

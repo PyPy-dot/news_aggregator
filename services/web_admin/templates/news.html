@@ -1,0 +1,1138 @@
+{% extends "base.html" %}
+
+{% set active_page = 'news' %}
+
+{% block title %}News Aggregator — Новости{% endblock %}
+
+{% block page_title %}<h2 class="text-2xl font-bold text-gray-800">Новости</h2>{% endblock %}
+{% block page_subtitle %}<p class="text-sm text-gray-500 mt-1">Просмотр и управление записями из всех источников</p>{% endblock %}
+
+{% block content %}
+    <!-- NEWS.HTML v2 2026-08-17 -->
+    <!-- Табы подразделов -->
+    <div class="bg-white rounded-xl shadow-sm mb-8">
+        <div class="border-b border-gray-200">
+            <nav class="flex -mb-px">
+                <button onclick="switchTab('posts')" id="tab-posts"
+                        class="tab-btn px-6 py-4 text-sm font-medium border-b-2 transition-colors border-blue-500 text-blue-600">
+                    <i class="fas fa-telegram mr-2"></i>Посты
+                    <span id="tab-count-posts" class="ml-2 px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full hidden">0</span>
+                </button>
+                <button onclick="switchTab('rss')" id="tab-rss"
+                        class="tab-btn px-6 py-4 text-sm font-medium border-b-2 transition-colors border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                    <i class="fas fa-rss mr-2"></i>RSS
+                    <span id="tab-count-rss" class="ml-2 px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full hidden">0</span>
+                </button>
+                <button onclick="switchTab('web')" id="tab-web"
+                        class="tab-btn px-6 py-4 text-sm font-medium border-b-2 transition-colors border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                    <i class="fas fa-globe mr-2"></i>Web
+                    <span id="tab-count-web" class="ml-2 px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded-full hidden">0</span>
+                </button>
+                <button onclick="switchTab('generated')" id="tab-generated"
+                        class="tab-btn px-6 py-4 text-sm font-medium border-b-2 transition-colors border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                    <i class="fas fa-magic mr-2"></i>Сгенерированные
+                    <span id="tab-count-generated" class="ml-2 px-2 py-0.5 text-xs bg-amber-100 text-amber-700 rounded-full hidden">0</span>
+                </button>
+                <button onclick="switchTab('events')" id="tab-events"
+                        class="tab-btn px-6 py-4 text-sm font-medium border-b-2 transition-colors border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                    <i class="fas fa-project-diagram mr-2"></i>Контекст
+                    <span id="tab-count-events" class="ml-2 px-2 py-0.5 text-xs bg-rose-100 text-rose-700 rounded-full hidden">0</span>
+                </button>
+            </nav>
+        </div>
+    </div>
+
+    <!-- Контент табов — загрузка данных JS -->
+    <!-- ============================================================ -->
+    <!-- Панель поиска и фильтрации                                    -->
+    <!-- ============================================================ -->
+    <div class="bg-white rounded-xl shadow-sm p-4 mb-6">
+        <div class="flex items-center gap-3 flex-wrap">
+            <!-- Поиск -->
+            <div class="relative flex-1 min-w-[220px]">
+                <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                <input type="text" id="search-query"
+                       class="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                       placeholder="Поиск по тексту, категории, тэгам (включая семантический)..."
+                       onkeydown="if(event.key==='Enter') applySearchFilter()">
+            </div>
+            <!-- Выбор поля фильтра -->
+            <select id="filter-field" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+                <option value="">Поле фильтра</option>
+            </select>
+            <!-- Значение фильтра -->
+            <input type="text" id="filter-value"
+                   class="px-3 py-2 border border-gray-300 rounded-lg text-sm w-36 focus:ring-2 focus:ring-blue-500"
+                   placeholder="Значение"
+                   onkeydown="if(event.key==='Enter') applySearchFilter()">
+            <!-- Кнопки -->
+            <button onclick="applySearchFilter()"
+                    class="px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 transition-colors">
+                <i class="fas fa-filter mr-1"></i>Найти
+            </button>
+            <button onclick="clearSearchFilter()"
+                    class="px-4 py-2 bg-gray-100 text-gray-600 text-sm rounded-lg hover:bg-gray-200 transition-colors">
+                <i class="fas fa-times mr-1"></i>Сброс
+            </button>
+            <!-- Индикатор режима -->
+            <span id="search-indicator" class="text-xs text-gray-400 ml-2 hidden">
+                <i class="fas fa-brain mr-1"></i>семантический поиск
+            </span>
+        </div>
+    </div>
+    <!-- Поставил max-w-none на wrapper чтобы таблицы не сжимались — на всю ширину экрана -->
+    <div class="max-w-none">
+
+        <!-- ============================================================ -->
+        <!-- Таб: Посты (Telegram)                                        -->
+        <!-- ============================================================ -->
+        <div id="content-posts" class="tab-content">
+            <div class="bg-white rounded-xl shadow-sm p-6">
+                <div id="posts-loading" class="text-center py-12">
+                    <div class="inline-block animate-spin text-blue-500 text-2xl"><i class="fas fa-spinner"></i></div>
+                    <p class="text-gray-400 mt-2">Загрузка...</p>
+                </div>
+                <div id="posts-table-wrap" class="hidden overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-gray-200">
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-16"><span class="sortable" data-tab="posts" data-field="id" onclick="sortTable('posts','id')">ID <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500">Текст</th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-32"><span class="sortable" data-tab="posts" data-field="channel_id" onclick="sortTable('posts','channel_id')">Канал <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-28"><span class="sortable" data-tab="posts" data-field="category" onclick="sortTable('posts','category')">Категория <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-32"><span class="sortable" data-tab="posts" data-field="tags" onclick="sortTable('posts','tags')">Тэги <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-16"><span class="sortable" data-tab="posts" data-field="urgency" onclick="sortTable('posts','urgency')">Срочн. <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-16"><span class="sortable" data-tab="posts" data-field="rate" onclick="sortTable('posts','rate')">Рейт <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-20">Обр.</th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-16">Бот</th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-24">Pub</th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-36"><span class="sortable active-sort" data-tab="posts" data-field="created_at" onclick="sortTable('posts','created_at')">Дата <i class="fas fa-sort-down text-blue-500 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-24">Действие</th>
+                            </tr>
+                        </thead>
+                        <tbody id="posts-tbody"></tbody>
+                    </table>
+                </div>
+                <div id="posts-empty" class="hidden text-center py-12 text-gray-400">Нет записей</div>
+                <div id="posts-toolbar" class="flex items-center justify-between mt-4 px-2">
+                    <button onclick="deleteAllVisible('posts', 'пост', 'posts-tbody', '.task-chip')"
+                            class="px-3 py-1.5 text-xs text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors border border-red-200">
+                        <i class="fas fa-trash-alt mr-1"></i>Удалить все на странице
+                    </button>
+                    <div id="posts-pagination" class="flex items-center justify-between"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- Таб: RSS новости                                             -->
+        <!-- ============================================================ -->
+        <div id="content-rss" class="tab-content hidden">
+            <div class="bg-white rounded-xl shadow-sm p-6">
+                <div id="rss-loading" class="text-center py-12">
+                    <div class="inline-block animate-spin text-green-500 text-2xl"><i class="fas fa-spinner"></i></div>
+                    <p class="text-gray-400 mt-2">Загрузка...</p>
+                </div>
+                <div id="rss-table-wrap" class="hidden overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-gray-200">
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-16"><span class="sortable" data-tab="rss" data-field="id" onclick="sortTable('rss','id')">ID <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500">Заголовок</th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-24"><span class="sortable" data-tab="rss" data-field="source_id" onclick="sortTable('rss','source_id')">Источник <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-48"><span class="sortable" data-tab="rss" data-field="link" onclick="sortTable('rss','link')">Ссылка <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-28"><span class="sortable" data-tab="rss" data-field="author" onclick="sortTable('rss','author')">Автор <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-28"><span class="sortable" data-tab="rss" data-field="category" onclick="sortTable('rss','category')">Категория <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-32"><span class="sortable" data-tab="rss" data-field="tags" onclick="sortTable('rss','tags')">Тэги <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-20"><span class="sortable" data-tab="rss" data-field="processed" onclick="sortTable('rss','processed')">Обр. <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-24">Post ID</th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-36"><span class="sortable active-sort" data-tab="rss" data-field="created_at" onclick="sortTable('rss','created_at')">Создана <i class="fas fa-sort-down text-blue-500 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-24">Действие</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rss-tbody"></tbody>
+                    </table>
+                </div>
+                <div id="rss-empty" class="hidden text-center py-12 text-gray-400">Нет записей</div>
+                <div id="rss-toolbar" class="flex items-center justify-between mt-4 px-2">
+                    <button onclick="deleteAllVisible('rss', 'RSS новость', 'rss-tbody', '.task-chip')"
+                            class="px-3 py-1.5 text-xs text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors border border-red-200">
+                        <i class="fas fa-trash-alt mr-1"></i>Удалить все на странице
+                    </button>
+                    <div id="rss-pagination" class="flex items-center justify-between"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- Таб: Web новости                                             -->
+        <!-- ============================================================ -->
+        <div id="content-web" class="tab-content hidden">
+            <div class="bg-white rounded-xl shadow-sm p-6">
+                <div id="web-loading" class="text-center py-12">
+                    <div class="inline-block animate-spin text-purple-500 text-2xl"><i class="fas fa-spinner"></i></div>
+                    <p class="text-gray-400 mt-2">Загрузка...</p>
+                </div>
+                <div id="web-table-wrap" class="hidden overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-gray-200">
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-16"><span class="sortable" data-tab="web" data-field="id" onclick="sortTable('web','id')">ID <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500">Заголовок</th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-24"><span class="sortable" data-tab="web" data-field="source_id" onclick="sortTable('web','source_id')">Источник <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-48"><span class="sortable" data-tab="web" data-field="link" onclick="sortTable('web','link')">Ссылка <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-28"><span class="sortable" data-tab="web" data-field="author" onclick="sortTable('web','author')">Автор <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-28"><span class="sortable" data-tab="web" data-field="category" onclick="sortTable('web','category')">Категория <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-32"><span class="sortable" data-tab="web" data-field="tags" onclick="sortTable('web','tags')">Тэги <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-20"><span class="sortable" data-tab="web" data-field="processed" onclick="sortTable('web','processed')">Обр. <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-24">Post ID</th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-36"><span class="sortable active-sort" data-tab="web" data-field="created_at" onclick="sortTable('web','created_at')">Создана <i class="fas fa-sort-down text-blue-500 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-24">Действие</th>
+                            </tr>
+                        </thead>
+                        <tbody id="web-tbody"></tbody>
+                    </table>
+                </div>
+                <div id="web-empty" class="hidden text-center py-12 text-gray-400">Нет записей</div>
+                <div id="web-toolbar" class="flex items-center justify-between mt-4 px-2">
+                    <button onclick="deleteAllVisible('web', 'Web новость', 'web-tbody', '.task-chip')"
+                            class="px-3 py-1.5 text-xs text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors border border-red-200">
+                        <i class="fas fa-trash-alt mr-1"></i>Удалить все на странице
+                    </button>
+                    <div id="web-pagination" class="flex items-center justify-between"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- Таб: Сгенерированные новости                                 -->
+        <!-- ============================================================ -->
+        <div id="content-generated" class="tab-content hidden">
+            <div class="bg-white rounded-xl shadow-sm p-6">
+                <div id="generated-loading" class="text-center py-12">
+                    <div class="inline-block animate-spin text-amber-500 text-2xl"><i class="fas fa-spinner"></i></div>
+                    <p class="text-gray-400 mt-2">Загрузка...</p>
+                </div>
+                <div id="generated-table-wrap" class="hidden overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-gray-200">
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-16"><span class="sortable" data-tab="generated" data-field="id" onclick="sortTable('generated','id')">ID <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500">Текст</th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-28"><span class="sortable" data-tab="generated" data-field="category" onclick="sortTable('generated','category')">Категория <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-32"><span class="sortable" data-tab="generated" data-field="tags" onclick="sortTable('generated','tags')">Тэги <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-32"><span class="sortable" data-tab="generated" data-field="moderation_status" onclick="sortTable('generated','moderation_status')">Статус <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-16">Бот</th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-24">Pub</th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-36">Опублик.</th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-36"><span class="sortable active-sort" data-tab="generated" data-field="created_at" onclick="sortTable('generated','created_at')">Создана <i class="fas fa-sort-down text-blue-500 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-24">Действие</th>
+                            </tr>
+                        </thead>
+                        <tbody id="generated-tbody"></tbody>
+                    </table>
+                </div>
+                <div id="generated-empty" class="hidden text-center py-12 text-gray-400">Нет записей</div>
+                <div id="generated-toolbar" class="flex items-center justify-between mt-4 px-2">
+                    <button onclick="deleteAllVisible('generated', 'сгенерированную новость', 'generated-tbody', '.task-chip')"
+                            class="px-3 py-1.5 text-xs text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors border border-red-200">
+                        <i class="fas fa-trash-alt mr-1"></i>Удалить все на странице
+                    </button>
+                    <div id="generated-pagination" class="flex items-center justify-between"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- Таб: Контекст событий                                        -->
+        <!-- ============================================================ -->
+        <div id="content-events" class="tab-content hidden">
+            <div class="bg-white rounded-xl shadow-sm p-6">
+                <div id="events-loading" class="text-center py-12">
+                    <div class="inline-block animate-spin text-rose-500 text-2xl"><i class="fas fa-spinner"></i></div>
+                    <p class="text-gray-400 mt-2">Загрузка...</p>
+                </div>
+                <div id="events-table-wrap" class="hidden overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-gray-200">
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-16"><span class="sortable" data-tab="events" data-field="id" onclick="sortTable('events','id')">ID <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-20"><span class="sortable" data-tab="events" data-field="post_id" onclick="sortTable('events','post_id')">Post ID <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-32"><span class="sortable" data-tab="events" data-field="event_category" onclick="sortTable('events','event_category')">Категория <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500">Контекст</th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-32"><span class="sortable" data-tab="events" data-field="tags" onclick="sortTable('events','tags')">Тэги <i class="fas fa-sort text-gray-300 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-36"><span class="sortable active-sort" data-tab="events" data-field="created_at" onclick="sortTable('events','created_at')">Последнее изменение <i class="fas fa-sort-down text-blue-500 text-xs"></i></span></th>
+                                <th class="text-left py-3 px-4 font-semibold text-gray-500 w-24">Действие</th>
+                            </tr>
+                        </thead>
+                        <tbody id="events-tbody"></tbody>
+                    </table>
+                </div>
+                <div id="events-empty" class="hidden text-center py-12 text-gray-400">Нет записей</div>
+                <div id="events-toolbar" class="flex items-center justify-between mt-4 px-2">
+                    <button onclick="deleteAllVisible('events', 'событие', 'events-tbody', '.task-chip')"
+                            class="px-3 py-1.5 text-xs text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors border border-red-200">
+                        <i class="fas fa-trash-alt mr-1"></i>Удалить все на странице
+                    </button>
+                    <div id="events-pagination" class="flex items-center justify-between"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+    <script>
+        // ============================================================
+        // Утилиты
+        // ============================================================
+        function escapeHtml(text) {
+            const d = document.createElement('div');
+            d.textContent = text || '';
+            return d.innerHTML;
+        }
+
+        function formatDate(isoStr) {
+            if (!isoStr) return '—';
+            try {
+                const d = new Date(isoStr);
+                return d.toLocaleString('ru-RU', {
+                    day: '2-digit', month: '2-digit', year: 'numeric',
+                    hour: '2-digit', minute: '2-digit'
+                });
+            } catch {
+                return isoStr.substring(0, 16).replace('T', ' ');
+            }
+        }
+
+        function truncate(str, len) {
+            str = str || '';
+            return str.length > len ? str.substring(0, len) + '…' : str;
+        }
+
+        function renderTags(tagsStr) {
+            if (!tagsStr || tagsStr === '[]') return '<span class="text-gray-300 text-xs">—</span>';
+            let tags;
+            try {
+                tags = typeof tagsStr === 'string' ? JSON.parse(tagsStr) : tagsStr;
+            } catch {
+                try {
+                    tags = JSON.parse(tagsStr.replace(/'/g, '"'));
+                } catch {
+                    return `<span class="text-gray-500 text-xs">${escapeHtml(truncate(tagsStr, 30))}</span>`;
+                }
+            }
+            if (!Array.isArray(tags) || tags.length === 0) return '<span class="text-gray-300 text-xs">—</span>';
+            const colors = [
+                'bg-amber-50 text-amber-700',
+                'bg-teal-50 text-teal-700',
+                'bg-indigo-50 text-indigo-700',
+                'bg-rose-50 text-rose-700',
+                'bg-cyan-50 text-cyan-700',
+                'bg-lime-50 text-lime-700',
+            ];
+            return tags.slice(0, 4).map((t, i) =>
+                `<span class="inline-block px-1.5 py-0.5 text-xs rounded-full mr-1 ${colors[i % colors.length]}" title="${escapeHtml(String(t))}">${escapeHtml(truncate(String(t), 16))}</span>`
+            ).join('') + (tags.length > 4 ? `<span class="text-gray-400 text-xs">+${tags.length - 4}</span>` : '');
+        }
+
+        // ============================================================
+        // Навигация по табам
+        // ============================================================
+        const TAB_CONFIG = {
+            posts: { api: '/news/api/posts', tbody: 'posts-tbody', tableWrap: 'posts-table-wrap', empty: 'posts-empty', loading: 'posts-loading', pagination: 'posts-pagination', count: 'tab-count-posts' },
+            rss:   { api: '/news/api/rss-news', tbody: 'rss-tbody', tableWrap: 'rss-table-wrap', empty: 'rss-empty', loading: 'rss-loading', pagination: 'rss-pagination', count: 'tab-count-rss' },
+            web:   { api: '/news/api/web-news', tbody: 'web-tbody', tableWrap: 'web-table-wrap', empty: 'web-empty', loading: 'web-loading', pagination: 'web-pagination', count: 'tab-count-web' },
+            generated: { api: '/news/api/generated-news', tbody: 'generated-tbody', tableWrap: 'generated-table-wrap', empty: 'generated-empty', loading: 'generated-loading', pagination: 'generated-pagination', count: 'tab-count-generated' },
+            events:    { api: '/news/api/events', tbody: 'events-tbody', tableWrap: 'events-table-wrap', empty: 'events-empty', loading: 'events-loading', pagination: 'events-pagination', count: 'tab-count-events' },
+        };
+
+        // Состояние пагинации на каждый таб
+        const state = {
+            posts: { page: 1, limit: 50, total: 0 },
+            rss:   { page: 1, limit: 50, total: 0 },
+            web:   { page: 1, limit: 50, total: 0 },
+            generated: { page: 1, limit: 50, total: 0 },
+            events:    { page: 1, limit: 50, total: 0 },
+        };
+
+        let activeTab = 'posts';
+
+        // Кэш DOM-элементов для каждого таба (заполняется при инициализации)
+        const domCache = {};
+
+        function cacheElements() {
+            for (const [name, cfg] of Object.entries(TAB_CONFIG)) {
+                domCache[name] = {
+                    loading: document.getElementById(cfg.loading),
+                    tableWrap: document.getElementById(cfg.tableWrap),
+                    empty: document.getElementById(cfg.empty),
+                    pagination: document.getElementById(cfg.pagination),
+                    tbody: document.getElementById(cfg.tbody),
+                    count: document.getElementById(cfg.count),
+                };
+            }
+        }
+
+        function getCached(name, key) {
+            const el = domCache[name]?.[key];
+            if (!el) {
+                console.error(`[News] DOM element not cached: ${name}.${key}`);
+            }
+            return el;
+        }
+
+        function switchTab(name) {
+            activeTab = name;
+
+            // Переключаем активный таб
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('border-blue-500', 'text-blue-600');
+                btn.classList.add('border-transparent', 'text-gray-500');
+            });
+            const activeBtn = document.getElementById('tab-' + name);
+            activeBtn.classList.add('border-blue-500', 'text-blue-600');
+            activeBtn.classList.remove('border-transparent', 'text-gray-500');
+
+            // Показываем нужный контент
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.getElementById('content-' + name).classList.remove('hidden');
+
+            // Если данные ещё не загружены — загружаем
+            if (!state[name].loaded) {
+                loadTab(name);
+            }
+        }
+
+        // ============================================================
+        // Загрузка данных таба
+        // ============================================================
+        async function loadTab(name) {
+            const cfg = TAB_CONFIG[name];
+            const st = state[name];
+            const d = domCache[name];
+            if (!d) {
+                console.error(`[News] DOM cache not ready for tab: ${name}`);
+                return;
+            }
+
+            d.loading.classList.remove('hidden');
+            d.tableWrap.classList.add('hidden');
+            d.empty.classList.add('hidden');
+
+            try {
+                const url = `${cfg.api}?page=${st.page}&limit=${st.limit}`;
+                console.log(`[News] Loading ${name}: ${url}`);
+                const resp = await fetch(url);
+                console.log(`[News] ${name} response: ${resp.status} ${resp.ok}`);
+
+                if (!resp.ok) {
+                    const errText = await resp.text().catch(() => '');
+                    throw new Error(`HTTP ${resp.status}: ${errText.substring(0, 100)}`);
+                }
+
+                const data = await resp.json();
+                console.log(`[News] ${name} data: ${data.items?.length || 0} items, total=${data.total}`);
+
+                if (!data.success) throw new Error(data.error || 'API returned success: false');
+
+                st.total = data.total || 0;
+                st.pages = data.pages || 1;
+                st.loaded = true;
+
+                // Обновляем бейдж на табе
+                if (d.count) {
+                    d.count.textContent = st.total.toLocaleString('ru-RU');
+                    d.count.classList.remove('hidden');
+                }
+
+                d.loading.classList.add('hidden');
+
+                if (!data.items || data.items.length === 0) {
+                    d.empty.classList.remove('hidden');
+                    d.pagination.innerHTML = '';
+                } else {
+                    renderTable(name, data.items);
+                    d.tableWrap.classList.remove('hidden');
+                    renderPagination(name);
+                }
+            } catch (e) {
+                console.error(`[News] Ошибка загрузки ${name}:`, e);
+                d.loading.innerHTML = `
+                    <p class="text-red-400">Ошибка загрузки: ${escapeHtml(e.message)}</p>
+                    <button onclick="state.${name}.loaded=false; loadTab('${name}')"
+                            class="mt-2 px-3 py-1 text-sm bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200">
+                        Повторить
+                    </button>`;
+                // НЕ прячем loading в случае ошибки — пользователь должен видеть ошибку
+            }
+        }
+
+        // ============================================================
+        // Рендер таблиц
+        // ============================================================
+        function renderTable(name, items) {
+            if (name === 'posts') renderPosts(items);
+            else if (name === 'rss') renderRssWeb(items, 'rss');
+            else if (name === 'web') renderRssWeb(items, 'web');
+            else if (name === 'generated') renderGenerated(items);
+            else if (name === 'events') renderEvents(items);
+        }
+
+        function renderPosts(items) {
+            const tbody = document.getElementById('posts-tbody');
+            tbody.innerHTML = items.map(p => {
+                const checkedBadge = p.checked_at
+                    ? '<span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">да</span>'
+                    : '<span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-500 rounded-full">нет</span>';
+                const bypassBadge = p.bypass_ara
+                    ? '<span class="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full">да</span>'
+                    : '<span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-500 rounded-full">нет</span>';
+                const tagsHtml = renderTags(p.tags);
+                return `
+                <tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                    <td class="py-2.5 px-4 text-gray-500 font-mono">${p.id}</td>
+                    <td class="py-2.5 px-4 max-w-[400px]"><div class="text-gray-700 truncate" title="${escapeHtml(p.text)}">${escapeHtml(truncate(p.text, 150))}</div></td>
+                    <td class="py-2.5 px-4 text-gray-500">${escapeHtml(String(p.channel_id))}</td>
+                    <td class="py-2.5 px-4"><span class="px-2 py-0.5 text-xs bg-blue-50 text-blue-700 rounded-full">${escapeHtml(p.category)}</span></td>
+                    <td class="py-2.5 px-4">${tagsHtml}</td>
+                    <td class="py-2.5 px-4 text-center font-semibold">${escapeHtml(String(p.urgency))}</td>
+                    <td class="py-2.5 px-4 text-gray-500">${p.rate}</td>
+                    <td class="py-2.5 px-4 text-center">${checkedBadge}</td>
+                    <td class="py-2.5 px-4 text-center">${bypassBadge}</td>
+                    <td class="py-2.5 px-4 text-gray-400">${p.publisher_channel_id != null ? p.publisher_channel_id : '—'}</td>
+                    <td class="py-2.5 px-4 text-gray-500 whitespace-nowrap">${formatDate(p.created_at)}</td>
+                    <td class="py-2.5 px-4">
+                        <button onclick="deleteItem('posts', ${p.id}, 'post')"
+                                class="px-2 py-1 text-xs text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
+                                title="Удалить пост">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>`;
+            }).join('');
+        }
+
+        function renderRssWeb(items, prefix) {
+            const tbody = document.getElementById(prefix + '-tbody');
+            tbody.innerHTML = items.map(n => {
+                const procBadge = n.processed
+                    ? '<span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">да</span>'
+                    : '<span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-500 rounded-full">нет</span>';
+                const tagsHtml = renderTags(n.tags);
+                return `
+                <tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                    <td class="py-2.5 px-4 text-gray-500 font-mono">${n.id}</td>
+                    <td class="py-2.5 px-4 max-w-[400px]"><div class="text-gray-700 truncate" title="${escapeHtml(n.title)}">${escapeHtml(truncate(n.title, 120))}</div></td>
+                    <td class="py-2.5 px-4 text-gray-500">ID: ${n.source_id}</td>
+                    <td class="py-2.5 px-4"><a href="${escapeHtml(n.link)}" target="_blank" class="text-blue-500 hover:text-blue-700 text-xs truncate block max-w-[200px]" title="${escapeHtml(n.link)}">${escapeHtml(truncate(n.link, 50))}</a></td>
+                    <td class="py-2.5 px-4 text-gray-500">${escapeHtml(n.author)}</td>
+                    <td class="py-2.5 px-4"><span class="px-2 py-0.5 text-xs bg-purple-50 text-purple-700 rounded-full">${escapeHtml(n.category)}</span></td>
+                    <td class="py-2.5 px-4">${tagsHtml}</td>
+                    <td class="py-2.5 px-4 text-center">${procBadge}</td>
+                    <td class="py-2.5 px-4 text-gray-400">${n.post_id != null ? n.post_id : '—'}</td>
+                    <td class="py-2.5 px-4 text-gray-500 whitespace-nowrap">${formatDate(n.created_at)}</td>
+                    <td class="py-2.5 px-4">
+                        <button onclick="deleteItem('${prefix}', ${n.id}, '${prefix === 'rss' ? 'RSS новость' : 'Web новость'}')"
+                                class="px-2 py-1 text-xs text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
+                                title="Удалить">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>`;
+            }).join('');
+        }
+
+        function renderGenerated(items) {
+            const MOD_COLORS = {
+                'pending': 'bg-yellow-100 text-yellow-700',
+                'approved': 'bg-green-100 text-green-700',
+                'rejected': 'bg-red-100 text-red-700',
+                'edited': 'bg-blue-100 text-blue-700',
+            };
+            const MOD_LABELS = {
+                'pending': 'Ожидание',
+                'approved': 'Одобрена',
+                'rejected': 'Отклонена',
+                'edited': 'Отредактирована',
+            };
+
+            const tbody = document.getElementById('generated-tbody');
+            tbody.innerHTML = items.map(n => {
+                const modCls = MOD_COLORS[n.moderation_status] || 'bg-gray-100 text-gray-600';
+                const modLbl = MOD_LABELS[n.moderation_status] || n.moderation_status;
+                const bypassBadge = n.bypass_ara
+                    ? '<span class="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full">да</span>'
+                    : '<span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-500 rounded-full">нет</span>';
+                const tagsHtml = renderTags(n.tags);
+                return `
+                <tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                    <td class="py-2.5 px-4 text-gray-500 font-mono">${n.id}</td>
+                    <td class="py-2.5 px-4 max-w-[500px]"><div class="text-gray-700 truncate" title="${escapeHtml(n.text)}">${escapeHtml(truncate(n.text, 200))}</div></td>
+                    <td class="py-2.5 px-4"><span class="px-2 py-0.5 text-xs bg-blue-50 text-blue-700 rounded-full">${escapeHtml(n.category)}</span></td>
+                    <td class="py-2.5 px-4">${tagsHtml}</td>
+                    <td class="py-2.5 px-4"><span class="px-2 py-0.5 text-xs rounded-full ${modCls}">${modLbl}</span></td>
+                    <td class="py-2.5 px-4 text-center">${bypassBadge}</td>
+                    <td class="py-2.5 px-4 text-gray-400">${n.publisher_channel_id != null ? n.publisher_channel_id : '—'}</td>
+                    <td class="py-2.5 px-4 text-gray-500 whitespace-nowrap">${formatDate(n.published_at)}</td>
+                    <td class="py-2.5 px-4 text-gray-500 whitespace-nowrap">${formatDate(n.created_at)}</td>
+                    <td class="py-2.5 px-4">
+                        <button onclick="deleteItem('generated', ${n.id}, 'сгенерированную новость')"
+                                class="px-2 py-1 text-xs text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
+                                title="Удалить">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>`;
+            }).join('');
+        }
+
+        function renderEvents(items) {
+            const tbody = document.getElementById('events-tbody');
+            tbody.innerHTML = items.map(e => {
+                const tagsHtml = renderTags(e.tags);
+                const catHtml = e.event_category
+                    ? `<span class="px-2 py-0.5 text-xs bg-purple-50 text-purple-700 rounded-full">${escapeHtml(e.event_category)}</span>`
+                    : '<span class="text-gray-300 text-xs">—</span>';
+
+                // Бейдж последнего изменения: зелёный если обработана, серый если только создана
+                let changeBadge = '';
+                if (e.last_processed_at) {
+                    changeBadge = `<span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full" title="Обработана">${formatDate(e.last_processed_at)}</span>`;
+                } else {
+                    changeBadge = `<span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-500 rounded-full" title="Создана">${formatDate(e.created_at)}</span>`;
+                }
+
+                // Парсим context_data для красивого отображения
+                let contextPreview = escapeHtml(truncate(e.context_data, 180));
+                try {
+                    const ctx = typeof e.context_data === 'string' ? JSON.parse(e.context_data) : null;
+                    if (ctx && typeof ctx === 'object') {
+                        const keys = Object.keys(ctx);
+                        const mainKey = keys.find(k => ['summary','text','context','title','description'].includes(k)) || keys[0];
+                        const val = ctx[mainKey];
+                        if (val && typeof val === 'string') {
+                            contextPreview = escapeHtml(truncate(val, 180));
+                        }
+                    }
+                } catch { /* оставляем сырой JSON */ }
+
+                return `
+                <tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                    <td class="py-2.5 px-4 text-gray-500 font-mono">${e.id}</td>
+                    <td class="py-2.5 px-4 text-gray-500 font-mono">${e.post_id != null ? e.post_id : '—'}</td>
+                    <td class="py-2.5 px-4">${catHtml}</td>
+                    <td class="py-2.5 px-4 max-w-[400px]"><div class="text-gray-700 truncate" title="${escapeHtml(e.context_data)}">${contextPreview}</div></td>
+                    <td class="py-2.5 px-4">${tagsHtml}</td>
+                    <td class="py-2.5 px-4 text-center">${changeBadge}</td>
+                    <td class="py-2.5 px-4">
+                        <button onclick="deleteItem('events', ${e.id}, 'событие')"
+                                class="px-2 py-1 text-xs text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
+                                title="Удалить">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>`;
+            }).join('');
+        }
+
+        // ============================================================
+        // Пагинация
+        // ============================================================
+        function renderPagination(name) {
+            const st = state[name];
+            const cfg = TAB_CONFIG[name];
+            const el = document.getElementById(cfg.pagination);
+
+            if (st.pages <= 1) {
+                el.innerHTML = `<span class="text-xs text-gray-400">Всего: ${st.total.toLocaleString('ru-RU')}</span>`;
+                return;
+            }
+
+            let pages = [];
+            const cp = st.page;
+
+            // Строим кнопки страниц
+            pages.push(1);
+            for (let p = Math.max(2, cp - 2); p <= Math.min(st.pages - 1, cp + 2); p++) {
+                pages.push(p);
+            }
+            if (st.pages > 1) pages.push(st.pages);
+            // Убираем дубликаты и сортируем
+            pages = [...new Set(pages)].sort((a, b) => a - b);
+
+            // Добавляем «...» если пропуск
+            let html = '';
+            let prev = null;
+            pages.forEach(p => {
+                if (prev !== null && p - prev > 1) {
+                    html += '<span class="px-1 text-gray-400">…</span>';
+                }
+                const active = p === cp ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200';
+                html += `<button onclick="goToPage('${name}', ${p})" class="px-2.5 py-1 text-xs rounded-lg mx-0.5 transition-colors ${active}">${p}</button>`;
+                prev = p;
+            });
+
+            el.innerHTML = `
+                <span class="text-xs text-gray-400">${st.total.toLocaleString('ru-RU')} записей</span>
+                <div class="flex items-center">
+                    <button onclick="goToPage('${name}', ${cp - 1})" ${cp <= 1 ? 'disabled' : ''} class="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded-l-lg hover:bg-gray-200 disabled:opacity-40" title="Назад">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
+                    ${html}
+                    <button onclick="goToPage('${name}', ${cp + 1})" ${cp >= st.pages ? 'disabled' : ''} class="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded-r-lg hover:bg-gray-200 disabled:opacity-40" title="Вперёд">
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
+                </div>
+            `;
+        }
+
+        function goToPage(name, page) {
+            const st = state[name];
+            if (page < 1 || page > st.pages) return;
+            st.page = page;
+            loadTab(name);
+        }
+
+        // ============================================================
+        // Удаление записей
+        // ============================================================
+        async function deleteItem(tab, id, kind) {
+            const label = kind || 'запись';
+            if (!confirm(`Удалить ${label} #${id}? Это действие нельзя отменить.`)) return;
+
+            const apiMap = {
+                posts: `/news/api/posts/${id}`,
+                rss: `/news/api/rss-news/${id}`,
+                web: `/news/api/web-news/${id}`,
+                generated: `/news/api/generated-news/${id}`,
+                events: `/news/api/events/${id}`,
+            };
+
+            try {
+                const resp = await fetch(apiMap[tab], { method: 'DELETE' });
+                const data = await resp.json();
+
+                if (data.success) {
+                    // Сбрасываем поиск/фильтр и перезагружаем таблицу
+                    clearSearchInputs();
+                    state[tab].loaded = false;
+                    state[tab].page = 1;
+                    loadTab(tab);
+                } else {
+                    alert('Ошибка: ' + (data.error || 'не удалось удалить'));
+                }
+            } catch (e) {
+                console.error(`[News] Ошибка удаления ${label}:`, e);
+                alert('Ошибка сети при удалении');
+            }
+        }
+
+        // ============================================================
+        // Удаление всех видимых записей на странице
+        // ============================================================
+        async function deleteAllVisible(tab, label, tbodyId) {
+            const tbody = document.getElementById(tbodyId);
+            if (!tbody || !tbody.children.length) {
+                alert('Нет записей для удаления');
+                return;
+            }
+
+            const count = tbody.children.length;
+            if (!confirm(`Удалить все ${count} ${label} на этой странице? Это действие нельзя отменить.`)) return;
+
+            const apiMap = {
+                posts: '/news/api/posts',
+                rss: '/news/api/rss-news',
+                web: '/news/api/web-news',
+                generated: '/news/api/generated-news',
+                events: '/news/api/events',
+            };
+
+            // Собираем все ID из tbody (первая ячейка — ID)
+            const ids = [];
+            tbody.querySelectorAll('tr').forEach(row => {
+                const firstCell = row.querySelector('td:first-child');
+                if (firstCell) {
+                    const id = parseInt(firstCell.textContent.trim(), 10);
+                    if (!isNaN(id)) ids.push(id);
+                }
+            });
+
+            if (!ids.length) {
+                alert('Не удалось определить ID записей');
+                return;
+            }
+
+            console.log(`[News] Deleting ${ids.length} ${tab} records:`, ids);
+
+            let deleted = 0;
+            let errors = 0;
+
+            // Удаляем параллельно батчами по 5
+            const batch = (arr, size) => {
+                const r = [];
+                for (let i = 0; i < arr.length; i += size) r.push(arr.slice(i, i + size));
+                return r;
+            };
+
+            for (const group of batch(ids, 5)) {
+                await Promise.all(group.map(async (id) => {
+                    try {
+                        const resp = await fetch(`${apiMap[tab]}/${id}`, { method: 'DELETE' });
+                        const data = await resp.json();
+                        if (data.success) deleted++;
+                        else errors++;
+                    } catch (e) {
+                        errors++;
+                    }
+                }));
+            }
+
+            console.log(`[News] Deleted: ${deleted}, Errors: ${errors}`);
+
+            // Сбрасываем поиск/фильтр и перезагружаем таблицу
+            clearSearchInputs();
+            const d = domCache[tab];
+            const st = state[tab];
+            st.total = Math.max(0, st.total - deleted);
+            st.pages = Math.max(1, Math.ceil(st.total / st.limit));
+            if (d?.count) d.count.textContent = st.total.toLocaleString('ru-RU');
+
+            st.page = 1;
+            st.loaded = false;
+            loadTab(tab);
+
+            if (errors > 0) {
+                alert(`Удалено: ${deleted}, Ошибок: ${errors}`);
+            }
+        }
+
+        // ============================================================
+        // Сортировка по клику на заголовок столбца
+        // ============================================================
+        // Состояние сортировки для каждого таба
+        const sortState = {
+            posts: { by: 'created_at', dir: 'desc' },
+            rss: { by: 'created_at', dir: 'desc' },
+            web: { by: 'created_at', dir: 'desc' },
+            generated: { by: 'created_at', dir: 'desc' },
+            events: { by: 'created_at', dir: 'desc' },
+        };
+
+        function sortTable(tab, field) {
+            const ss = sortState[tab];
+            // Если нажали на то же поле — инвертируем направление
+            if (ss.by === field) {
+                ss.dir = ss.dir === 'desc' ? 'asc' : 'desc';
+            } else {
+                ss.by = field;
+                ss.dir = 'asc';
+            }
+
+            // Обновляем иконки сортировки
+            updateSortIcons(tab);
+
+            console.log(`[News] Sort ${tab}: ${field} ${ss.dir}`);
+
+            // Если активен поиск — переприменяем его (сортировка применяется к обычной загрузке)
+            if (isSearchActive(tab)) {
+                applySearchFilter();
+            } else {
+                // Сбрасываем на первую страницу и перезагружаем
+                state[tab].page = 1;
+                state[tab].loaded = false;
+                loadTab(tab);
+            }
+        }
+
+        function updateSortIcons(tab) {
+            const ss = sortState[tab];
+            document.querySelectorAll(`.sortable[data-tab="${tab}"]`).forEach(el => {
+                const icon = el.querySelector('i');
+                const field = el.dataset.field;
+                el.classList.remove('active-sort');
+                if (icon) {
+                    icon.className = 'fas fa-sort text-gray-300 text-xs';
+                }
+                if (field === ss.by) {
+                    el.classList.add('active-sort');
+                    if (icon) {
+                        icon.className = ss.dir === 'desc'
+                            ? 'fas fa-sort-down text-blue-500 text-xs'
+                            : 'fas fa-sort-up text-blue-500 text-xs';
+                    }
+                }
+            });
+        }
+
+        // ============================================================
+        // Поиск и фильтрация
+        // ============================================================
+        // Конфигурация полей фильтра для каждого таба
+        const FILTER_FIELDS = {
+            posts: [
+                { value: 'category', label: 'Категория' },
+                { value: 'urgency', label: 'Срочность' },
+                { value: 'channel_id', label: 'Канал ID' },
+                { value: 'tags', label: 'Тэги' },
+            ],
+            rss: [
+                { value: 'category', label: 'Категория' },
+                { value: 'processed', label: 'Обработана (true/false)' },
+                { value: 'source_id', label: 'Источник ID' },
+                { value: 'tags', label: 'Тэги' },
+            ],
+            web: [
+                { value: 'category', label: 'Категория' },
+                { value: 'processed', label: 'Обработана (true/false)' },
+                { value: 'source_id', label: 'Источник ID' },
+                { value: 'tags', label: 'Тэги' },
+            ],
+            generated: [
+                { value: 'category', label: 'Категория' },
+                { value: 'moderation_status', label: 'Статус модерации' },
+                { value: 'tags', label: 'Тэги' },
+            ],
+            events: [
+                { value: 'event_category', label: 'Категория события' },
+                { value: 'tags', label: 'Тэги' },
+            ],
+        };
+
+        // Флаг: активен ли поиск в текущем табе
+        function isSearchActive(tab) {
+            const query = document.getElementById('search-query').value.trim();
+            const field = document.getElementById('filter-field').value;
+            const fval = document.getElementById('filter-value').value.trim();
+            return !!(query || (field && fval));
+        }
+
+        async function applySearchFilter() {
+            const tab = activeTab;
+            const query = document.getElementById('search-query').value.trim();
+            const field = document.getElementById('filter-field').value;
+            const fval = document.getElementById('filter-value').value.trim();
+            const ss = sortState[tab];
+
+            const indicator = document.getElementById('search-indicator');
+
+            if (!query && !(field && fval)) {
+                // Нет поиска и фильтра — ничего не делаем
+                return;
+            }
+
+            // Показываем индикатор если семантический поиск возможен
+            const hasSemantic = !!query && (tab === 'posts' || tab === 'generated');
+            if (hasSemantic) {
+                indicator.innerHTML = '<i class="fas fa-brain mr-1 text-purple-500"></i>семантический поиск (ChromaDB)';
+                indicator.classList.remove('hidden');
+            } else if (query) {
+                indicator.innerHTML = '<i class="fas fa-search mr-1 text-blue-500"></i>текстовый поиск (LIKE)';
+                indicator.classList.remove('hidden');
+            } else {
+                indicator.innerHTML = '<i class="fas fa-filter mr-1 text-green-500"></i>фильтр';
+                indicator.classList.remove('hidden');
+            }
+
+            const d = domCache[tab];
+            if (!d) return;
+
+            d.loading.classList.remove('hidden');
+            d.loading.innerHTML = '<div class="inline-block animate-spin text-blue-500 text-2xl"><i class="fas fa-spinner"></i></div><p class="text-gray-400 mt-2">Поиск...</p>';
+            d.tableWrap.classList.add('hidden');
+            d.empty.classList.add('hidden');
+
+            try {
+                const resp = await fetch('/news/api/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        tab,
+                        query,
+                        filter_field: field || null,
+                        filter_value: fval || null,
+                        limit: 200,
+                    }),
+                });
+
+                const data = await resp.json();
+                console.log(`[News] Search result:`, data.search_type, data.items?.length, 'items');
+
+                d.loading.classList.add('hidden');
+
+                if (!data.success || !data.items || data.items.length === 0) {
+                    d.empty.classList.remove('hidden');
+                    d.empty.textContent = data.error || 'Ничего не найдено';
+                    d.pagination.innerHTML = '';
+                    return;
+                }
+
+                // Рендерим результаты в таблицу
+                renderTable(tab, data.items);
+                d.tableWrap.classList.remove('hidden');
+
+                // Пагинация для результатов поиска — одна страница
+                d.pagination.innerHTML = `<span class="text-xs text-gray-400">Найдено: ${data.total} записей (${data.search_type || 'filter'})</span>`;
+            } catch (e) {
+                console.error('[News] Ошибка поиска:', e);
+                d.loading.innerHTML = `<p class="text-red-400">Ошибка поиска: ${escapeHtml(e.message)}</p>
+                    <button onclick="clearSearchFilter(); loadTab('${tab}')" class="mt-2 px-3 py-1 text-sm bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200">Вернуться к списку</button>`;
+            }
+        }
+
+        function clearSearchInputs() {
+            document.getElementById('search-query').value = '';
+            document.getElementById('filter-field').value = '';
+            document.getElementById('filter-value').value = '';
+            document.getElementById('search-indicator').classList.add('hidden');
+        }
+
+        function clearSearchFilter() {
+            clearSearchInputs();
+
+            // Перезагружаем текущий таб
+            state[activeTab].loaded = false;
+            state[activeTab].page = 1;
+            loadTab(activeTab);
+        }
+
+        // Обновить dropdown полей фильтра при смене таба
+        function updateFilterFields() {
+            const select = document.getElementById('filter-field');
+            const fields = FILTER_FIELDS[activeTab] || [];
+
+            // Сохраняем текущее значение если оно есть в новом списке
+            const currentVal = select.value;
+            const available = fields.map(f => f.value);
+
+            select.innerHTML = '<option value="">Поле фильтра</option>';
+            fields.forEach(f => {
+                const opt = document.createElement('option');
+                opt.value = f.value;
+                opt.textContent = f.label;
+                select.appendChild(opt);
+            });
+
+            // Восстанавливаем если возможно
+            if (available.includes(currentVal)) {
+                select.value = currentVal;
+            }
+        }
+
+        // ============================================================
+        // Переопределяем loadTab чтобы учитывать сортировку
+        // ============================================================
+        const _origLoadTab = loadTab;
+        loadTab = async function(name) {
+            const cfg = TAB_CONFIG[name];
+            const st = state[name];
+            const ss = sortState[name];
+
+            // Если активен поиск — не перезагружаем обычной загрузкой
+            if (isSearchActive(name)) return;
+
+            // Строим URL с сортировкой
+            const url = `${cfg.api}?page=${st.page}&limit=${st.limit}&sort_by=${ss.by}&sort_dir=${ss.dir}`;
+            console.log(`[News] Loading ${name}: ${url}`);
+
+            const d = domCache[name];
+            if (!d) {
+                console.error(`[News] DOM cache not ready for tab: ${name}`);
+                return;
+            }
+
+            d.loading.classList.remove('hidden');
+            d.loading.innerHTML = '<div class="inline-block animate-spin text-blue-500 text-2xl"><i class="fas fa-spinner"></i></div><p class="text-gray-400 mt-2">Загрузка...</p>';
+            d.tableWrap.classList.add('hidden');
+            d.empty.classList.add('hidden');
+
+            try {
+                const resp = await fetch(url);
+                console.log(`[News] ${name} response: ${resp.status} ${resp.ok}`);
+
+                if (!resp.ok) {
+                    const errText = await resp.text().catch(() => '');
+                    throw new Error(`HTTP ${resp.status}: ${errText.substring(0, 100)}`);
+                }
+
+                const data = await resp.json();
+                console.log(`[News] ${name} data: ${data.items?.length || 0} items, total=${data.total}`);
+
+                if (!data.success) throw new Error(data.error || 'API returned success: false');
+
+                st.total = data.total || 0;
+                st.pages = data.pages || 1;
+                st.loaded = true;
+
+                if (d.count) {
+                    d.count.textContent = st.total.toLocaleString('ru-RU');
+                    d.count.classList.remove('hidden');
+                }
+
+                d.loading.classList.add('hidden');
+
+                if (!data.items || data.items.length === 0) {
+                    d.empty.classList.remove('hidden');
+                    d.empty.textContent = 'Нет записей';
+                    d.pagination.innerHTML = '';
+                } else {
+                    renderTable(name, data.items);
+                    d.tableWrap.classList.remove('hidden');
+                    renderPagination(name);
+                }
+            } catch (e) {
+                console.error(`[News] Ошибка загрузки ${name}:`, e);
+                d.loading.innerHTML = `
+                    <p class="text-red-400">Ошибка загрузки: ${escapeHtml(e.message)}</p>
+                    <button onclick="state.${name}.loaded=false; loadTab('${name}')"
+                            class="mt-2 px-3 py-1 text-sm bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200">
+                        Повторить
+                    </button>`;
+            }
+        };
+
+        // ============================================================
+        // Обновляем switchTab чтобы менять поля фильтра
+        // ============================================================
+        const _origSwitchTab = switchTab;
+        switchTab = function(name) {
+            activeTab = name;
+
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('border-blue-500', 'text-blue-600');
+                btn.classList.add('border-transparent', 'text-gray-500');
+            });
+            const activeBtn = document.getElementById('tab-' + name);
+            activeBtn.classList.add('border-blue-500', 'text-blue-600');
+            activeBtn.classList.remove('border-transparent', 'text-gray-500');
+
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.getElementById('content-' + name).classList.remove('hidden');
+
+            // Очищаем индикатор поиска
+            document.getElementById('search-indicator').classList.add('hidden');
+
+            // Обновляем поля фильтра для таба
+            updateFilterFields();
+
+            if (!state[name].loaded) {
+                loadTab(name);
+            }
+        };
+
+        // ============================================================
+        // Инициализация — загружаем первый таб
+        // ============================================================
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('[News] DOMContentLoaded fired. Template version: v3');
+            cacheElements();
+            if (!domCache.posts?.loading) {
+                console.error('[News] DOM element #posts-loading not found!');
+                return;
+            }
+            updateFilterFields();
+            loadTab('posts');
+        });
+    </script>
+{% endblock %}

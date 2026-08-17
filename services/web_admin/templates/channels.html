@@ -1,0 +1,956 @@
+{% extends "base.html" %}
+
+{% set active_page = 'channels' %}
+
+{% block title %}News Aggregator — Каналы{% endblock %}
+
+{% block page_title %}<h2 class="text-2xl font-bold text-gray-800">Каналы</h2>{% endblock %}
+{% block page_subtitle %}<p class="text-sm text-gray-500 mt-1">Источники мониторинга и каналы публикации</p>{% endblock %}
+
+{% block content %}
+    <!-- Панель фильтров -->
+    <div class="bg-white rounded-xl shadow-sm p-4 mb-6">
+        <div class="flex items-center gap-3 flex-wrap">
+            <select id="filter-type" onchange="applyFilters()"
+                    class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+                <option value="">Все каналы</option>
+                <option value="channel">🔵 Источники</option>
+                <option value="publisher">🟢 Публикация</option>
+            </select>
+            <div class="relative">
+                <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+                <input type="text" id="filter-search"
+                       class="pl-8 pr-3 py-2 border border-gray-300 rounded-lg text-sm w-64 focus:ring-2 focus:ring-blue-500"
+                       placeholder="Поиск по названию..."
+                       onkeydown="if(event.key==='Enter') applySearch()">
+                <button onclick="applySearch()" id="search-btn"
+                        class="absolute right-1 top-1/2 -translate-y-1/2 px-2 py-0.5 bg-blue-500 text-white text-xs rounded hover:bg-blue-600">
+                    <i class="fas fa-search"></i>
+                </button>
+            </div>
+            <span id="search-indicator" class="hidden text-xs text-blue-600 items-center gap-1">
+                <i class="fas fa-filter mr-1"></i>
+                <span id="search-label"></span>
+                <button onclick="clearSearch()" class="ml-1 text-red-500 hover:text-red-700" title="Убрать фильтр">
+                    <i class="fas fa-times"></i>
+                </button>
+            </span>
+            <!-- Поиск по категории/тегам (семантический) -->
+            <div class="relative">
+                <i class="fas fa-brain absolute left-3 top-1/2 -translate-y-1/2 text-purple-400 text-xs"></i>
+                <input type="text" id="filter-semantic"
+                       class="pl-8 pr-3 py-2 border border-purple-200 rounded-lg text-sm w-56 focus:ring-2 focus:ring-purple-500"
+                       placeholder="Поиск по категории/тегам..."
+                       onkeydown="if(event.key==='Enter') applySemanticSearch()">
+                <button onclick="applySemanticSearch()" id="semantic-btn"
+                        class="absolute right-1 top-1/2 -translate-y-1/2 px-2 py-0.5 bg-purple-500 text-white text-xs rounded hover:bg-purple-600">
+                    <i class="fas fa-search"></i>
+                </button>
+            </div>
+            <span id="semantic-indicator" class="hidden text-xs text-purple-600 items-center gap-1">
+                <i class="fas fa-brain mr-1"></i>
+                <span id="semantic-label"></span>
+                <button onclick="clearSemanticSearch()" class="ml-1 text-red-500 hover:text-red-700" title="Убрать фильтр">
+                    <i class="fas fa-times"></i>
+                </button>
+            </span>
+            <button onclick="resetFilters()"
+                    class="px-4 py-2 bg-gray-100 text-gray-600 text-sm rounded-lg hover:bg-gray-200 transition-colors">
+                <i class="fas fa-times mr-1"></i>Сброс
+            </button>
+            <!-- Кнопка добавления -->
+            <div class="ml-auto flex items-center gap-2">
+                <button onclick="openAddModal('channel')"
+                        class="px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 transition-colors font-medium">
+                    <i class="fas fa-plus mr-1"></i>Источник
+                </button>
+                <button onclick="openAddModal('publisher')"
+                        class="px-4 py-2 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600 transition-colors font-medium">
+                    <i class="fas fa-plus mr-1"></i>Публикация
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Таблица каналов -->
+    <div class="bg-white rounded-xl shadow-sm p-6">
+        <div id="channels-loading" class="text-center py-12">
+            <div class="inline-block animate-spin text-blue-500 text-2xl"><i class="fas fa-spinner"></i></div>
+            <p class="text-gray-400 mt-2">Загрузка...</p>
+        </div>
+        <div id="channels-table-wrap" class="hidden overflow-x-auto">
+            <table class="min-w-full text-sm">
+                <thead>
+                    <tr class="border-b border-gray-200">
+                        <th class="text-left py-3 px-4 font-semibold text-gray-500 w-16">
+                            <span class="sortable" data-field="id" onclick="sortTable('id')">ID <i class="fas fa-sort text-gray-300 text-xs"></i></span>
+                        </th>
+                        <th class="text-left py-3 px-4 font-semibold text-gray-500 w-24">
+                            <span class="sortable" data-field="type" onclick="sortTable('type')">Тип <i class="fas fa-sort text-gray-300 text-xs"></i></span>
+                        </th>
+                        <th class="text-left py-3 px-4 font-semibold text-gray-500 w-32">
+                            <span class="sortable" data-field="channel_id" onclick="sortTable('channel_id')">Telegram ID <i class="fas fa-sort text-gray-300 text-xs"></i></span>
+                        </th>
+                        <th class="text-left py-3 px-4 font-semibold text-gray-500">
+                            <span class="sortable" data-field="title" onclick="sortTable('title')">Название <i class="fas fa-sort text-gray-300 text-xs"></i></span>
+                        </th>
+                        <th class="text-left py-3 px-4 font-semibold text-gray-500 w-64">Описание</th>
+                        <th class="text-left py-3 px-4 font-semibold text-gray-500 w-20">Доверие</th>
+                        <th class="text-left py-3 px-4 font-semibold text-gray-500 w-32">Теги / Категория</th>
+                        <th class="text-left py-3 px-4 font-semibold text-gray-500 w-24">Действие</th>
+                    </tr>
+                </thead>
+                <tbody id="channels-tbody"></tbody>
+            </table>
+        </div>
+        <div id="channels-empty" class="hidden text-center py-12 text-gray-400">Каналы не найдены</div>
+        <div id="channels-toolbar" class="flex items-center justify-between mt-4 px-2">
+            <div id="channels-stats" class="text-xs text-gray-400"></div>
+            <div id="channels-pagination" class="flex items-center justify-between"></div>
+        </div>
+    </div>
+
+    <!-- Модальное окно: добавить канал -->
+    <div id="add-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center">
+        <div class="fixed inset-0 bg-black/40 backdrop-blur-sm" onclick="closeAddModal()"></div>
+        <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                <h3 class="text-lg font-bold text-gray-800" id="add-modal-title">Добавить канал</h3>
+                <button onclick="closeAddModal()" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="px-6 py-5 space-y-4">
+                <!-- Resolve link -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Telegram-ссылка или @username</label>
+                    <div class="flex items-center gap-2">
+                        <input type="text" id="add-link" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="@channelname или t.me/channelname">
+                        <button onclick="resolveLink()" id="resolve-btn"
+                                class="px-3 py-2 bg-indigo-500 text-white text-sm rounded-lg hover:bg-indigo-600 transition-colors whitespace-nowrap">
+                            <i class="fas fa-link mr-1"></i>Резолв
+                        </button>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Telegram ID *</label>
+                    <input type="text" id="add-channel-id" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="-100...">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Название *</label>
+                    <input type="text" id="add-title" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Описание</label>
+                    <textarea id="add-description" rows="2" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"></textarea>
+                </div>
+                <!-- Поля для источника -->
+                <div id="add-channel-fields">
+                    <label class="flex items-center space-x-2 cursor-pointer">
+                        <input type="checkbox" id="add-is-trusted" class="w-4 h-4 text-blue-500 rounded focus:ring-blue-500 border-gray-300">
+                        <span class="text-sm text-gray-700">Доверенный источник</span>
+                    </label>
+                </div>
+                <!-- Поля для публикация -->
+                <div id="add-publisher-fields" class="hidden">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Категория</label>
+                    <input type="text" id="add-category" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Новости, Аналитика...">
+                </div>
+                <div id="add-output"></div>
+            </div>
+            <div class="flex items-center justify-end space-x-3 px-6 py-4 bg-gray-50 border-t border-gray-200">
+                <button onclick="closeAddModal()" class="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">Отмена</button>
+                <button onclick="saveAdd()" id="add-save-btn"
+                        class="px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 font-medium">
+                    <i class="fas fa-check mr-1"></i>Добавить
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно: редактирование -->
+    <div id="edit-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center">
+        <div class="fixed inset-0 bg-black/40 backdrop-blur-sm" onclick="closeEditModal()"></div>
+        <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                <h3 class="text-lg font-bold text-gray-800" id="edit-modal-title">Редактировать канал</h3>
+                <button onclick="closeEditModal()" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="px-6 py-5 space-y-4">
+                <p class="text-sm text-gray-500">ID: <span id="edit-id" class="font-mono"></span> ·
+                   Telegram ID: <span id="edit-channel-id" class="font-mono"></span> ·
+                   <span id="edit-type-badge"></span></p>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Название</label>
+                    <input type="text" id="edit-title" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Описание</label>
+                    <textarea id="edit-description" rows="2" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"></textarea>
+                </div>
+                <!-- Поля для источника -->
+                <div id="edit-channel-fields" class="hidden space-y-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Рейтинг доверия (0.0 — 1.0)</label>
+                        <input type="number" id="edit-trust-rating" min="0" max="1" step="0.1"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                    </div>
+                    <label class="flex items-center space-x-2 cursor-pointer">
+                        <input type="checkbox" id="edit-is-trusted" class="w-4 h-4 text-blue-500 rounded focus:ring-blue-500 border-gray-300">
+                        <span class="text-sm text-gray-700">Доверенный источник</span>
+                    </label>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Теги (JSON)</label>
+                        <input type="text" id="edit-tags" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder='["Политика", "Экономика"]'>
+                    </div>
+                </div>
+                <!-- Поля для публикация -->
+                <div id="edit-publisher-fields" class="hidden space-y-3">
+                    <label class="flex items-center space-x-2 cursor-pointer">
+                        <input type="checkbox" id="edit-is-active" class="w-4 h-4 text-green-500 rounded focus:ring-green-500 border-gray-300">
+                        <span class="text-sm text-gray-700">Активен</span>
+                    </label>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Категория</label>
+                        <select id="edit-category" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                            <option value="">— без категории —</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="edit-output"></div>
+            </div>
+            <div class="flex items-center justify-end space-x-3 px-6 py-4 bg-gray-50 border-t border-gray-200">
+                <button onclick="closeEditModal()" class="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">Отмена</button>
+                <button onclick="saveEdit()" class="px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 font-medium">
+                    <i class="fas fa-check mr-1"></i>Сохранить
+                </button>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+    <script>
+        // ============================================================
+        // Утилиты
+        // ============================================================
+        function escapeHtml(text) {
+            const d = document.createElement('div');
+            d.textContent = text || '';
+            return d.innerHTML;
+        }
+
+        function formatDate(isoStr) {
+            if (!isoStr) return '—';
+            try {
+                const d = new Date(isoStr);
+                return d.toLocaleString('ru-RU', {
+                    day: '2-digit', month: '2-digit', year: 'numeric',
+                    hour: '2-digit', minute: '2-digit'
+                });
+            } catch {
+                return isoStr.substring(0, 16).replace('T', ' ');
+            }
+        }
+
+        function renderTags(tagsStr) {
+            if (!tagsStr || tagsStr === '[]') return '<span class="text-gray-300 text-xs">—</span>';
+            let tags;
+            try {
+                tags = typeof tagsStr === 'string' ? JSON.parse(tagsStr) : tagsStr;
+            } catch {
+                // Фолбэк: теги в формате Python ['a', 'b'] (одинарные кавычки)
+                try {
+                    tags = JSON.parse(tagsStr.replace(/'/g, '"'));
+                } catch {
+                    return `<span class="text-gray-500 text-xs">${escapeHtml(String(tagsStr).substring(0, 40))}</span>`;
+                }
+            }
+            if (!Array.isArray(tags) || tags.length === 0) return '<span class="text-gray-300 text-xs">—</span>';
+            const colors = [
+                'bg-amber-50 text-amber-700', 'bg-teal-50 text-teal-700',
+                'bg-indigo-50 text-indigo-700', 'bg-rose-50 text-rose-700',
+            ];
+            return tags.slice(0, 3).map((t, i) =>
+                `<span class="inline-block px-1.5 py-0.5 text-xs rounded-full mr-1 ${colors[i % colors.length]}" title="${escapeHtml(String(t))}">${escapeHtml(String(t))}</span>`
+            ).join('') + (tags.length > 3 ? `<span class="text-gray-400 text-xs">+${tags.length - 3}</span>` : '');
+        }
+
+        // ============================================================
+        // Состояние
+        // ============================================================
+        let currentPage = 1;
+        let currentLimit = 50;
+        let totalPages = 1;
+        let totalItems = 0;
+        let sortBy = 'title';
+        let sortDir = 'asc';
+        let searchIds = [];         // по названию
+        let semanticIds = [];       // по категории/тегам
+
+        // ============================================================
+        // Загрузка списка
+        // ============================================================
+        async function loadChannels() {
+            const loading = document.getElementById('channels-loading');
+            const tableWrap = document.getElementById('channels-table-wrap');
+            const empty = document.getElementById('channels-empty');
+
+            loading.classList.remove('hidden');
+            tableWrap.classList.add('hidden');
+            empty.classList.add('hidden');
+
+            const params = new URLSearchParams({
+                page: currentPage,
+                limit: currentLimit,
+                sort_by: sortBy,
+                sort_dir: sortDir,
+            });
+
+            const typeFilter = document.getElementById('filter-type').value;
+            if (typeFilter) params.set('channel_type', typeFilter);
+
+            // Объединяем результаты обоих фильтров (пересечение если оба активны)
+            let activeIds = null;
+            const nameActive = document.getElementById('search-indicator').classList.contains('flex');
+            const semActive = document.getElementById('semantic-indicator').classList.contains('flex');
+
+            if (nameActive && semActive) {
+                // Оба фильтра: пересечение
+                activeIds = searchIds.filter(id => semanticIds.includes(id));
+            } else if (nameActive) {
+                activeIds = searchIds.length === 0 ? [] : searchIds;
+            } else if (semActive) {
+                activeIds = semanticIds;
+            }
+
+            if (activeIds !== null) {
+                if (activeIds.length > 0) params.set('search_ids', activeIds.join(','));
+                else params.set('search_ids', '__empty__');
+            }
+
+            try {
+                const resp = await fetch(`/channels/api/channels?${params}`);
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+                const data = await resp.json();
+                if (!data.success) throw new Error(data.error);
+
+                totalItems = data.total || 0;
+                totalPages = data.pages || 1;
+
+                loading.classList.add('hidden');
+
+                if (!data.items || data.items.length === 0) {
+                    empty.classList.remove('hidden');
+                    document.getElementById('channels-pagination').innerHTML = '';
+                    document.getElementById('channels-stats').textContent = '';
+                } else {
+                    renderChannels(data.items);
+                    tableWrap.classList.remove('hidden');
+                    renderPagination();
+                    document.getElementById('channels-stats').textContent =
+                        `${totalItems.toLocaleString('ru-RU')} каналов`;
+                }
+            } catch (e) {
+                loading.innerHTML = `
+                    <p class="text-red-400">Ошибка: ${escapeHtml(e.message)}</p>
+                    <button onclick="loadChannels()" class="mt-2 px-3 py-1 text-sm bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200">
+                        Повторить
+                    </button>`;
+            }
+        }
+
+        // ============================================================
+        // Рендер таблицы
+        // ============================================================
+        function renderChannels(items) {
+            const tbody = document.getElementById('channels-tbody');
+            tbody.innerHTML = items.map(ch => {
+                const isChannel = ch.type === 'channel';
+                const typeBadge = isChannel
+                    ? '<span class="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full font-semibold">Источник</span>'
+                    : '<span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full font-semibold">Публикация</span>';
+
+                // Доверие: только для источников
+                let trustCell = '—';
+                if (isChannel) {
+                    if (ch.is_trusted) {
+                        trustCell = '<span class="px-2 py-0.5 text-xs bg-emerald-100 text-emerald-700 rounded-full" title="Доверенный">✓</span>';
+                    } else if (ch.trust_rating != null) {
+                        const pct = Math.round(ch.trust_rating * 100);
+                        trustCell = `<span class="text-xs text-gray-500">${pct}%</span>`;
+                    }
+                }
+
+                // Теги / категория
+                let tagCell = '';
+                if (isChannel) {
+                    tagCell = renderTags(ch.tags || '[]');
+                } else {
+                    tagCell = ch.category
+                        ? `<span class="inline-block px-2 py-0.5 text-xs bg-purple-50 text-purple-700 rounded-full">${escapeHtml(ch.category)}</span>`
+                        : '<span class="text-gray-300 text-xs">—</span>';
+                }
+
+                const isActiveBadge = !isChannel && ch.is_active !== null
+                    ? (ch.is_active
+                        ? '<span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">✓</span>'
+                        : '<span class="px-2 py-0.5 text-xs bg-red-100 text-red-700 rounded-full">✗</span>')
+                    : '';
+
+                return `
+                <tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors" data-id="${ch.db_id}" data-type="${ch.type}">
+                    <td class="py-2.5 px-4 text-gray-500 font-mono">${ch.db_id}</td>
+                    <td class="py-2.5 px-4">${typeBadge}</td>
+                    <td class="py-2.5 px-4 text-gray-500 font-mono text-xs">${ch.channel_id != null ? escapeHtml(String(ch.channel_id)) : '—'}</td>
+                    <td class="py-2.5 px-4">
+                        <span class="text-gray-800 font-medium">${escapeHtml(ch.title)}</span>
+                        ${isActiveBadge}
+                    </td>
+                    <td class="py-2.5 px-4 text-gray-500 text-xs max-w-xs truncate" title="${escapeHtml(ch.description || '')}">${escapeHtml(ch.description || '')}</td>
+                    <td class="py-2.5 px-4 text-center">${trustCell}</td>
+                    <td class="py-2.5 px-4">${tagCell}</td>
+                    <td class="py-2.5 px-4">
+                        <div class="flex items-center space-x-1">
+                            <button onclick="openEditModal(${ch.db_id}, '${ch.type}')"
+                                    class="px-2 py-1 text-xs text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                                    title="Редактировать">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button onclick="deleteChannel(${ch.db_id}, '${ch.type}')"
+                                    class="px-2 py-1 text-xs text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
+                                    title="Удалить">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>`;
+            }).join('');
+        }
+
+        // ============================================================
+        // Сортировка
+        // ============================================================
+        function sortTable(field) {
+            if (sortBy === field) {
+                sortDir = sortDir === 'desc' ? 'asc' : 'desc';
+            } else {
+                sortBy = field;
+                sortDir = 'desc';
+            }
+            currentPage = 1;
+
+            document.querySelectorAll('.sortable').forEach(el => {
+                el.querySelector('i').className = 'fas fa-sort text-gray-300 text-xs';
+                el.classList.remove('active-sort');
+            });
+            const active = document.querySelector(`.sortable[data-field="${field}"]`);
+            if (active) {
+                const icon = active.querySelector('i');
+                icon.className = sortDir === 'desc'
+                    ? 'fas fa-sort-down text-blue-500 text-xs'
+                    : 'fas fa-sort-up text-blue-500 text-xs';
+                active.classList.add('active-sort');
+            }
+
+            loadChannels();
+        }
+
+        // ============================================================
+        // Фильтры
+        // ============================================================
+        function applyFilters() {
+            currentPage = 1;
+            loadChannels();
+        }
+
+        function resetFilters() {
+            document.getElementById('filter-type').value = '';
+            clearSearch();
+            clearSemanticSearch();
+        }
+
+        // ============================================================
+        // Поиск
+        // ============================================================
+        async function applySearch() {
+            const query = document.getElementById('filter-search').value.trim();
+            if (!query) {
+                clearSearch();
+                return;
+            }
+
+            const btn = document.getElementById('search-btn');
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            btn.disabled = true;
+
+            const typeFilter = document.getElementById('filter-type').value;
+
+            try {
+                const body = { query, limit: 500 };
+                if (typeFilter) body.channel_type = typeFilter;
+
+                const resp = await fetch('/channels/api/search', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body)
+                });
+                const data = await resp.json();
+
+                if (data.success && data.ids && data.ids.length > 0) {
+                    searchIds = data.ids;
+                    document.getElementById('search-label').textContent = `"${query}" → ${data.ids.length} найдено`;
+                    document.getElementById('search-indicator').classList.remove('hidden');
+                    document.getElementById('search-indicator').classList.add('flex');
+                    currentPage = 1;
+                    loadChannels();
+                } else {
+                    searchIds = [];
+                    document.getElementById('search-label').textContent = `"${query}" → 0 найдено`;
+                    document.getElementById('search-indicator').classList.remove('hidden');
+                    document.getElementById('search-indicator').classList.add('flex');
+                    currentPage = 1;
+                    loadChannels();
+                }
+            } catch (e) {
+                console.error('[Channels] applySearch error:', e);
+            } finally {
+                btn.innerHTML = '<i class="fas fa-search"></i>';
+                btn.disabled = false;
+            }
+        }
+
+        function clearSearch() {
+            searchIds = [];
+            document.getElementById('filter-search').value = '';
+            document.getElementById('search-indicator').classList.add('hidden');
+            document.getElementById('search-indicator').classList.remove('flex');
+            currentPage = 1;
+            loadChannels();
+        }
+
+        // ============================================================
+        // Семантический поиск по категории/тегам
+        // ============================================================
+        async function applySemanticSearch() {
+            const query = document.getElementById('filter-semantic').value.trim();
+            if (!query) {
+                clearSemanticSearch();
+                return;
+            }
+
+            const btn = document.getElementById('semantic-btn');
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            btn.disabled = true;
+
+            const typeFilter = document.getElementById('filter-type').value;
+
+            try {
+                const body = { query, limit: 500 };
+                if (typeFilter) body.channel_type = typeFilter;
+
+                const resp = await fetch('/channels/api/search-semantic', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body)
+                });
+                const data = await resp.json();
+
+                if (data.success && data.ids && data.ids.length > 0) {
+                    semanticIds = data.ids;
+                    const typeLabel = data.search_type === 'semantic' ? '🧠 семантика' : '🔤 текст';
+                    document.getElementById('semantic-label').textContent =
+                        `${typeLabel} "${query}" → ${data.ids.length} найдено`;
+                    document.getElementById('semantic-indicator').classList.remove('hidden');
+                    document.getElementById('semantic-indicator').classList.add('flex');
+                    currentPage = 1;
+                    loadChannels();
+                } else {
+                    semanticIds = [];
+                    document.getElementById('semantic-label').textContent = `"${query}" → 0 найдено`;
+                    document.getElementById('semantic-indicator').classList.remove('hidden');
+                    document.getElementById('semantic-indicator').classList.add('flex');
+                    currentPage = 1;
+                    loadChannels();
+                }
+            } catch (e) {
+                console.error('[Channels] applySemanticSearch error:', e);
+            } finally {
+                btn.innerHTML = '<i class="fas fa-search"></i>';
+                btn.disabled = false;
+            }
+        }
+
+        function clearSemanticSearch() {
+            semanticIds = [];
+            document.getElementById('filter-semantic').value = '';
+            document.getElementById('semantic-indicator').classList.add('hidden');
+            document.getElementById('semantic-indicator').classList.remove('flex');
+            currentPage = 1;
+            loadChannels();
+        }
+
+        // ============================================================
+        // Пагинация
+        // ============================================================
+        function renderPagination() {
+            const el = document.getElementById('channels-pagination');
+            if (totalPages <= 1) {
+                el.innerHTML = `<span class="text-xs text-gray-400">Всего: ${totalItems.toLocaleString('ru-RU')}</span>`;
+                return;
+            }
+
+            let pages = [];
+            const cp = currentPage;
+            pages.push(1);
+            for (let p = Math.max(2, cp - 2); p <= Math.min(totalPages - 1, cp + 2); p++) pages.push(p);
+            if (totalPages > 1) pages.push(totalPages);
+            pages = [...new Set(pages)].sort((a, b) => a - b);
+
+            let html = '';
+            let prev = null;
+            pages.forEach(p => {
+                if (prev !== null && p - prev > 1) html += '<span class="px-1 text-gray-400">…</span>';
+                const active = p === cp ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200';
+                html += `<button onclick="goToPage(${p})" class="px-2.5 py-1 text-xs rounded-lg mx-0.5 transition-colors ${active}">${p}</button>`;
+                prev = p;
+            });
+
+            el.innerHTML = `
+                <span class="text-xs text-gray-400">${totalItems.toLocaleString('ru-RU')} записей</span>
+                <div class="flex items-center">
+                    <button onclick="goToPage(${cp - 1})" ${cp <= 1 ? 'disabled' : ''} class="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded-l-lg hover:bg-gray-200 disabled:opacity-40">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
+                    ${html}
+                    <button onclick="goToPage(${cp + 1})" ${cp >= totalPages ? 'disabled' : ''} class="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded-r-lg hover:bg-gray-200 disabled:opacity-40">
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
+                </div>
+            `;
+        }
+
+        function goToPage(page) {
+            if (page < 1 || page > totalPages) return;
+            currentPage = page;
+            loadChannels();
+        }
+
+        // ============================================================
+        // Модальное окно: добавление
+        // ============================================================
+        let _addType = 'channel';
+
+        function openAddModal(type) {
+            _addType = type;
+            const isChannel = type === 'channel';
+
+            document.getElementById('add-modal-title').textContent = isChannel ? 'Добавить источник' : 'Добавить канал публикации';
+            document.getElementById('add-channel-fields').classList.toggle('hidden', !isChannel);
+            document.getElementById('add-publisher-fields').classList.toggle('hidden', isChannel);
+
+            const saveBtn = document.getElementById('add-save-btn');
+            saveBtn.className = isChannel
+                ? 'px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 font-medium'
+                : 'px-4 py-2 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600 font-medium';
+
+            // Очистка
+            ['add-link', 'add-channel-id', 'add-title', 'add-description'].forEach(id => document.getElementById(id).value = '');
+            document.getElementById('add-is-trusted').checked = false;
+            document.getElementById('add-category').value = '';
+            document.getElementById('add-output').innerHTML = '';
+
+            document.getElementById('add-modal').classList.remove('hidden');
+        }
+
+        function closeAddModal() {
+            document.getElementById('add-modal').classList.add('hidden');
+        }
+
+        async function resolveLink() {
+            const link = document.getElementById('add-link').value.trim();
+            if (!link) { alert('Введите ссылку'); return; }
+
+            const btn = document.getElementById('resolve-btn');
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>...';
+            btn.disabled = true;
+
+            try {
+                const resp = await fetch('/channels/api/channels/resolve-link', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({link})
+                });
+                const data = await resp.json();
+
+                if (data.success) {
+                    document.getElementById('add-channel-id').value = data.channel_id;
+                    document.getElementById('add-title').value = data.title;
+                    document.getElementById('add-description').value = data.description || '';
+                    document.getElementById('add-output').innerHTML = '<span class="text-green-600 text-sm"><i class="fas fa-check mr-1"></i>Найдено!</span>';
+                } else {
+                    if (data.partial) {
+                        // Частичный успех — бот не участник, но можно добавить вручную
+                        document.getElementById('add-output').innerHTML = `<span class="text-amber-600 text-sm"><i class="fas fa-exclamation-triangle mr-1"></i>${escapeHtml(data.error)} Заполните поля вручную.</span>`;
+                    } else {
+                        document.getElementById('add-output').innerHTML = `<span class="text-red-600 text-sm">${escapeHtml(data.error)}</span>`;
+                    }
+                }
+            } catch (e) {
+                document.getElementById('add-output').innerHTML = `<span class="text-red-600 text-sm">Ошибка сети</span>`;
+            } finally {
+                btn.innerHTML = '<i class="fas fa-link mr-1"></i>Резолв';
+                btn.disabled = false;
+            }
+        }
+
+        async function saveAdd() {
+            const channelId = document.getElementById('add-channel-id').value.trim();
+            const title = document.getElementById('add-title').value.trim();
+            const description = document.getElementById('add-description').value.trim();
+
+            if (!channelId || !title) {
+                alert('Заполните Telegram ID и название');
+                return;
+            }
+
+            const output = document.getElementById('add-output');
+            output.innerHTML = '<span class="text-gray-400 text-sm"><i class="fas fa-spinner fa-spin mr-1"></i>Сохранение...</span>';
+
+            try {
+                const isChannel = _addType === 'channel';
+                const url = isChannel ? '/channels/api/channels' : '/channels/api/publishers';
+                const body = {
+                    channel_id: parseInt(channelId),
+                    title,
+                    description,
+                };
+                if (isChannel) {
+                    body.is_trusted = document.getElementById('add-is-trusted').checked;
+                } else {
+                    body.category = document.getElementById('add-category').value.trim() || null;
+                }
+
+                const resp = await fetch(url, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    credentials: 'same-origin',
+                    body: JSON.stringify(body)
+                });
+
+                if (!resp.ok) {
+                    const errData = await resp.json().catch(() => ({}));
+                    output.innerHTML = `<span class="text-red-600 text-sm">Ошибка: ${escapeHtml(errData.error || `HTTP ${resp.status}`)}</span>`;
+                    return;
+                }
+
+                const data = await resp.json();
+                if (data.success) {
+                    output.innerHTML = '<span class="text-green-600 text-sm"><i class="fas fa-check mr-1"></i>Добавлено!</span>';
+                    setTimeout(() => {
+                        closeAddModal();
+                        loadChannels();
+                    }, 800);
+                } else {
+                    output.innerHTML = `<span class="text-red-600 text-sm">${escapeHtml(data.error || 'Ошибка')}</span>`;
+                }
+            } catch (e) {
+                output.innerHTML = `<span class="text-red-600 text-sm">Ошибка: ${escapeHtml(e.message)}</span>`;
+            }
+        }
+
+        // ============================================================
+        // Модальное окно: редактирование
+        // ============================================================
+        let _editId = null;
+        let _editType = null;
+        let _editDetail = null;  // полные данные из API
+
+        async function openEditModal(dbId, type) {
+            _editId = dbId;
+            _editType = type;
+            const isChannel = type === 'channel';
+
+            document.getElementById('edit-modal-title').textContent = isChannel ? 'Редактировать источник' : 'Редактировать канал публикации';
+            document.getElementById('edit-id').textContent = `#${dbId}`;
+
+            // Badge типа
+            const badgeEl = document.getElementById('edit-type-badge');
+            badgeEl.innerHTML = isChannel
+                ? '<span class="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full font-semibold">Источник</span>'
+                : '<span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full font-semibold">Публикация</span>';
+
+            // Показываем нужные поля
+            document.getElementById('edit-channel-fields').classList.toggle('hidden', !isChannel);
+            document.getElementById('edit-publisher-fields').classList.toggle('hidden', isChannel);
+
+            document.getElementById('edit-output').innerHTML = '<span class="text-gray-400 text-sm"><i class="fas fa-spinner fa-spin mr-1"></i>Загрузка...</span>';
+            document.getElementById('edit-modal').classList.remove('hidden');
+
+            // Подтягиваем полные данные из API
+            try {
+                const resp = await fetch(`/channels/api/channels/detail/${dbId}?channel_type=${type}`);
+                const data = await resp.json();
+
+                if (!data.success) {
+                    document.getElementById('edit-output').innerHTML = `<span class="text-red-600 text-sm">${escapeHtml(data.error)}</span>`;
+                    return;
+                }
+
+                _editDetail = data;
+                document.getElementById('edit-channel-id').textContent = data.channel_id;
+                document.getElementById('edit-title').value = data.title || '';
+                document.getElementById('edit-description').value = data.description || '';
+
+                if (isChannel) {
+                    document.getElementById('edit-trust-rating').value = data.trust_rating || 0.5;
+                    document.getElementById('edit-is-trusted').checked = !!data.is_trusted;
+                    document.getElementById('edit-tags').value = data.tags || '[]';
+                } else {
+                    document.getElementById('edit-is-active').checked = data.is_active;
+                    // Заполняем категорию в dropdown
+                    populateCategoryDropdown(data.category || '');
+                }
+                document.getElementById('edit-output').innerHTML = '';
+            } catch (e) {
+                document.getElementById('edit-output').innerHTML = `<span class="text-red-600 text-sm">Ошибка загрузки: ${escapeHtml(e.message)}</span>`;
+            }
+        }
+
+        function closeEditModal() {
+            document.getElementById('edit-modal').classList.add('hidden');
+            _editId = null;
+            _editType = null;
+        }
+
+        async function saveEdit() {
+            const output = document.getElementById('edit-output');
+            output.innerHTML = '<span class="text-gray-400 text-sm"><i class="fas fa-spinner fa-spin mr-1"></i>Сохранение...</span>';
+
+            try {
+                const isChannel = _editType === 'channel';
+                const url = isChannel
+                    ? `/channels/api/channels/${_editId}`
+                    : `/channels/api/publishers/${_editId}`;
+
+                const body = {
+                    title: document.getElementById('edit-title').value.trim(),
+                    description: document.getElementById('edit-description').value.trim(),
+                };
+
+                if (isChannel) {
+                    body.trust_rating = parseFloat(document.getElementById('edit-trust-rating').value) || 0.5;
+                    body.is_trusted = document.getElementById('edit-is-trusted').checked;
+                    body.tags = document.getElementById('edit-tags').value || '[]';
+                } else {
+                    body.is_active = document.getElementById('edit-is-active').checked;
+                    body.category = document.getElementById('edit-category').value || null;
+                }
+
+                const resp = await fetch(url, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    credentials: 'same-origin',
+                    body: JSON.stringify(body)
+                });
+
+                if (!resp.ok) {
+                    const errData = await resp.json().catch(() => ({}));
+                    output.innerHTML = `<span class="text-red-600 text-sm">Ошибка: ${escapeHtml(errData.error || `HTTP ${resp.status}`)}</span>`;
+                    return;
+                }
+
+                const data = await resp.json();
+                if (data.success) {
+                    output.innerHTML = '<span class="text-green-600 text-sm"><i class="fas fa-check mr-1"></i>Сохранено</span>';
+                    setTimeout(() => {
+                        closeEditModal();
+                        loadChannels();
+                    }, 800);
+                } else {
+                    output.innerHTML = `<span class="text-red-600 text-sm">${escapeHtml(data.error || 'Неизвестная ошибка')}</span>`;
+                }
+            } catch (e) {
+                output.innerHTML = `<span class="text-red-600 text-sm">Ошибка: ${escapeHtml(e.message)}</span>`;
+            }
+        }
+
+        // ============================================================
+        // Удаление
+        // ============================================================
+        async function deleteChannel(dbId, type) {
+            const label = type === 'channel' ? 'источник' : 'канал публикации';
+            if (!confirm(`Удалить ${label} #${dbId}? Это действие нельзя отменить.`)) return;
+
+            try {
+                const url = type === 'channel'
+                    ? `/channels/api/channels/${dbId}`
+                    : `/channels/api/publishers/${dbId}`;
+
+                const resp = await fetch(url, { method: 'DELETE' });
+                if (!resp.ok) {
+                    const errData = await resp.json().catch(() => ({}));
+                    alert('Ошибка: ' + (errData.error || `HTTP ${resp.status}`));
+                    return;
+                }
+                const data = await resp.json();
+                if (data.success) {
+                    loadChannels();
+                } else {
+                    alert('Ошибка: ' + (data.error || 'не удалось удалить'));
+                }
+            } catch (e) {
+                alert('Ошибка сети: ' + e.message);
+            }
+        }
+
+        // ============================================================
+        // Категории
+        // ============================================================
+        let _channelCategories = [];
+
+        async function loadCategories() {
+            try {
+                const resp = await fetch('/channels/api/categories');
+                if (!resp.ok) return;
+                const data = await resp.json();
+                if (data.success) {
+                    _channelCategories = data.categories || [];
+                    // Заполняем dropdown
+                    const sel = document.getElementById('edit-category');
+                    sel.innerHTML = '<option value="">— без категории —</option>' +
+                        _channelCategories.map(c =>
+                            `<option value="${escapeHtml(c.value)}">${escapeHtml(c.label)}</option>`
+                        ).join('');
+                }
+            } catch (e) {
+                console.error('[Channels] loadCategories error:', e);
+            }
+        }
+
+        function populateCategoryDropdown(currentValue) {
+            const sel = document.getElementById('edit-category');
+            // Если текущей категории нет в списке, добавим её
+            const exists = Array.from(sel.options).some(o => o.value === currentValue);
+            if (currentValue && !exists) {
+                const opt = document.createElement('option');
+                opt.value = currentValue;
+                opt.textContent = currentValue;
+                opt.dataset.custom = '1';
+                sel.appendChild(opt);
+            }
+            sel.value = currentValue || '';
+        }
+
+        // ============================================================
+        // Инициализация
+        // ============================================================
+        document.addEventListener('DOMContentLoaded', () => {
+            loadCategories();
+            loadChannels();
+        });
+    </script>
+{% endblock %}

@@ -4,6 +4,61 @@
 
 ---
 
+## 2026-08-17 — v4.1.0 — Семантический поиск, Web Admin страницы, реиндексация
+
+### Семантический поиск — исправления и абстрактный слой
+
+- ✅ **Новый модуль `services/search_db.py`** — DB-agnostic слой поиска (ILIKE для PostgreSQL, LIKE для SQLite/MySQL)
+- ✅ **Фикс `persist_directory`** в `VectorSearchEngine` — хранилище теперь сохраняется на диск (было `None if None else None`)
+- ✅ **Валидация размерности эмбеддинга** — `_validate_embedding_dim()` в ChromaClient и бизнес-логике
+- ✅ **`search_morph()` исправлен** — пустой/короткий запрос (< 3 символа) больше не матчит всё; защита от `None`
+- ✅ **Централизация `search_morph`** — удалены локальные дубли из routes/news, channels, users
+- ✅ **Merge-алгоритм результатов** — текстовые совпадения (score=1.0) всегда в топе, семантика как дополнение
+- ✅ **min_score поднят** с 0.2 до 0.3 в API-эндпоинтах
+- ✅ **Настройки из `config/settings.py`** — `vector_search_*` параметры через settings, не хардкод
+- ✅ **Скрипт `scripts/reindex_chroma.py`** — полная переиндексация ChromaDB из БД
+
+**Результат поиска (до → после):**
+
+| Запрос | До | После |
+|--------|-----|-------|
+| «Салават» | 6 (1 релевантный) | 1 |
+| «Кишинёв» | 30 (2 релевантных) | 2 |
+| «Украина» | 49 (21 + 42 дубли) | 10 |
+
+### Web Admin — новые страницы
+
+- ✅ **`/channels`** — управление каналами-источниками (поиск, фильтры, доверие, теги)
+- ✅ **`/news`** — список новостей с модерацией (posts / generated, текстовый + семантический поиск)
+- ✅ **`/users`** — управление пользователями (подписки, роли, 2FA)
+- ✅ **`auth_dependency.py`** — единая JWT-зависимость для всех route-модулей
+- ✅ **Дашборд** — превью текста новости вместо заголовка, улучшенные модальные окна быстрых действий
+- ✅ **Настройки** — параметр `TELEGRAM_USE_IPV6` в `.env.example`
+
+### Database
+
+- ✅ **`TaskRepository`** — улучшенная валидация дат для календаря задач
+- ✅ **`UserRepository`** — метод `fix_empty_datetime_fields()` для коррекции пустых строк в datetime
+- ✅ **DI контейнер** — передача `persist_directory` из settings в VectorSearchEngine
+
+### Изменённые файлы (36)
+
+- `services/search_db.py` — новый модуль
+- `services/web_admin/auth_dependency.py` — новый модуль
+- `services/web_admin/routes/channels.py` — полный рефакторинг (875 строк)
+- `services/web_admin/routes/news.py` — полный рефакторинг (962 строки)
+- `services/web_admin/routes/users.py` — полный рефакторинг (509 строк)
+- `services/web_admin/templates/channels.html` — новый шаблон (956 строк)
+- `services/web_admin/templates/news.html` — новый шаблон (1138 строк)
+- `services/web_admin/templates/users.html` — новый шаблон (844 строки)
+- `services/vector_search/search_engine.py` — persist_directory, валидация дименсии
+- `services/vector_search/chroma_client.py` — валидация эмбеддинга
+- `services/news/helpers.py` — улучшенная логика (90 строк изменений)
+- `scripts/reindex_chroma.py` — новый скрипт реиндексации
+- `config/settings.py`, `services/core/container.py` — настройки vector_search
+
+---
+
 ## 2026-08-16 — v4.0.0 (hotfix) — Health Check, ServiceManager, Web Admin
 
 ### Bugfix — Консоль управления

@@ -23,7 +23,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import text, select
 
 from services.database import get_database_service
-from services.web_admin.api.app import get_optional_user
+from services.web_admin.auth_dependency import get_optional_user
 from services.web_admin.config import get_version
 
 logger = logging.getLogger(__name__)

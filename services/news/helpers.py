@@ -96,6 +96,7 @@ async def add_generated_news(
     source_event_ids: Optional[list[int]] = None,
     moderation_status: str = 'pending',
     publisher_channel_id: Optional[int] = None,
+    index_in_vector_search: bool = True,
 ) -> int:
     """
     Создать сгенерированную новость.
@@ -107,6 +108,7 @@ async def add_generated_news(
         source_event_ids: ID событий
         moderation_status: Статус модерации
         publisher_channel_id: ID канала публикации (опционально)
+        index_in_vector_search: Добавить в векторный индекс
 
     Returns:
         ID созданной новости
@@ -122,7 +124,18 @@ async def add_generated_news(
             moderation_status=moderation_status,
             publisher_channel_id=publisher_channel_id,
         )
-        return news.id
+        news_id = news.id
+
+        # Индексация в векторный поиск
+        if index_in_vector_search:
+            await add_news_to_vector_index(
+                news_id=news_id,
+                text=text,
+                category=category,
+                tags=tags,
+            )
+
+        return news_id
 
 
 async def add_event_context(
@@ -207,7 +220,6 @@ async def add_news_to_vector_index(
         tags: Теги новости
     """
     try:
-        # Используем глобальный экземпляр для обратной совместимости
         search_engine = VectorSearchEngine()
 
         await search_engine.add_news(
@@ -219,3 +231,77 @@ async def add_news_to_vector_index(
         logger.info(f"📦 Новость ID={news_id} добавлена в векторный индекс")
     except Exception as e:
         logger.error(f"Ошибка добавления новости в векторный индекс: {e}")
+
+
+async def add_post_to_vector_index(
+    post_id: int,
+    text: str,
+    channel_id: int,
+    category: str,
+    urgency: int = 1,
+) -> None:
+    """
+    Добавить пост в векторный индекс.
+
+    Args:
+        post_id: ID поста
+        text: Текст поста (можно enriched: text + category + tags)
+        channel_id: ID канала
+        category: Категория
+        urgency: Срочность (1-5)
+    """
+    try:
+        search_engine = VectorSearchEngine()
+
+        await search_engine.add_post(
+            id=f"post_{post_id}",
+            text=text,
+            channel_id=channel_id,
+            category=category,
+            urgency=urgency,
+        )
+        logger.info(f"📦 Пост ID={post_id} добавлен в векторный индекс")
+    except Exception as e:
+        logger.error(f"Ошибка добавления поста в векторный индекс: {e}")
+
+
+async def add_rss_to_vector_index(
+    rss_id: int,
+    text: str,
+    category: str,
+    tags: list[str],
+) -> None:
+    """Добавить RSS новость в векторный индекс."""
+    try:
+        search_engine = VectorSearchEngine()
+
+        await search_engine.add_news(
+            id=f"rss_{rss_id}",
+            text=text,
+            category=category,
+            tags=tags,
+        )
+        logger.info(f"📦 RSS ID={rss_id} добавлена в векторный индекс")
+    except Exception as e:
+        logger.error(f"Ошибка добавления RSS в векторный индекс: {e}")
+
+
+async def add_web_to_vector_index(
+    web_id: int,
+    text: str,
+    category: str,
+    tags: list[str],
+) -> None:
+    """Добавить Web новость в векторный индекс."""
+    try:
+        search_engine = VectorSearchEngine()
+
+        await search_engine.add_news(
+            id=f"web_{web_id}",
+            text=text,
+            category=category,
+            tags=tags,
+        )
+        logger.info(f"📦 Web ID={web_id} добавлена в векторный индекс")
+    except Exception as e:
+        logger.error(f"Ошибка добавления Web в векторный индекс: {e}")

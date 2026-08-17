@@ -32,6 +32,7 @@ class VectorSearchService:
     def __init__(
         self,
         embedding_model: str = 'paraphrase-multilingual-MiniLM-L12-v2',
+        persist_directory: str | None = None,
         cache_size: int = 500,
     ) -> None:
         """
@@ -39,10 +40,12 @@ class VectorSearchService:
 
         Args:
             embedding_model: Модель для эмбеддингов
+            persist_directory: Путь к хранилищу ChromaDB (если None — по умолчанию ./vector_store)
             cache_size: Размер LRU кэша
         """
         self.search_engine = VectorSearchEngine(
             embedding_model=embedding_model,
+            persist_directory=persist_directory,
             cache_size=cache_size,
         )
         logger.info("🔍 VectorSearchService инициализирован")

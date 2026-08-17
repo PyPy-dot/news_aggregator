@@ -9,6 +9,7 @@ Vector Search Engine — высокоуровневый API для поиска 
 
 import json
 import hashlib
+from pathlib import Path
 from typing import Optional, Any
 from collections import OrderedDict
 
@@ -22,6 +23,12 @@ from services.vector_search.chroma_client import (
 )
 
 logger = get_logger(__name__)
+
+
+def _get_settings():
+    """Lazy import of settings to avoid circular imports."""
+    from config.settings import settings
+    return settings
 
 
 class LRUCache:
@@ -118,8 +125,14 @@ class VectorSearchEngine:
             cache_size: Размер LRU кэша для результатов поиска
         """
         self.embeddings = EmbeddingService(model_name=embedding_model)
+
+        persist_dir: Optional[Path] = None
+        if persist_directory:
+            persist_dir = Path(persist_directory)
+
         self.vector_store = ChromaVectorStore(
-            persist_directory=None if persist_directory is None else None  # Используется по умолчанию
+            persist_directory=persist_dir,
+            embedding_service=self.embeddings,
         )
         # LRU кэш для результатов поиска (ключ: hash(query+params), значение: результаты)
         self._search_cache = LRUCache(capacity=cache_size)
@@ -147,6 +160,8 @@ class VectorSearchEngine:
             tags: Теги события
         """
         embedding = await self.embeddings.embed(text)
+
+        self._validate_embedding(embedding)
 
         self.vector_store.add(
             collection_name=COLLECTION_EVENTS,
@@ -178,6 +193,8 @@ class VectorSearchEngine:
         """
         embedding = await self.embeddings.embed(text)
 
+        self._validate_embedding(embedding)
+
         self.vector_store.add(
             collection_name=COLLECTION_NEWS,
             id=id,
@@ -195,7 +212,7 @@ class VectorSearchEngine:
         text: str,
         channel_id: int,
         category: str,
-        urgency: int,
+        urgency: Optional[int] = None,
     ) -> None:
         """
         Добавляет пост в векторный индекс.
@@ -209,16 +226,21 @@ class VectorSearchEngine:
         """
         embedding = await self.embeddings.embed(text)
 
+        self._validate_embedding(embedding)
+
+        metadata = {
+            'channel_id': channel_id or 0,
+            'category': category or '',
+        }
+        if urgency is not None:
+            metadata['urgency'] = urgency
+
         self.vector_store.add(
             collection_name=COLLECTION_POSTS,
             id=id,
             text=text,
             embedding=embedding,
-            metadata={
-                'channel_id': channel_id,
-                'category': category,
-                'urgency': urgency,
-            },
+            metadata=metadata,
         )
 
     # === Поиск ===
@@ -226,22 +248,24 @@ class VectorSearchEngine:
     async def find_similar_events(
         self,
         query_text: str,
-        limit: int = 5,
+        limit: int | None = None,
         category_filter: Optional[str] = None,
-        min_score: float = 0.7,
+        min_score: float | None = None,
     ) -> list[dict[str, Any]]:
         """
         Поиск похожих событий по тексту запроса.
 
         Args:
             query_text: Текст для поиска
-            limit: Максимальное количество результатов
+            limit: Максимальное количество результатов (по умолчанию из настроек)
             category_filter: Фильтр по категории
-            min_score: Минимальный порог сходства (0.0-1.0)
-
-        Returns:
-            Список похожих событий с score
+            min_score: Минимальный порог сходства (0.0-1.0, по умолчанию из настроек)
         """
+        if limit is None:
+            limit = _get_settings().vector_search_events_limit
+        if min_score is None:
+            min_score = _get_settings().vector_search_min_score_events
+
         # Создаём ключ кэша
         cache_key = self._make_cache_key(
             'events', query_text, limit, category_filter, min_score
@@ -306,22 +330,24 @@ class VectorSearchEngine:
     async def find_similar_posts(
         self,
         query_text: str,
-        limit: int = 10,
+        limit: int | None = None,
         category_filter: Optional[str] = None,
-        min_score: float = 0.6,
+        min_score: float | None = None,
     ) -> list[dict[str, Any]]:
         """
         Поиск похожих постов.
 
         Args:
             query_text: Текст для поиска
-            limit: Максимальное количество результатов
+            limit: Максимальное количество результатов (по умолчанию из настроек)
             category_filter: Фильтр по категории
-            min_score: Минимальный порог сходства
-
-        Returns:
-            Список похожих постов с score
+            min_score: Минимальный порог сходства (по умолчанию 0.6)
         """
+        if limit is None:
+            limit = _get_settings().vector_search_posts_limit
+        if min_score is None:
+            min_score = 0.6
+
         # Создаём ключ кэша
         cache_key = self._make_cache_key(
             'posts', query_text, limit, category_filter, min_score
@@ -359,22 +385,24 @@ class VectorSearchEngine:
     async def find_related_news(
         self,
         query_text: str,
-        limit: int = 5,
+        limit: int | None = None,
         category_filter: Optional[str] = None,
-        min_score: float = 0.5,
+        min_score: float | None = None,
     ) -> list[dict[str, Any]]:
         """
         Поиск связанных новостей по тексту.
 
         Args:
             query_text: Текст для поиска
-            limit: Максимальное количество результатов
+            limit: Максимальное количество результатов (по умолчанию 5)
             category_filter: Фильтр по категории
-            min_score: Минимальный порог сходства
-
-        Returns:
-            Список связанных новостей с score
+            min_score: Минимальный порог сходства (по умолчанию 0.5)
         """
+        if limit is None:
+            limit = 5
+        if min_score is None:
+            min_score = 0.5
+
         # Создаём ключ кэша
         cache_key = self._make_cache_key(
             'news', query_text, limit, category_filter, min_score
@@ -459,6 +487,19 @@ class VectorSearchEngine:
 
         logger.debug("🆕 Пост не относится к существующим событиям")
         return None
+
+    def _validate_embedding(self, embedding: list[float]) -> None:
+        """Проверить размерность эмбеддинга против ожидаемой от модели."""
+        expected = self.embeddings.embedding_dim
+        actual = len(embedding)
+        if actual != expected:
+            logger.error(
+                f"❌ Embedding dimension mismatch: expected {expected}, got {actual}"
+            )
+            raise ValueError(
+                f"Embedding dimension mismatch: expected {expected}, got {actual}. "
+                "The embedding model may have been changed."
+            )
 
     # === Статистика ===
 

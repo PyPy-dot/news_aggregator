@@ -1,0 +1,844 @@
+{% extends "base.html" %}
+
+{% set active_page = 'users' %}
+
+{% block title %}News Aggregator — Пользователи{% endblock %}
+
+{% block page_title %}<h2 class="text-2xl font-bold text-gray-800">Пользователи</h2>{% endblock %}
+{% block page_subtitle %}<p class="text-sm text-gray-500 mt-1">Просмотр и управление пользователями бота</p>{% endblock %}
+
+{% block content %}
+    <!-- Панель фильтров -->
+    <div class="bg-white rounded-xl shadow-sm p-4 mb-6">
+        <div class="flex items-center gap-3 flex-wrap">
+            <select id="filter-role" onchange="applyFilters()"
+                    class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+                <option value="">Все роли</option>
+                <option value="user">Пользователи</option>
+                <option value="admin">Админы</option>
+            </select>
+            <select id="filter-subscription" onchange="applyFilters()"
+                    class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+                <option value="">Все подписки</option>
+                <option value="true">С подпиской</option>
+                <option value="false">Без подписки</option>
+            </select>
+            <!-- Мультивыбор категорий -->
+            <div class="relative" id="category-select-wrapper">
+                <button type="button" onclick="toggleCategoryDropdown()"
+                        class="px-3 py-2 border border-gray-300 rounded-lg text-sm text-left focus:ring-2 focus:ring-blue-500 focus:outline-none flex items-center gap-1 min-w-[160px] justify-between">
+                    <span id="category-label" class="truncate">Все категории</span>
+                    <i class="fas fa-chevron-down text-gray-400 text-xs flex-shrink-0"></i>
+                </button>
+                <div id="category-dropdown"
+                     class="hidden absolute z-30 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto w-64">
+                    <div class="p-1.5" id="category-options"></div>
+                </div>
+            </div>
+            <!-- Выбранные категории -->
+            <div id="selected-categories" class="flex flex-wrap gap-1 items-center"></div>
+            <!-- Поиск по тегам -->
+            <div class="relative">
+                <i class="fas fa-tags absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+                <input type="text" id="filter-tag-search"
+                       class="pl-8 pr-3 py-2 border border-gray-300 rounded-lg text-sm w-48 focus:ring-2 focus:ring-blue-500"
+                       placeholder="Поиск по тегам..."
+                       onkeydown="if(event.key==='Enter') applyTagSearch()">
+                <button onclick="applyTagSearch()" id="tag-search-btn"
+                        class="absolute right-1 top-1/2 -translate-y-1/2 px-2 py-0.5 bg-blue-500 text-white text-xs rounded hover:bg-blue-600">
+                    <i class="fas fa-search"></i>
+                </button>
+            </div>
+            <!-- Индикатор поиска по тегам -->
+            <span id="tag-search-indicator" class="hidden text-xs text-blue-600 items-center gap-1">
+                <i class="fas fa-filter mr-1"></i>
+                <span id="tag-search-label"></span>
+                <button onclick="clearTagSearch()" class="ml-1 text-red-500 hover:text-red-700" title="Убрать фильтр">
+                    <i class="fas fa-times"></i>
+                </button>
+            </span>
+            <button onclick="resetFilters()"
+                    class="px-4 py-2 bg-gray-100 text-gray-600 text-sm rounded-lg hover:bg-gray-200 transition-colors">
+                <i class="fas fa-times mr-1"></i>Сброс
+            </button>
+        </div>
+    </div>
+
+    <!-- Таблица пользователей -->
+    <div class="bg-white rounded-xl shadow-sm p-6">
+        <div id="users-loading" class="text-center py-12">
+            <div class="inline-block animate-spin text-blue-500 text-2xl"><i class="fas fa-spinner"></i></div>
+            <p class="text-gray-400 mt-2">Загрузка...</p>
+        </div>
+        <div id="users-table-wrap" class="hidden overflow-x-auto">
+            <table class="min-w-full text-sm">
+                <thead>
+                    <tr class="border-b border-gray-200">
+                        <th class="text-left py-3 px-4 font-semibold text-gray-500 w-16">
+                            <span class="sortable" data-field="id" onclick="sortTable('id')">ID <i class="fas fa-sort text-gray-300 text-xs"></i></span>
+                        </th>
+                        <th class="text-left py-3 px-4 font-semibold text-gray-500 w-28">Telegram ID</th>
+                        <th class="text-left py-3 px-4 font-semibold text-gray-500 w-48">Имя</th>
+                        <th class="text-left py-3 px-4 font-semibold text-gray-500 w-24">
+                            <span class="sortable" data-field="role" onclick="sortTable('role')">Роль <i class="fas fa-sort text-gray-300 text-xs"></i></span>
+                        </th>
+                        <th class="text-left py-3 px-4 font-semibold text-gray-500 w-28">Подписка</th>
+                        <th class="text-left py-3 px-4 font-semibold text-gray-500 w-16">2FA</th>
+                        <th class="text-left py-3 px-4 font-semibold text-gray-500 w-40">Категории</th>
+                        <th class="text-left py-3 px-4 font-semibold text-gray-500 w-40">Теги</th>
+                        <th class="text-left py-3 px-4 font-semibold text-gray-500 w-36">
+                            <span class="sortable active-sort" data-field="created_at" onclick="sortTable('created_at')">Регистрация <i class="fas fa-sort-down text-blue-500 text-xs"></i></span>
+                        </th>
+                        <th class="text-left py-3 px-4 font-semibold text-gray-500 w-24">Действие</th>
+                    </tr>
+                </thead>
+                <tbody id="users-tbody"></tbody>
+            </table>
+        </div>
+        <div id="users-empty" class="hidden text-center py-12 text-gray-400">Нет пользователей</div>
+        <div id="users-toolbar" class="flex items-center justify-between mt-4 px-2">
+            <div id="users-stats" class="text-xs text-gray-400"></div>
+            <div id="users-pagination" class="flex items-center justify-between"></div>
+        </div>
+    </div>
+
+    <!-- Модальное окно: изменить подписку -->
+    <div id="subscription-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center">
+        <div class="fixed inset-0 bg-black/40 backdrop-blur-sm" onclick="closeSubscriptionModal()"></div>
+        <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                <h3 class="text-lg font-bold text-gray-800">Управление подпиской</h3>
+                <button onclick="closeSubscriptionModal()" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="px-6 py-5 space-y-4">
+                <p class="text-sm text-gray-500">Пользователь: <span id="sub-user-id" class="font-mono"></span></p>
+                <div>
+                    <label class="flex items-center space-x-2 cursor-pointer">
+                        <input type="checkbox" id="sub-enabled" class="w-4 h-4 text-blue-500 rounded focus:ring-blue-500 border-gray-300" onchange="toggleEndDate()">
+                        <span class="text-sm text-gray-700">Активная подписка</span>
+                    </label>
+                </div>
+                <div id="sub-end-date-wrap">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Дата окончания</label>
+                    <input type="date" id="sub-end-date" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                    <label class="flex items-center space-x-2 cursor-pointer mt-2">
+                        <input type="checkbox" id="sub-unlimited" class="w-4 h-4 text-green-500 rounded focus:ring-green-500 border-gray-300" onchange="toggleEndDate()">
+                        <span class="text-sm text-gray-700">Бессрочная</span>
+                    </label>
+                </div>
+                <div id="sub-output"></div>
+            </div>
+            <div class="flex items-center justify-end space-x-3 px-6 py-4 bg-gray-50 border-t border-gray-200">
+                <button onclick="closeSubscriptionModal()" class="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">Отмена</button>
+                <button onclick="saveSubscription()" class="px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 font-medium">
+                    <i class="fas fa-check mr-1"></i>Сохранить
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно: изменить роль -->
+    <div id="role-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center">
+        <div class="fixed inset-0 bg-black/40 backdrop-blur-sm" onclick="closeRoleModal()"></div>
+        <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                <h3 class="text-lg font-bold text-gray-800">Изменить роль</h3>
+                <button onclick="closeRoleModal()" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="px-6 py-5 space-y-4">
+                <p class="text-sm text-gray-500">Пользователь: <span id="role-user-id" class="font-mono"></span></p>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Роль</label>
+                    <select id="role-select" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                        <option value="user">Пользователь</option>
+                        <option value="admin">Администратор</option>
+                    </select>
+                </div>
+                <div id="role-output"></div>
+            </div>
+            <div class="flex items-center justify-end space-x-3 px-6 py-4 bg-gray-50 border-t border-gray-200">
+                <button onclick="closeRoleModal()" class="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">Отмена</button>
+                <button onclick="saveRole()" class="px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 font-medium">
+                    <i class="fas fa-check mr-1"></i>Сохранить
+                </button>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+    <script>
+        // ============================================================
+        // Утилиты
+        // ============================================================
+        function escapeHtml(text) {
+            const d = document.createElement('div');
+            d.textContent = text || '';
+            return d.innerHTML;
+        }
+
+        function formatDate(isoStr) {
+            if (!isoStr) return '—';
+            try {
+                const d = new Date(isoStr);
+                return d.toLocaleString('ru-RU', {
+                    day: '2-digit', month: '2-digit', year: 'numeric',
+                    hour: '2-digit', minute: '2-digit'
+                });
+            } catch {
+                return isoStr.substring(0, 16).replace('T', ' ');
+            }
+        }
+
+        function renderTags(tagsStr) {
+            if (!tagsStr || tagsStr === '[]') return '<span class="text-gray-300 text-xs">—</span>';
+            let tags;
+            try {
+                tags = typeof tagsStr === 'string' ? JSON.parse(tagsStr) : tagsStr;
+            } catch {
+                try {
+                    tags = JSON.parse(tagsStr.replace(/'/g, '"'));
+                } catch {
+                    return `<span class="text-gray-500 text-xs">${escapeHtml(tagsStr.substring(0, 30))}</span>`;
+                }
+            }
+            if (!Array.isArray(tags) || tags.length === 0) return '<span class="text-gray-300 text-xs">—</span>';
+            const colors = [
+                'bg-amber-50 text-amber-700', 'bg-teal-50 text-teal-700',
+                'bg-indigo-50 text-indigo-700', 'bg-rose-50 text-rose-700',
+                'bg-cyan-50 text-cyan-700', 'bg-lime-50 text-lime-700',
+            ];
+            return tags.slice(0, 3).map((t, i) =>
+                `<span class="inline-block px-1.5 py-0.5 text-xs rounded-full mr-1 ${colors[i % colors.length]}" title="${escapeHtml(String(t))}">${escapeHtml(String(t))}</span>`
+            ).join('') + (tags.length > 3 ? `<span class="text-gray-400 text-xs">+${tags.length - 3}</span>` : '');
+        }
+
+        function renderCategories(catsStr) {
+            if (!catsStr || catsStr === '[]') return '<span class="text-gray-300 text-xs">—</span>';
+            try {
+                const cats = typeof catsStr === 'string' ? JSON.parse(catsStr) : catsStr;
+                if (!Array.isArray(cats) || cats.length === 0) return '<span class="text-gray-300 text-xs">—</span>';
+                const colors = [
+                    'bg-blue-50 text-blue-700', 'bg-emerald-50 text-emerald-700',
+                    'bg-violet-50 text-violet-700', 'bg-orange-50 text-orange-700',
+                    'bg-pink-50 text-pink-700', 'bg-sky-50 text-sky-700',
+                ];
+                return cats.slice(0, 3).map((c, i) =>
+                    `<span class="inline-block px-1.5 py-0.5 text-xs rounded-full mr-1 font-medium ${colors[i % colors.length]}" title="${escapeHtml(String(c))}">${escapeHtml(String(c))}</span>`
+                ).join('') + (cats.length > 3 ? `<span class="text-gray-400 text-xs">+${cats.length - 3}</span>` : '');
+            } catch {
+                return `<span class="text-gray-500 text-xs">${escapeHtml(catsStr.substring(0, 30))}</span>`;
+            }
+        }
+
+        // ============================================================
+        // Состояние
+        // ============================================================
+        let currentPage = 1;
+        let currentLimit = 50;
+        let totalPages = 1;
+        let totalItems = 0;
+        let sortBy = 'created_at';
+        let sortDir = 'desc';
+
+        // Кэш имён (db_id → name) чтобы не грузить повторно
+        const nameCache = {};
+
+        // ============================================================
+        // Загрузка списка
+        // ============================================================
+        async function loadUsers() {
+            const loading = document.getElementById('users-loading');
+            const tableWrap = document.getElementById('users-table-wrap');
+            const empty = document.getElementById('users-empty');
+
+            loading.classList.remove('hidden');
+            tableWrap.classList.add('hidden');
+            empty.classList.add('hidden');
+
+            // Собираем параметры
+            const params = new URLSearchParams({
+                page: currentPage,
+                limit: currentLimit,
+                sort_by: sortBy,
+                sort_dir: sortDir,
+            });
+
+            const roleFilter = document.getElementById('filter-role').value;
+            const subFilter = document.getElementById('filter-subscription').value;
+            if (roleFilter) params.set('role', roleFilter);
+            if (subFilter !== '') params.set('subscription', subFilter);
+            if (selectedCategories.length > 0) params.set('categories', selectedCategories.join(','));
+            if (searchTagIds.length > 0) params.set('search_ids', searchTagIds.join(','));
+            if (searchTagIds.length === 0 && document.getElementById('tag-search-indicator').classList.contains('flex')) {
+                // Поиск по тегам активен но ничего не нашёл — отдаём пустой фильтр
+                params.set('search_ids', '__empty__');
+            }
+
+            try {
+                const resp = await fetch(`/users/api/users?${params}`);
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+                const data = await resp.json();
+                if (!data.success) throw new Error(data.error);
+
+                totalItems = data.total || 0;
+                totalPages = data.pages || 1;
+
+                loading.classList.add('hidden');
+
+                if (!data.items || data.items.length === 0) {
+                    empty.classList.remove('hidden');
+                    document.getElementById('users-pagination').innerHTML = '';
+                    document.getElementById('users-stats').textContent = '';
+                } else {
+                    renderUsers(data.items);
+                    tableWrap.classList.remove('hidden');
+                    renderPagination();
+                    document.getElementById('users-stats').textContent =
+                        `${totalItems.toLocaleString('ru-RU')} пользователей`;
+                }
+            } catch (e) {
+                loading.innerHTML = `
+                    <p class="text-red-400">Ошибка: ${escapeHtml(e.message)}</p>
+                    <button onclick="loadUsers()" class="mt-2 px-3 py-1 text-sm bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200">
+                        Повторить
+                    </button>`;
+            }
+        }
+
+        // ============================================================
+        // Рендер таблицы
+        // ============================================================
+        function renderUsers(items) {
+            const tbody = document.getElementById('users-tbody');
+            tbody.innerHTML = items.map(u => {
+                const roleBadge = u.role === 'admin'
+                    ? '<span class="px-2 py-0.5 text-xs bg-red-100 text-red-700 rounded-full font-semibold">Админ</span>'
+                    : '<span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded-full">Пользователь</span>';
+
+                const subBadge = u.has_subscription
+                    ? `<span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full" title="${escapeHtml(u.subscription_label)}">✓ ${escapeHtml(u.subscription_label)}</span>`
+                    : '<span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-500 rounded-full">нет</span>';
+
+                const faBadge = u.totp_enabled
+                    ? '<span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">✓</span>'
+                    : '<span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-400 rounded-full">—</span>';
+
+                const cachedName = nameCache[u.id];
+                const nameCell = cachedName
+                    ? `<span class="text-gray-700">${escapeHtml(cachedName)}</span>`
+                    : `<button onclick="loadName(${u.id}, this)" class="text-blue-500 hover:text-blue-700 text-xs underline">
+                           <i class="fas fa-search mr-1"></i>Загрузить
+                       </button>`;
+
+                const catBadges = renderCategories(u.preferred_categories);
+
+                return `
+                <tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors" data-db-id="${u.id}">
+                    <td class="py-2.5 px-4 text-gray-500 font-mono">${u.id}</td>
+                    <td class="py-2.5 px-4 text-gray-500 font-mono text-xs">${u.telegram_id != null ? escapeHtml(String(u.telegram_id)) : '<span class="text-red-400">ошибка</span>'}</td>
+                    <td class="py-2.5 px-4">${nameCell}</td>
+                    <td class="py-2.5 px-4">${roleBadge}</td>
+                    <td class="py-2.5 px-4">${subBadge}</td>
+                    <td class="py-2.5 px-4 text-center">${faBadge}</td>
+                    <td class="py-2.5 px-4">${catBadges}</td>
+                    <td class="py-2.5 px-4">${renderTags(u.preferred_tags)}</td>
+                    <td class="py-2.5 px-4 text-gray-500 whitespace-nowrap text-xs">${formatDate(u.created_at)}</td>
+                    <td class="py-2.5 px-4">
+                        <div class="flex items-center space-x-1">
+                            <button onclick="openRoleModal(${u.id})"
+                                    class="px-2 py-1 text-xs text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                                    title="Изменить роль">
+                                <i class="fas fa-user-tag"></i>
+                            </button>
+                            <button onclick="openSubscriptionModal(${u.id}, ${u.has_subscription}, '${escapeHtml(u.subscription_ends_at || '')}')"
+                                    class="px-2 py-1 text-xs text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition-colors"
+                                    title="Управление подпиской">
+                                <i class="fas fa-credit-card"></i>
+                            </button>
+                            <button onclick="deleteUser(${u.id})"
+                                    class="px-2 py-1 text-xs text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
+                                    title="Удалить пользователя">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>`;
+            }).join('');
+        }
+
+        // ============================================================
+        // Загрузка имени из Telegram
+        // ============================================================
+        async function loadName(dbId, btn) {
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Загрузка...';
+            btn.disabled = true;
+
+            try {
+                const resp = await fetch(`/users/api/users/${dbId}/telegram-name`);
+                const data = await resp.json();
+
+                if (data.success && data.full_name) {
+                    nameCache[dbId] = data.full_name;
+                    const usernamePart = data.username ? ` (@${escapeHtml(data.username)})` : '';
+                    btn.outerHTML = `<span class="text-gray-700">${escapeHtml(data.full_name)}${usernamePart}</span>`;
+                } else {
+                    const errorMsg = data.error || 'Не удалось';
+                    btn.outerHTML = `<span class="text-gray-400 text-xs" title="${escapeHtml(errorMsg)}">— ${escapeHtml(errorMsg)}</span>`;
+                }
+            } catch (e) {
+                btn.outerHTML = '<span class="text-red-400 text-xs">Ошибка сети</span>';
+            }
+        }
+
+        // ============================================================
+        // Сортировка
+        // ============================================================
+        function sortTable(field) {
+            if (sortBy === field) {
+                sortDir = sortDir === 'desc' ? 'asc' : 'desc';
+            } else {
+                sortBy = field;
+                sortDir = 'desc';
+            }
+            currentPage = 1;
+
+            // Обновляем иконки
+            document.querySelectorAll('.sortable').forEach(el => {
+                el.querySelector('i').className = 'fas fa-sort text-gray-300 text-xs';
+                el.classList.remove('active-sort');
+            });
+            const active = document.querySelector(`.sortable[data-field="${field}"]`);
+            if (active) {
+                const icon = active.querySelector('i');
+                icon.className = sortDir === 'desc'
+                    ? 'fas fa-sort-down text-blue-500 text-xs'
+                    : 'fas fa-sort-up text-blue-500 text-xs';
+                active.classList.add('active-sort');
+            }
+
+            loadUsers();
+        }
+
+        // ============================================================
+        // Фильтры
+        // ============================================================
+        function applyFilters() {
+            currentPage = 1;
+            loadUsers();
+        }
+
+        function resetFilters() {
+            document.getElementById('filter-role').value = '';
+            document.getElementById('filter-subscription').value = '';
+            selectedCategories = [];
+            clearTagSearch();
+        }
+
+        // ============================================================
+        // Поиск по тегам
+        // ============================================================
+        let searchTagIds = [];  // ID пользователей найденных по тегам
+
+        async function applyTagSearch() {
+            const query = document.getElementById('filter-tag-search').value.trim();
+            if (!query) {
+                clearTagSearch();
+                return;
+            }
+
+            const btn = document.getElementById('tag-search-btn');
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            btn.disabled = true;
+
+            try {
+                const resp = await fetch('/users/api/search', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({query, limit: 500})
+                });
+                const data = await resp.json();
+
+                if (data.success && data.ids && data.ids.length > 0) {
+                    searchTagIds = data.ids;
+                    document.getElementById('tag-search-label').textContent = `"${query}" → ${data.ids.length} найдено`;
+                    document.getElementById('tag-search-indicator').classList.remove('hidden');
+                    document.getElementById('tag-search-indicator').classList.add('flex');
+                    currentPage = 1;
+                    loadUsers();
+                } else {
+                    searchTagIds = [];
+                    document.getElementById('tag-search-label').textContent = `"${query}" → 0 найдено`;
+                    document.getElementById('tag-search-indicator').classList.remove('hidden');
+                    document.getElementById('tag-search-indicator').classList.add('flex');
+                    currentPage = 1;
+                    loadUsers();
+                }
+            } catch (e) {
+                console.error('[Users] applyTagSearch error:', e);
+            } finally {
+                btn.innerHTML = '<i class="fas fa-search"></i>';
+                btn.disabled = false;
+            }
+        }
+
+        function clearTagSearch() {
+            searchTagIds = [];
+            document.getElementById('filter-tag-search').value = '';
+            document.getElementById('tag-search-indicator').classList.add('hidden');
+            document.getElementById('tag-search-indicator').classList.remove('flex');
+            currentPage = 1;
+            loadUsers();
+        }
+
+        // ============================================================
+        // Пагинация
+        // ============================================================
+        function renderPagination() {
+            const el = document.getElementById('users-pagination');
+            if (totalPages <= 1) {
+                el.innerHTML = `<span class="text-xs text-gray-400">Всего: ${totalItems.toLocaleString('ru-RU')}</span>`;
+                return;
+            }
+
+            let pages = [];
+            const cp = currentPage;
+            pages.push(1);
+            for (let p = Math.max(2, cp - 2); p <= Math.min(totalPages - 1, cp + 2); p++) pages.push(p);
+            if (totalPages > 1) pages.push(totalPages);
+            pages = [...new Set(pages)].sort((a, b) => a - b);
+
+            let html = '';
+            let prev = null;
+            pages.forEach(p => {
+                if (prev !== null && p - prev > 1) html += '<span class="px-1 text-gray-400">…</span>';
+                const active = p === cp ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200';
+                html += `<button onclick="goToPage(${p})" class="px-2.5 py-1 text-xs rounded-lg mx-0.5 transition-colors ${active}">${p}</button>`;
+                prev = p;
+            });
+
+            el.innerHTML = `
+                <span class="text-xs text-gray-400">${totalItems.toLocaleString('ru-RU')} записей</span>
+                <div class="flex items-center">
+                    <button onclick="goToPage(${cp - 1})" ${cp <= 1 ? 'disabled' : ''} class="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded-l-lg hover:bg-gray-200 disabled:opacity-40">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
+                    ${html}
+                    <button onclick="goToPage(${cp + 1})" ${cp >= totalPages ? 'disabled' : ''} class="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded-r-lg hover:bg-gray-200 disabled:opacity-40">
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
+                </div>
+            `;
+        }
+
+        function goToPage(page) {
+            if (page < 1 || page > totalPages) return;
+            currentPage = page;
+            loadUsers();
+        }
+
+        // ============================================================
+        // Модальное окно: роль
+        // ============================================================
+        let _editingRoleId = null;
+
+        function openRoleModal(dbId) {
+            _editingRoleId = dbId;
+            document.getElementById('role-user-id').textContent = `#${dbId}`;
+
+            // Определяем текущую роль из таблицы
+            const row = document.querySelector(`tr[data-db-id="${dbId}"]`);
+            const roleText = row ? row.querySelector('td:nth-child(4)').textContent.trim() : '';
+            document.getElementById('role-select').value = roleText === 'Админ' ? 'admin' : 'user';
+            document.getElementById('role-output').innerHTML = '';
+            document.getElementById('role-modal').classList.remove('hidden');
+        }
+
+        function closeRoleModal() {
+            document.getElementById('role-modal').classList.add('hidden');
+            _editingRoleId = null;
+        }
+
+        async function saveRole() {
+            const newRole = document.getElementById('role-select').value;
+            const output = document.getElementById('role-output');
+            output.innerHTML = '<span class="text-gray-400 text-sm"><i class="fas fa-spinner fa-spin mr-1"></i>Сохранение...</span>';
+
+            try {
+                const url = `/users/api/users/${_editingRoleId}/set-role`;
+                const body = JSON.stringify({role: newRole});
+
+                console.log('[Users] Saving role:', _editingRoleId, body);
+
+                const resp = await fetch(url, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    credentials: 'same-origin',
+                    body: body
+                });
+
+                console.log('[Users] Response status:', resp.status, resp.ok);
+
+                if (!resp.ok) {
+                    let errText = `HTTP ${resp.status}`;
+                    try {
+                        const errData = await resp.json();
+                        errText = errData.error || errText;
+                    } catch {
+                        const text = await resp.text().catch(() => '');
+                        if (text.includes('login') || text.includes('авториз')) {
+                            errText = 'Сессия истекла. Обновите страницу.';
+                        }
+                    }
+                    output.innerHTML = `<span class="text-red-600 text-sm">Ошибка: ${escapeHtml(errText)}</span>`;
+                    return;
+                }
+
+                const data = await resp.json();
+                console.log('[Users] Response data:', data);
+
+                if (data.success) {
+                    output.innerHTML = '<span class="text-green-600 text-sm"><i class="fas fa-check mr-1"></i>Сохранено</span>';
+                    setTimeout(() => {
+                        closeRoleModal();
+                        loadUsers();
+                    }, 800);
+                } else {
+                    output.innerHTML = `<span class="text-red-600 text-sm">${escapeHtml(data.error || 'Неизвестная ошибка')}</span>`;
+                }
+            } catch (e) {
+                console.error('[Users] saveRole error:', e);
+                output.innerHTML = `<span class="text-red-600 text-sm">Ошибка: ${escapeHtml(e.message)}</span>`;
+            }
+        }
+
+        // ============================================================
+        // Модальное окно: подписка
+        // ============================================================
+        let _editingSubId = null;
+
+        function openSubscriptionModal(dbId, hasSub, endsAt) {
+            _editingSubId = dbId;
+            document.getElementById('sub-user-id').textContent = `#${dbId}`;
+            document.getElementById('sub-enabled').checked = hasSub;
+            document.getElementById('sub-output').innerHTML = '';
+
+            if (endsAt) {
+                document.getElementById('sub-unlimited').checked = false;
+                document.getElementById('sub-end-date').value = endsAt.substring(0, 10);
+                document.getElementById('sub-end-date').disabled = false;
+            } else if (hasSub) {
+                // Бессрочная
+                document.getElementById('sub-unlimited').checked = true;
+                document.getElementById('sub-end-date').value = '';
+                document.getElementById('sub-end-date').disabled = true;
+            } else {
+                document.getElementById('sub-unlimited').checked = false;
+                document.getElementById('sub-end-date').value = '';
+                document.getElementById('sub-end-date').disabled = true;
+            }
+            toggleEndDate();
+            document.getElementById('subscription-modal').classList.remove('hidden');
+        }
+
+        function closeSubscriptionModal() {
+            document.getElementById('subscription-modal').classList.add('hidden');
+            _editingSubId = null;
+        }
+
+        function toggleEndDate() {
+            const enabled = document.getElementById('sub-enabled').checked;
+            const unlimited = document.getElementById('sub-unlimited').checked;
+            const dateWrap = document.getElementById('sub-end-date-wrap');
+
+            if (enabled) {
+                dateWrap.classList.remove('hidden');
+                document.getElementById('sub-end-date').disabled = unlimited;
+            } else {
+                dateWrap.classList.add('hidden');
+            }
+        }
+
+        async function saveSubscription() {
+            const hasSub = document.getElementById('sub-enabled').checked;
+            const unlimited = document.getElementById('sub-unlimited').checked;
+            const endDate = document.getElementById('sub-end-date').value;
+
+            if (hasSub && !unlimited && !endDate) {
+                alert('Укажите дату окончания или выберите бессрочную подписку');
+                return;
+            }
+
+            const output = document.getElementById('sub-output');
+            output.innerHTML = '<span class="text-gray-400 text-sm"><i class="fas fa-spinner fa-spin mr-1"></i>Сохранение...</span>';
+
+            try {
+                const url = `/users/api/users/${_editingSubId}/set-subscription`;
+                const body = JSON.stringify({
+                    has_subscription: hasSub,
+                    ends_at: hasSub && !unlimited ? endDate : null
+                });
+
+                console.log('[Users] Saving subscription:', _editingSubId, body);
+
+                const resp = await fetch(url, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    credentials: 'same-origin',
+                    body: body
+                });
+
+                console.log('[Users] Response status:', resp.status, resp.ok);
+
+                if (!resp.ok) {
+                    // Попытка распарсить ошибку
+                    let errText = `HTTP ${resp.status}`;
+                    try {
+                        const errData = await resp.json();
+                        errText = errData.error || errText;
+                    } catch {
+                        // Если ответ не JSON — вероятно редирект на login-страницу
+                        const text = await resp.text().catch(() => '');
+                        if (text.includes('login') || text.includes('авториз')) {
+                            errText = 'Сессия истекла. Обновите страницу.';
+                        }
+                    }
+                    output.innerHTML = `<span class="text-red-600 text-sm">Ошибка: ${escapeHtml(errText)}</span>`;
+                    return;
+                }
+
+                const data = await resp.json();
+                console.log('[Users] Response data:', data);
+
+                if (data.success) {
+                    output.innerHTML = '<span class="text-green-600 text-sm"><i class="fas fa-check mr-1"></i>Сохранено</span>';
+                    setTimeout(() => {
+                        closeSubscriptionModal();
+                        loadUsers();
+                    }, 800);
+                } else {
+                    output.innerHTML = `<span class="text-red-600 text-sm">${escapeHtml(data.error || 'Неизвестная ошибка')}</span>`;
+                }
+            } catch (e) {
+                console.error('[Users] saveSubscription error:', e);
+                output.innerHTML = `<span class="text-red-600 text-sm">Ошибка: ${escapeHtml(e.message)}</span>`;
+            }
+        }
+
+        // ============================================================
+        // Удаление пользователя
+        // ============================================================
+        async function deleteUser(dbId) {
+            if (!confirm(`Удалить пользователя #${dbId}? Это действие нельзя отменить.`)) return;
+
+            try {
+                const resp = await fetch(`/users/api/users/${dbId}`, { method: 'DELETE' });
+                if (!resp.ok) {
+                    const errData = await resp.json().catch(() => ({}));
+                    alert('Ошибка: ' + (errData.error || `HTTP ${resp.status}`));
+                    return;
+                }
+                const data = await resp.json();
+                if (data.success) {
+                    loadUsers();
+                } else {
+                    alert('Ошибка: ' + (data.error || 'не удалось удалить'));
+                }
+            } catch (e) {
+                alert('Ошибка сети: ' + e.message);
+            }
+        }
+
+        // ============================================================
+        // Мультивыбор категорий
+        // ============================================================
+        let selectedCategories = [];
+        let allCategoryOptions = [];
+
+        async function loadCategories() {
+            try {
+                const resp = await fetch('/users/api/categories');
+                if (!resp.ok) return;
+                const data = await resp.json();
+                if (!data.success) return;
+
+                allCategoryOptions = data.categories || [];
+                renderCategoryDropdown();
+            } catch (e) {
+                console.error('[Users] loadCategories error:', e);
+            }
+        }
+
+        function toggleCategoryDropdown() {
+            document.getElementById('category-dropdown').classList.toggle('hidden');
+        }
+
+        function toggleCategory(value) {
+            const idx = selectedCategories.indexOf(value);
+            if (idx >= 0) selectedCategories.splice(idx, 1);
+            else selectedCategories.push(value);
+
+            renderCategoryDropdown();
+            renderSelectedCategories();
+            currentPage = 1;
+            loadUsers();
+        }
+
+        function renderCategoryDropdown() {
+            const container = document.getElementById('category-options');
+            container.innerHTML = allCategoryOptions.map(c => {
+                const checked = selectedCategories.includes(c.value);
+                return `
+                <label class="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer text-sm">
+                    <input type="checkbox" value="${escapeHtml(c.value)}" ${checked ? 'checked' : ''}
+                           onchange="toggleCategory('${escapeHtml(c.value)}')"
+                           class="w-4 h-4 text-blue-500 rounded focus:ring-blue-500 border-gray-300">
+                    <span class="text-gray-700">${escapeHtml(c.label)}</span>
+                </label>`;
+            }).join('');
+
+            // Обновим label кнопки
+            const label = document.getElementById('category-label');
+            if (selectedCategories.length === 0) label.textContent = 'Все категории';
+            else if (selectedCategories.length === 1) label.textContent = selectedCategories[0];
+            else label.textContent = selectedCategories.length + ' выбрано';
+        }
+
+        function renderSelectedCategories() {
+            const container = document.getElementById('selected-categories');
+            if (selectedCategories.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+            container.innerHTML = selectedCategories.map(c => `
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full">
+                    ${escapeHtml(c)}
+                    <button onclick="toggleCategory('${escapeHtml(c)}')" class="text-blue-400 hover:text-blue-700">
+                        <i class="fas fa-times text-[10px]"></i>
+                    </button>
+                </span>
+            `).join('');
+        }
+
+        // Закрытие дропдауна при клике вне
+        document.addEventListener('click', (e) => {
+            const wrapper = document.getElementById('category-select-wrapper');
+            if (wrapper && !wrapper.contains(e.target)) {
+                document.getElementById('category-dropdown').classList.add('hidden');
+            }
+        });
+
+        // ============================================================
+        // Инициализация
+        // ============================================================
+        document.addEventListener('DOMContentLoaded', () => {
+            loadCategories();
+            loadUsers();
+        });
+    </script>
+{% endblock %}

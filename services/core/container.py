@@ -251,7 +251,10 @@ class Container:
         # VectorSearchService — singleton (lazy import)
         def _create_vector_search_service():
             from services.vector_search import VectorSearchService
-            return VectorSearchService()
+            from config.settings import settings
+            return VectorSearchService(
+                persist_directory=settings.vector_search_persist_directory,
+            )
 
         self._services['VectorSearchService'] = None
         self._factories['VectorSearchService'] = _create_vector_search_service
