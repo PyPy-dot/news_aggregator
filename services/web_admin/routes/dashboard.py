@@ -50,18 +50,35 @@ async def dashboard_page(request: Request, user: dict = Depends(get_required_use
 # =============================================================================
 
 @router.get("/api/stats")
-async def dashboard_stats(user: Optional[dict] = Depends(get_optional_user)):
+async def dashboard_stats(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    user: Optional[dict] = Depends(get_optional_user),
+):
     """
-    Полная статистика с дельтами (сравнение за 24ч).
+    Полная статистика с фильтрацией по периоду.
 
-    Returns:
-        news, channels, users, tasks — total + delta_24h (количество за последние 24ч)
+    Query params:
+        start_date: "2026-08-01" (ISO format, optional)
+        end_date: "2026-08-17" (ISO format, optional)
+
+    Returns total (all-time) + period (within date range).
     """
     from database.models import TelegramPost, Channel, User, Task, GeneratedNews, RSSSource, WebSource
 
     db = get_database_service()
     now = datetime.now()
-    day_ago = now - timedelta(hours=24)
+
+    start = now - timedelta(hours=24)
+    end = now
+    if start_date:
+        try: start = datetime.fromisoformat(start_date)
+        except ValueError: pass
+    if end_date:
+        try:
+            end = datetime.fromisoformat(end_date)
+            if end.time() == datetime.min.time(): end = end.replace(hour=23, minute=59, second=59)
+        except ValueError: pass
 
     stats = {}
     try:
@@ -70,29 +87,35 @@ async def dashboard_stats(user: Optional[dict] = Depends(get_optional_user)):
             r = await session.execute(select(func.count()).select_from(TelegramPost))
             total_posts = r.scalar() or 0
             r = await session.execute(
-                select(func.count()).select_from(TelegramPost).where(TelegramPost.created_at >= day_ago)
+                select(func.count()).select_from(TelegramPost).where(
+                    TelegramPost.created_at >= start, TelegramPost.created_at <= end
+                )
             )
-            stats["news"] = {"total": total_posts, "delta_24h": r.scalar() or 0}
+            stats["news"] = {"total": total_posts, "period": r.scalar() or 0}
 
             # Generated news
             r = await session.execute(select(func.count()).select_from(GeneratedNews))
-            total_generated = r.scalar() or 0
+            total_gen = r.scalar() or 0
             r = await session.execute(
-                select(func.count()).select_from(GeneratedNews).where(GeneratedNews.created_at >= day_ago)
+                select(func.count()).select_from(GeneratedNews).where(
+                    GeneratedNews.created_at >= start, GeneratedNews.created_at <= end
+                )
             )
-            stats["generated_news"] = {"total": total_generated, "delta_24h": r.scalar() or 0}
+            stats["generated_news"] = {"total": total_gen, "period": r.scalar() or 0}
 
             # Channels
             r = await session.execute(select(func.count()).select_from(Channel))
-            stats["channels"] = {"total": r.scalar() or 0, "delta_24h": 0}
+            stats["channels"] = {"total": r.scalar() or 0}
 
             # Users
             r = await session.execute(select(func.count()).select_from(User))
             total_users = r.scalar() or 0
             r = await session.execute(
-                select(func.count()).select_from(User).where(User.created_at >= day_ago)
+                select(func.count()).select_from(User).where(
+                    User.created_at >= start, User.created_at <= end
+                )
             )
-            stats["users"] = {"total": total_users, "delta_24h": r.scalar() or 0}
+            stats["users"] = {"total": total_users, "period": r.scalar() or 0}
 
             # Subscriptions
             r = await session.execute(
@@ -108,8 +131,7 @@ async def dashboard_stats(user: Optional[dict] = Depends(get_optional_user)):
                     or_(Task.status == 'pending', Task.status == 'active')
                 )
             )
-            active_tasks = r.scalar() or 0
-            stats["tasks"] = {"total": total_tasks, "active": active_tasks, "delta_24h": 0}
+            stats["tasks"] = {"total": total_tasks, "active": r.scalar() or 0}
 
             # RSS & Web sources
             r = await session.execute(select(func.count()).select_from(RSSSource).where(RSSSource.is_active == True))
@@ -117,10 +139,16 @@ async def dashboard_stats(user: Optional[dict] = Depends(get_optional_user)):
             r = await session.execute(select(func.count()).select_from(WebSource).where(WebSource.is_active == True))
             stats["web_sources"] = r.scalar() or 0
 
+        return JSONResponse(content={
+            "success": True,
+            "start": start.strftime("%Y-%m-%d"),
+            "end": end.strftime("%Y-%m-%d"),
+            **stats
+        })
+
     except Exception as e:
         logger.error(f"Dashboard stats error: {e}")
-
-    return JSONResponse(content={"success": True, **stats})
+        return JSONResponse(content={"success": False})
 
 
 # =============================================================================
@@ -775,3 +803,190 @@ async def dashboard_posts_by_category_urgency(user: Optional[dict] = Depends(get
     except Exception as e:
         logger.error(f"Category urgency matrix error: {e}")
         return JSONResponse(content={"success": True, "matrix": []})
+
+
+# =============================================================================
+# API — time-series (универсальный эндпоинт для всех графиков)
+# =============================================================================
+
+@router.get("/api/time-series")
+async def dashboard_time_series(
+    metrics: str = "posts,generated",
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    granularity: str = "day",
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    """
+    Универсальный эндпоинт для временных рядов.
+
+    Query params:
+        metrics: комма-separated список: posts, generated, rss, web, tasks
+        start_date: "2026-08-01" (ISO, опционально)
+        end_date: "2026-08-17" (ISO, опционально)
+        granularity: day | week | month (группировка по осям)
+
+    Returns:
+        {labels: [...], series: {posts: [...], generated: [...]}, stats: {...}}
+    """
+    from database.models import TelegramPost, GeneratedNews, RSSNews, WebNews, Task
+
+    db = get_database_service()
+    now = datetime.now()
+
+    # Parse dates
+    start = now - timedelta(days=30)
+    end = now
+    if start_date:
+        try:
+            start = datetime.fromisoformat(start_date)
+        except ValueError:
+            pass
+    if end_date:
+        try:
+            end = datetime.fromisoformat(end_date)
+            if end.tzinfo is None and end.time() == datetime.min.time():
+                end = end.replace(hour=23, minute=59, second=59)
+        except ValueError:
+            pass
+
+    # Granularity format for strftime
+    gran_map = {
+        "hour": {"fmt": "%Y-%m-%d %H:00", "days": 1},
+        "day": {"fmt": "%m.%d", "days": None},
+        "week": {"fmt": "%Y-W%W", "days": None},
+        "month": {"fmt": "%Y-%m", "days": None},
+    }
+    gran = gran_map.get(granularity, gran_map["day"])
+
+    # Parse requested metrics
+    requested = [m.strip() for m in metrics.split(",") if m.strip()]
+
+    # Model -> metric mapping
+    model_map = {
+        "posts": TelegramPost,
+        "generated": GeneratedNews,
+        "rss": RSSNews,
+        "web": WebNews,
+        "tasks": Task,
+    }
+
+    # For hour granularity, limit to 1 day
+    if granularity == "hour":
+        start = max(start, now - timedelta(hours=23))
+
+    result = {}
+    period_stats = {}
+
+    try:
+        async with db.session_context() as session:
+            for metric in requested:
+                model = model_map.get(metric)
+                if not model:
+                    continue
+
+                # Period total
+                r = await session.execute(
+                    select(func.count()).select_from(model).where(
+                        model.created_at >= start, model.created_at <= end
+                    )
+                )
+                period_stats[metric] = r.scalar() or 0
+
+                if metric != "hour":
+                    # Time series
+                    r = await session.execute(
+                        select(
+                            func.strftime(gran["fmt"], model.created_at).label("bucket"),
+                            func.count(model.id)
+                        )
+                        .where(model.created_at >= start, model.created_at <= end)
+                        .group_by(func.strftime(gran["fmt"], model.created_at))
+                        .order_by(text("1"))
+                    )
+                    buckets = {row[0]: row[1] for row in r.all()}
+                    result[metric] = buckets
+                else:
+                    # For hours: aggregate all requested metrics into hourly buckets
+                    r = await session.execute(
+                        select(
+                            func.strftime("%H", model.created_at).label("bucket"),
+                            func.count(model.id)
+                        )
+                        .where(model.created_at >= start, model.created_at <= end)
+                        .group_by(func.strftime("%H", model.created_at))
+                        .order_by(text("1"))
+                    )
+                    buckets = {row[0]: row[1] for row in r.all()}
+                    result[metric] = buckets
+
+        # Build labels and series arrays
+        all_buckets = set()
+        for series_buckets in result.values():
+            all_buckets.update(series_buckets.keys())
+
+        if granularity == "hour":
+            labels = [f"{h:02d}:00" for h in range(24)]
+            series = {m: [result.get(m, {}).get(str(h).zfill(2), 0) for h in range(24)] for m in requested if m in result}
+        else:
+            labels = sorted(all_buckets)
+            if not labels:
+                labels = []
+            series = {m: [result.get(m, {}).get(b, 0) for b in labels] for m in requested if m in result}
+
+        return JSONResponse(content={
+            "success": True,
+            "labels": labels,
+            "series": series,
+            "stats": period_stats,
+            "start": start.strftime("%Y-%m-%d"),
+            "end": end.strftime("%Y-%m-%d"),
+            "granularity": granularity,
+        })
+    except Exception as e:
+        logger.error(f"Time series error: {e}")
+        # PostgreSQL fallback with to_char
+        try:
+            async with db.session_context() as session:
+                pg_fmt = {"hour": "HH24:00", "day": "MM.DD", "week": "IYYY-WWW", "month": "YYYY-MM"}.get(granularity, "MM.DD")
+
+                for metric in requested:
+                    model = model_map.get(metric)
+                    if not model:
+                        continue
+                    r = await session.execute(
+                        select(func.count()).select_from(model).where(
+                            model.created_at >= start, model.created_at <= end
+                        )
+                    )
+                    period_stats[metric] = r.scalar() or 0
+
+                    r = await session.execute(
+                        select(
+                            func.to_char(model.created_at, pg_fmt).label("bucket"),
+                            func.count(model.id)
+                        )
+                        .where(model.created_at >= start, model.created_at <= end)
+                        .group_by(func.to_char(model.created_at, pg_fmt))
+                        .order_by(text("1"))
+                    )
+                    result[metric] = {row[0]: row[1] for row in r.all()}
+
+            all_buckets = set()
+            for sb in result.values():
+                all_buckets.update(sb.keys())
+            labels = sorted(all_buckets)
+            series = {m: [result.get(m, {}).get(b, 0) for b in labels] for m in requested if m in result}
+
+            return JSONResponse(content={
+                "success": True,
+                "labels": labels,
+                "series": series,
+                "stats": period_stats,
+                "start": start.strftime("%Y-%m-%d"),
+                "end": end.strftime("%Y-%m-%d"),
+                "granularity": granularity,
+            })
+        except Exception as e2:
+            logger.error(f"Time series PG fallback error: {e2}")
+            return JSONResponse(content={"success": True, "labels": [], "series": {}, "stats": {}})

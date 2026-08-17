@@ -4,23 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="f50a90aa-42af-4089-8f79-0b118ce41214" name="Changes" comment="0.1">
-      <change beforePath="$PROJECT_DIR$/.claude/plans/channels-page.md" beforeDir="false" afterPath="$PROJECT_DIR$/.claude/plans/channels-page.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/vector_store/.reindexing" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/vector_store/01718f33-b0b9-4104-b0f3-a9935fecb0b6/data_level0.bin" beforeDir="false" afterPath="$PROJECT_DIR$/vector_store/01718f33-b0b9-4104-b0f3-a9935fecb0b6/data_level0.bin" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/vector_store/01718f33-b0b9-4104-b0f3-a9935fecb0b6/length.bin" beforeDir="false" afterPath="$PROJECT_DIR$/vector_store/01718f33-b0b9-4104-b0f3-a9935fecb0b6/length.bin" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/vector_store/47aae36b-c5f2-45e6-a89e-d7753c4eeb13/data_level0.bin" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/vector_store/47aae36b-c5f2-45e6-a89e-d7753c4eeb13/header.bin" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/vector_store/47aae36b-c5f2-45e6-a89e-d7753c4eeb13/length.bin" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/vector_store/47aae36b-c5f2-45e6-a89e-d7753c4eeb13/link_lists.bin" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/vector_store/9717cd61-2121-4ac7-83b3-6a4e53d33f0e/data_level0.bin" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/vector_store/9717cd61-2121-4ac7-83b3-6a4e53d33f0e/header.bin" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/vector_store/9717cd61-2121-4ac7-83b3-6a4e53d33f0e/length.bin" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/vector_store/9717cd61-2121-4ac7-83b3-6a4e53d33f0e/link_lists.bin" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/vector_store/c8c12656-7e5c-443f-a931-e46f7fc50d2f/length.bin" beforeDir="false" afterPath="$PROJECT_DIR$/vector_store/c8c12656-7e5c-443f-a931-e46f7fc50d2f/length.bin" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/vector_store/chroma.sqlite3" beforeDir="false" afterPath="$PROJECT_DIR$/vector_store/chroma.sqlite3" afterDir="false" />
-    </list>
+    <list default="true" id="f50a90aa-42af-4089-8f79-0b118ce41214" name="Changes" comment="0.1" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />

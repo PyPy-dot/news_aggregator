@@ -26,6 +26,29 @@
 
 {% block content %}
 
+    <!-- Date range & granularity controls -->
+    <div class="bg-white rounded-xl shadow-sm p-4 mb-6">
+        <div class="flex flex-wrap items-center gap-3">
+            <div class="flex items-center space-x-2">
+                <i class="fas fa-calendar-alt text-gray-400"></i>
+                <input type="date" id="dash-start-date" class="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                <span class="text-gray-400">—</span>
+                <input type="date" id="dash-end-date" class="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            <div class="flex items-center space-x-1 bg-gray-100 rounded-lg p-0.5">
+                <button onclick="setGranularity('day')" id="gran-day" class="gran-btn px-3 py-1 text-xs rounded-md font-medium transition-all bg-white text-gray-800 shadow-sm">День</button>
+                <button onclick="setGranularity('week')" id="gran-week" class="gran-btn px-3 py-1 text-xs rounded-md font-medium transition-all text-gray-500 hover:text-gray-700">Неделя</button>
+                <button onclick="setGranularity('month')" id="gran-month" class="gran-btn px-3 py-1 text-xs rounded-md font-medium transition-all text-gray-500 hover:text-gray-700">Месяц</button>
+            </div>
+            <div class="flex items-center space-x-2 ml-auto">
+                <button onclick="setPreset(7)" class="px-3 py-1.5 text-xs bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 font-medium transition-colors">7 дней</button>
+                <button onclick="setPreset(30)" class="px-3 py-1.5 text-xs bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 font-medium transition-colors">30 дней</button>
+                <button onclick="setPreset(90)" class="px-3 py-1.5 text-xs bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 font-medium transition-colors">90 дней</button>
+                <span class="text-xs text-gray-400" id="dash-date-label"></span>
+            </div>
+        </div>
+    </div>
+
     <!-- Tab navigation -->
     <div class="flex border-b border-gray-200 mb-6">
         <button class="tab-btn active px-4 py-3 text-sm border-b-2 border-transparent" data-tab="overview" onclick="switchTab('overview')">
@@ -346,6 +369,70 @@ const COLORS = {
 };
 
 // ============================================================
+// Date range & granularity state (shared across all tabs)
+// ============================================================
+let dashGranularity = 'day';
+let dashStartDate = '';
+let dashEndDate = '';
+
+function setGranularity(g) {
+    dashGranularity = g;
+    document.querySelectorAll('.gran-btn').forEach(b => {
+        b.classList.remove('bg-white','text-gray-800','shadow-sm');
+        b.classList.add('text-gray-500');
+    });
+    const active = document.getElementById('gran-'+g);
+    if (active) { active.classList.add('bg-white','text-gray-800','shadow-sm'); active.classList.remove('text-gray-500'); }
+    try { localStorage.setItem('dash_gran', g); } catch(e){}
+    reloadCurrentTab();
+}
+
+function setPreset(days) {
+    const now = new Date();
+    const start = new Date(now);
+    start.setDate(start.getDate() - days);
+    dashStartDate = formatDate(start);
+    dashEndDate = formatDate(now);
+    document.getElementById('dash-start-date').value = dashStartDate;
+    document.getElementById('dash-end-date').value = dashEndDate;
+    updateDateLabel();
+    try { localStorage.setItem('dash_start', dashStartDate); localStorage.setItem('dash_end', dashEndDate); } catch(e){}
+    reloadCurrentTab();
+}
+
+function formatDate(d) {
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+
+function updateDateLabel() {
+    const el = document.getElementById('dash-date-label');
+    if (el && dashStartDate && dashEndDate) {
+        el.textContent = `${dashStartDate} → ${dashEndDate}`;
+    }
+}
+
+function getDashParams() {
+    let p = '';
+    if (dashStartDate) p += `&start_date=${dashStartDate}`;
+    if (dashEndDate) p += `&end_date=${dashEndDate}`;
+    return p;
+}
+
+function reloadCurrentTab() {
+    if (currentTab === 'overview') loadOverview();
+    else if (currentTab === 'analytics') loadAnalytics();
+    else if (currentTab === 'performance') loadPerformance();
+}
+
+// Watch date inputs for manual changes
+document.addEventListener('DOMContentLoaded', () => {
+    const si = document.getElementById('dash-start-date');
+    const ei = document.getElementById('dash-end-date');
+    if (si) si.addEventListener('change', () => { dashStartDate = si.value; updateDateLabel(); reloadCurrentTab(); });
+    if (ei) ei.addEventListener('change', () => { dashEndDate = ei.value; updateDateLabel(); reloadCurrentTab(); });
+});
+
+// ============================================================
 // Tab switching
 // ============================================================
 let currentTab = 'overview';
@@ -384,22 +471,30 @@ async function loadOverview() {
 }
 
 async function loadStatCards() {
-    const d = await jf('/dashboard/api/stats'); if (!d) return;
+    const params = getDashParams();
+    const d = await jf(`/dashboard/api/stats${params?'?'+params.slice(1):''}`); if (!d) return;
     const el = (id) => document.getElementById(id);
     el('stat-posts').textContent = d.news?.total??0;
-    setDelta('stat-posts-delta', d.news?.delta_24h);
+    setDelta('stat-posts-delta', d.news?.period);
     el('stat-generated').textContent = d.generated_news?.total??0;
-    setDelta('stat-generated-delta', d.generated_news?.delta_24h);
+    setDelta('stat-generated-delta', d.generated_news?.period);
     el('stat-channels').textContent = d.channels?.total??0;
     el('stat-subscriptions').textContent = `${d.subscriptions??0} подписок`;
     el('stat-users').textContent = d.users?.total??0;
-    setDelta('stat-users-delta', d.users?.delta_24h);
+    setDelta('stat-users-delta', d.users?.period);
+    if (d.start && d.end) {
+        document.getElementById('dash-start-date').value = d.start;
+        document.getElementById('dash-end-date').value = d.end;
+        dashStartDate = d.start; dashEndDate = d.end;
+        updateDateLabel();
+    }
 }
 
 function setDelta(id, v) {
     const el=document.getElementById(id); if(!el) return;
-    if(v>0) el.innerHTML=`<span class="text-green-600"><i class="fas fa-arrow-up"></i> +${v} за 24ч</span>`;
-    else el.innerHTML=`<span class="text-gray-400">${v||0} за 24ч</span>`;
+    const label = (dashStartDate||dashEndDate) ? 'за период' : 'за 24ч';
+    if(v>0) el.innerHTML=`<span class="text-green-600"><i class="fas fa-arrow-up"></i> ${v} ${label}</span>`;
+    else el.innerHTML=`<span class="text-gray-400">${v||0} ${label}</span>`;
 }
 
 async function loadSources() {
@@ -412,12 +507,15 @@ async function loadSources() {
 
 let chartHourly=null;
 async function loadHourlyChart() {
-    const d=await jf('/dashboard/api/activity-hourly'); if(!d) return;
+    const params = getDashParams();
+    const d=await jf(`/dashboard/api/time-series?metrics=posts,generated&granularity=hour${params}`); if(!d) return;
     if(chartHourly) chartHourly.destroy();
+    const postsData = d.series?.posts || [];
+    const genData = d.series?.generated || [];
     chartHourly=new Chart(document.getElementById('chart-hourly'), {
-        type:'bar', data:{labels:d.hours, datasets:[
-            {label:'Посты',data:d.posts,backgroundColor:COLORS.blue+'CC',borderColor:COLORS.blue,borderWidth:1,borderRadius:4,order:2},
-            {label:'AI новости',data:d.generated,type:'line',borderColor:COLORS.indigo,backgroundColor:COLORS.indigo+'20',fill:true,tension:.4,pointRadius:2,order:1}
+        type:'bar', data:{labels:d.labels, datasets:[
+            {label:'Посты',data:postsData,backgroundColor:COLORS.blue+'CC',borderColor:COLORS.blue,borderWidth:1,borderRadius:4,order:2},
+            {label:'AI новости',data:genData,type:'line',borderColor:COLORS.indigo,backgroundColor:COLORS.indigo+'20',fill:true,tension:.4,pointRadius:2,order:1}
         ]},
         options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:15}}},
             scales:{x:{grid:{display:false},ticks:{maxRotation:0,maxTicksLimit:12}},y:{beginAtZero:true,grid:{color:'#f3f4f6'},ticks:{precision:0}}}}
@@ -426,14 +524,15 @@ async function loadHourlyChart() {
 
 let chartTrend=null;
 async function loadTrendChart() {
-    const d=await jf('/dashboard/api/trend-7d'); if(!d) return;
+    const params = getDashParams();
+    const d=await jf(`/dashboard/api/time-series?metrics=posts,generated&granularity=${dashGranularity}${params}`); if(!d) return;
     if(chartTrend) chartTrend.destroy();
     chartTrend=new Chart(document.getElementById('chart-trend'), {
-        type:'line',data:{labels:d.days,datasets:[
-            {label:'Посты',data:d.posts,borderColor:COLORS.blue,backgroundColor:COLORS.blue+'20',fill:true,tension:.4,pointRadius:4},
-            {label:'AI новости',data:d.generated,borderColor:COLORS.indigo,backgroundColor:COLORS.indigo+'20',fill:true,tension:.4,pointRadius:4}
+        type:'line',data:{labels:d.labels,datasets:[
+            {label:'Посты',data:d.series?.posts||[],borderColor:COLORS.blue,backgroundColor:COLORS.blue+'20',fill:true,tension:.4,pointRadius:4},
+            {label:'AI новости',data:d.series?.generated||[],borderColor:COLORS.indigo,backgroundColor:COLORS.indigo+'20',fill:true,tension:.4,pointRadius:4}
         ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:15}}},
-            scales:{x:{grid:{display:false}},y:{beginAtZero:true,grid:{color:'#f3f4f6'},ticks:{precision:0}}}}
+            scales:{x:{grid:{display:false},ticks:{maxRotation:0}},y:{beginAtZero:true,grid:{color:'#f3f4f6'},ticks:{precision:0}}}}
     });
 }
 
@@ -532,13 +631,14 @@ async function loadProcessingStats() {
 
 let chartSources30d=null;
 async function loadSources30dChart() {
-    const d=await jf('/dashboard/api/sources-30d'); if(!d) return;
+    const params = getDashParams();
+    const d=await jf(`/dashboard/api/time-series?metrics=posts,rss,web&granularity=${dashGranularity}${params}`); if(!d) return;
     if(chartSources30d) chartSources30d.destroy();
     chartSources30d=new Chart(document.getElementById('chart-sources30d'),{
-        type:'line',data:{labels:d.days,datasets:[
-            {label:'Telegram',data:d.telegram,borderColor:COLORS.blue,backgroundColor:COLORS.blue+'15',fill:true,tension:.3,pointRadius:2},
-            {label:'RSS',data:d.rss,borderColor:COLORS.orange,backgroundColor:COLORS.orange+'15',fill:true,tension:.3,pointRadius:2},
-            {label:'Web',data:d.web,borderColor:COLORS.cyan,backgroundColor:COLORS.cyan+'15',fill:true,tension:.3,pointRadius:2}
+        type:'line',data:{labels:d.labels,datasets:[
+            {label:'Telegram',data:d.series?.posts||[],borderColor:COLORS.blue,backgroundColor:COLORS.blue+'15',fill:true,tension:.3,pointRadius:2},
+            {label:'RSS',data:d.series?.rss||[],borderColor:COLORS.orange,backgroundColor:COLORS.orange+'15',fill:true,tension:.3,pointRadius:2},
+            {label:'Web',data:d.series?.web||[],borderColor:COLORS.cyan,backgroundColor:COLORS.cyan+'15',fill:true,tension:.3,pointRadius:2}
         ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:15}}},
             scales:{x:{grid:{display:false},ticks:{maxRotation:0,maxTicksLimit:15}},y:{beginAtZero:true,grid:{color:'#f3f4f6'},ticks:{precision:0}}}}
     });
@@ -603,14 +703,15 @@ async function loadUrgencyCategoryMatrix() {
 
 let chartAnalyticsTrend=null;
 async function loadAnalyticsTrend() {
-    const d=await jf('/dashboard/api/trend-7d'); if(!d) return;
+    const params = getDashParams();
+    const d=await jf(`/dashboard/api/time-series?metrics=posts,generated&granularity=${dashGranularity}${params}`); if(!d) return;
     if(chartAnalyticsTrend) chartAnalyticsTrend.destroy();
     chartAnalyticsTrend=new Chart(document.getElementById('chart-analytics-trend'),{
-        type:'bar',data:{labels:d.days,datasets:[
-            {label:'Посты',data:d.posts,backgroundColor:COLORS.blue+'CC',borderColor:COLORS.blue,borderWidth:1,borderRadius:4},
-            {label:'AI новости',data:d.generated,backgroundColor:COLORS.indigo+'CC',borderColor:COLORS.indigo,borderWidth:1,borderRadius:4}
+        type:'bar',data:{labels:d.labels,datasets:[
+            {label:'Посты',data:d.series?.posts||[],backgroundColor:COLORS.blue+'CC',borderColor:COLORS.blue,borderWidth:1,borderRadius:4},
+            {label:'AI новости',data:d.series?.generated||[],backgroundColor:COLORS.indigo+'CC',borderColor:COLORS.indigo,borderWidth:1,borderRadius:4}
         ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:15}}},
-            scales:{x:{grid:{display:false}},y:{beginAtZero:true,grid:{color:'#f3f4f6'},ticks:{precision:0}}}}
+            scales:{x:{grid:{display:false},ticks:{maxRotation:0}},y:{beginAtZero:true,grid:{color:'#f3f4f6'},ticks:{precision:0}}}}
     });
 }
 
@@ -762,17 +863,52 @@ async function loadPerfLLMLatency() {
 // ============================================================
 // Init
 // ============================================================
-document.addEventListener('DOMContentLoaded', () => {
+(function initDashboard() {
     // Restore saved tab
     try { const saved=localStorage.getItem('dashboard_tab'); if(saved && document.getElementById('tab-'+saved)) switchTab(saved); } catch(e){}
-    // Load overview by default
+
+    // Restore granularity
+    try {
+        const g = localStorage.getItem('dash_gran');
+        if (g && ['day','week','month'].includes(g)) { dashGranularity = g; setGranularitySilent(g); }
+    } catch(e){}
+
+    // Restore or set default dates (last 30 days)
+    const now = new Date();
+    const thirtyAgo = new Date(now);
+    thirtyAgo.setDate(thirtyAgo.getDate() - 30);
+
+    try {
+        dashStartDate = localStorage.getItem('dash_start') || formatDate(thirtyAgo);
+        dashEndDate = localStorage.getItem('dash_end') || formatDate(now);
+    } catch(e) {
+        dashStartDate = formatDate(thirtyAgo);
+        dashEndDate = formatDate(now);
+    }
+
+    document.getElementById('dash-start-date').value = dashStartDate;
+    document.getElementById('dash-end-date').value = dashEndDate;
+    updateDateLabel();
+
+    // Load overview
     loadOverview();
+
     // Auto-refresh current tab every 60s
     setInterval(() => {
         if(currentTab==='overview') loadOverview();
         else if(currentTab==='analytics') loadAnalytics();
         else if(currentTab==='performance') loadPerformance();
     }, 60000);
-});
+})();
+
+function setGranularitySilent(g) {
+    dashGranularity = g;
+    document.querySelectorAll('.gran-btn').forEach(b => {
+        b.classList.remove('bg-white','text-gray-800','shadow-sm');
+        b.classList.add('text-gray-500');
+    });
+    const active = document.getElementById('gran-'+g);
+    if (active) { active.classList.add('bg-white','text-gray-800','shadow-sm'); active.classList.remove('text-gray-500'); }
+}
 </script>
 {% endblock %}
