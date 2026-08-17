@@ -309,24 +309,19 @@ async def dashboard_tasks_by_status(user: Optional[dict] = Depends(get_optional_
 
     db = get_database_service()
     try:
+        day_ago = datetime.now() - timedelta(hours=24)
+
         async with db.session_context() as session:
             result = await session.execute(
                 select(Task.status, func.count(Task.id)).group_by(Task.status)
             )
             rows = result.all()
+            status_counts = {row[0]: row[1] for row in rows}
 
-        status_counts = {row[0]: row[1] for row in rows}
-
-        # Tasks created in last 24h
-        day_ago = datetime.now() - timedelta(hours=24)
-        r = await db.session_context().__aenter__()
-        try:
-            r2 = await r.execute(
+            delta_result = await session.execute(
                 select(func.count()).select_from(Task).where(Task.created_at >= day_ago)
             )
-            delta = r2.scalar() or 0
-        finally:
-            await r.close()
+            delta = delta_result.scalar() or 0
 
         return JSONResponse(content={"success": True, **status_counts, "delta_24h": delta})
     except Exception as e:
