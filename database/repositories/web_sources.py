@@ -81,17 +81,20 @@ class WebSourceRepository(BaseRepository[WebSource]):
         Returns:
             Список источников для проверки
         """
-        result = await self.session.execute(
-            select(WebSource)
-            .where(WebSource.is_active == True)
-            .where(
-                (WebSource.last_checked.is_(None)) |
-                (WebSource.last_checked < datetime.now(timezone.utc) -
-                 timedelta(minutes=WebSource.check_interval_minutes))
-            )
-            .limit(limit)
-        )
-        return result.scalars().all()
+        now = datetime.now(timezone.utc)
+
+        # Получаем все активные источники
+        all_sources = await self.get_active(limit=limit)
+
+        # Фильтруем в Python: проверяем каждый источник
+        due = []
+        for source in all_sources:
+            if source.last_checked is None:
+                due.append(source)
+            elif source.last_checked < now - timedelta(minutes=source.check_interval_minutes):
+                due.append(source)
+
+        return due[:limit]
 
     async def mark_checked(self, source_id: int) -> bool:
         """Отметить источник как проверенный."""
