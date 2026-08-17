@@ -1,8 +1,8 @@
 # RSS Парсинг — реализация v3.5.0
 
-**Дата:** 2026-08-09  
+**Дата:** 2026-08-09 (база), 2026-08-17 (рефакторинг)  
 **Задача:** PLAN_SUMMARY_v3.5.0.md #3  
-**Статус:** ✅ Выполнено (базовая реализация)
+**Статус:** ✅ Выполнено — полный пайплайн через CategorizationQueue
 
 ---
 
@@ -208,11 +208,42 @@ pytest tests/test_rss/test_parser.py -v
 - [x] RSS процессор сервис
 - [x] Интеграция со scheduler (каждые 5 минут)
 - [x] Тесты (11 тестов)
-- [ ] Telegram хендлеры
-- [ ] Настройка по умолчанию
+- [x] Интеграция через CategorizationQueue (v4.2.0)
+
+---
+
+## 🚀 Обновление v4.2.0 (2026-08-17)
+
+### Рефакторинг: RSS через CategorizationQueue
+
+**До:**
+```
+RSS Parser → rss_news → CategorizerAgent (прямо в процессоре)
+  → create_post(channel_id=-1001) → posts
+```
+
+**После:**
+```
+RSS Parser → rss_news → CategorizationQueue → CategorizationProcessor
+  → CategorizerAgent → AnalystAgent
+  → rss_news (обновлена: category, urgency, tags, confidence)
+  → Orchestrator → Editor → Archivist → generated_news
+```
+
+### Что изменилось:
+- `RSSProcessorService.categorize_and_process_news()` больше не создаёт `posts` напрямую
+- Вместо этого: создаёт `CategorizationTask(source_type='rss')` и кладёт в `CategorizationQueue`
+- `CategorizationProcessor` обновляет `rss_news` через `update_category()`
+- RSS новости объединяются с другими источниками в сводках через `Orchestrator`
+
+### Новые поля в `rss_news`:
+- `urgency` — срочность 1-5 от AI
+- `category_confidence` — уверенность категории
+- `rate` — рейтинг 0-100
+- `generated_news_id` — ID сводки, в которую вошла новость
 
 ---
 
 **Исполнитель:** AI-агент Стефания  
-**Дата завершения:** 2026-08-09  
-**Статус:** ✅ **Базовая реализация готова к использованию**
+**Дата завершения:** 2026-08-09 (база), 2026-08-17 (рефакторинг)  
+**Статус:** ✅ **Полный пайплайн через CategorizationQueue**

@@ -170,18 +170,17 @@ class RSSProcessorService:
 
     async def categorize_and_process_news(self, limit: int = 50) -> int:
         """
-        Категоризировать и обработать необработанные RSS новости.
+        Отправить необработанные RSS новости в общую очередь категоризации.
 
         Args:
             limit: Максимальное количество новостей для обработки
 
         Returns:
-            int: Количество обработанных новостей
+            int: Количество отправленных в очередь новостей
         """
         rss_news_repo = self.repo_factory.rss_news()
-        posts_repo = self.repo_factory.posts()
+        rss_sources_repo = self.repo_factory.rss_sources()
 
-        # Получаем необработанные новости
         news_items = await rss_news_repo.get_unprocessed(limit=limit)
 
         if not news_items:
@@ -190,40 +189,53 @@ class RSSProcessorService:
 
         logger.info(f"🔍 Найдено {len(news_items)} необработанных RSS новостей")
 
-        processed_count = 0
+        # Получаем очередь из контейнера
+        categorization_queue = None
+        try:
+            from services.core.container import get_container
+            container = get_container()
+            if container:
+                categorization_queue = container.categorization_queue
+        except Exception:
+            pass
+
+        if not categorization_queue:
+            logger.error("❌ CategorizationQueue не инициализирован")
+            return 0
+
+        queued_count = 0
         for news in news_items:
             try:
+                # Получаем источник для title/description
+                source = await rss_sources_repo.get(news.source_id)
+                source_title = source.name if source else 'Неизвестно'
+                source_desc = source.description or ''
+
                 # Формируем текст для категоризации
                 text_for_categorization = f"{news.title}\n\n{news.description or ''}"
 
-                # Категоризуем через AI
-                category_result = await self.categorizer_agent.categorize(text_for_categorization)
+                # Создаём задачу на категоризацию
+                from services.categorization.queue import CategorizationTask
 
-                # Извлекаем категорию и срочность
-                category = category_result.get('category', 'Общее')
-                urgency = category_result.get('urgency', 3)
-
-                # Создаём пост из RSS новости
-                post = await posts_repo.create_post(
-                    channel_id=-1001,  # Специальный канал для RSS (настроить)
-                    text=f"{news.title}\n\n{news.content or news.description or ''}",
-                    category=category,
-                    urgency=urgency,
-                    tags=news.tags or '[]',
+                task = CategorizationTask(
+                    source_type='rss',
+                    source_id=news.id,
+                    prompt=text_for_categorization,
+                    original_text=text_for_categorization,
+                    title=source_title,
+                    desc=source_desc,
                 )
 
-                # Отмечаем новость как обработанную
-                await rss_news_repo.mark_processed(news.id, post.id)
-                processed_count += 1
-
-                logger.info(f"✅ Обработана RSS новость: {news.title[:50]}... → {category}")
+                await categorization_queue.add(task)
+                queued_count += 1
+                logger.debug(f"📨 RSS новость {news.id} отправлена в очередь категоризации")
 
             except Exception as e:
-                logger.error(f"❌ Ошибка обработки RSS новости: {e}")
+                logger.error(f"❌ Ошибка подготовки RSS новости: {e}")
                 continue
 
-        logger.info(f"📰 Обработано {processed_count}/{len(news_items)} RSS новостей")
-        return processed_count
+        logger.info(f"📨 Отправлено {queued_count}/{len(news_items)} RSS новостей в очередь")
+        return queued_count
 
 
 # Helper функция для получения сервиса

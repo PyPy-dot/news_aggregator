@@ -93,6 +93,7 @@ async def add_generated_news(
     text: str,
     category: str,
     tags: list[str],
+    source_ids: Optional[list[str]] = None,
     source_event_ids: Optional[list[int]] = None,
     moderation_status: str = 'pending',
     publisher_channel_id: Optional[int] = None,
@@ -105,6 +106,7 @@ async def add_generated_news(
         text: Текст новости
         category: Категория
         tags: Теги новости
+        source_ids: ID исходных новостей с префиксом (["tg_5", "rss_13", "web_10"])
         source_event_ids: ID событий
         moderation_status: Статус модерации
         publisher_channel_id: ID канала публикации (опционально)
@@ -119,6 +121,7 @@ async def add_generated_news(
         news = await factory.news().create_news(
             text=text,
             category=category,
+            source_ids=source_ids,
             source_event_ids=source_event_ids,
             tags=tags,
             moderation_status=moderation_status,

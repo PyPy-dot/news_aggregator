@@ -14,6 +14,8 @@ from database.repositories.categories import CategoryRepository
 from database.repositories.tasks import TaskRepository
 from database.repositories.rss_sources import RSSSourceRepository
 from database.repositories.rss_news import RSSNewsRepository
+from database.repositories.web_sources import WebSourceRepository
+from database.repositories.web_news import WebNewsRepository
 
 
 class RepositoryFactory:
@@ -74,6 +76,14 @@ class RepositoryFactory:
     def rss_news(self) -> RSSNewsRepository:
         """Создать RSSNewsRepository."""
         return RSSNewsRepository(self.session)
+
+    def web_sources(self) -> WebSourceRepository:
+        """Создать WebSourceRepository."""
+        return WebSourceRepository(self.session)
+
+    def web_news(self) -> WebNewsRepository:
+        """Создать WebNewsRepository."""
+        return WebNewsRepository(self.session)
 
     def all(self):
         """

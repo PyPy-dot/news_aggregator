@@ -7,12 +7,13 @@ Notification Service — уведомления админов о новых н�
 
 import asyncio
 import html
-import logging
 import json
-from typing import Optional, List, TYPE_CHECKING
+import logging
+from typing import TYPE_CHECKING, Optional
 
 import aiohttp
-from aiohttp import ClientTimeout, ClientConnectionError, ClientError
+from aiohttp import ClientConnectionError, ClientError
+from aiogram.exceptions import TelegramNetworkError
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,25 +30,51 @@ if TYPE_CHECKING:
 
 class NotificationService:
     """
-    Сервис для отправки уведомлений админам.
+    Сервис для отправки уведомлений админам (singleton).
 
     Отправляет уведомления всем администраторам в БД через Telegram бота.
+    Бот подхватывается лениво — при первом обращении к .bot, если не был
+    передан явно в конструктор.
 
     Attributes:
-        _bot: aiogram Bot для отправки уведомлений
+        _bot: aiogram Bot для отправки уведомлений (может быть установлен позже)
     """
 
-    def __init__(self, bot: Optional['Bot'] = None) -> None:
-        """
-        Инициализация сервиса уведомлений.
+    _instance: Optional['NotificationService'] = None
 
-        Args:
-            bot: aiogram Bot экземпляр для отправки уведомлений
-        """
-        self._bot = bot
+    def __new__(cls, bot: Optional['Bot'] = None) -> 'NotificationService':
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._bot = bot
+        elif bot is not None:
+            # Обновляем бот, если он появился позже
+            cls._instance._bot = bot
+        return cls._instance
+
+    @classmethod
+    def reset(cls) -> None:
+        """Сбросить singleton (для тестов)."""
+        cls._instance = None
+
+    @property
+    def bot(self) -> Optional['Bot']:
+        """Получить бот — явно установленный или подхваченный из BotService."""
+        if self._bot is not None:
+            return self._bot
+        # Lazy: попробуем взять из BotService
+        try:
+            from services.bot.bot import get_bot_instance
+            self._bot = get_bot_instance(wait=False)
+        except Exception:
+            pass
+        return self._bot
+
+    @bot.setter
+    def bot(self, value: Optional['Bot']) -> None:
+        self._bot = value
 
 
-    async def _get_admin_ids(self) -> List[int]:
+    async def _get_admin_ids(self) -> list[int]:
         """
         Получить Telegram ID всех администраторов.
 
@@ -56,8 +83,6 @@ class NotificationService:
         """
         db_service = get_database_service()
         async with db_service.session_context() as session:
-            from sqlalchemy import select
-            from database.models import User
             result = await session.execute(
                 select(User).where(User.role == 'admin')
             )
@@ -111,25 +136,40 @@ class NotificationService:
             )
             return False
 
-        if not self._bot:
+        if not self.bot:
             logger.warning(
                 f"⚠️ Бот не инициализирован, уведомление не отправлено. "
                 f"Пост ID={post_id} будет обработан планировщиком."
             )
             return False
 
-        # Форматируем сообщение в HTML
-        safe_text = html.escape(text[:500])
-        if len(text) > 500:
-            safe_text += '...'
+        # Форматируем текст: обрезаем, приводим переносы строк
+        preview = text.strip().replace('\n', ' ')
+        preview_text = preview[:200] + ('...' if len(preview) > 200 else '')
+
+        # Полное тело новости — в блоке-цитате
+        full_body = html.escape(text.strip())
+        if len(full_body) > 400:
+            full_body = full_body[:400] + '\n...'
+
+        # Уровень срочности — визуальный индикатор
+        if urgency >= 5:
+            urgency_label = "🔴 КРИТИЧЕСКАЯ"
+        elif urgency >= 4:
+            urgency_label = "🟠 ВЫСОКАЯ"
+        else:
+            urgency_label = f"{urgency}/5"
 
         message = (
             f"⚡️ <b>СРОЧНАЯ НОВОСТЬ НА МОДЕРАЦИИ</b>\n\n"
-            f"📁 <b>Категория:</b> {html.escape(str(category))}\n"
-            f"🔥 <b>Срочность:</b> {urgency}\n"
+            f"📁 <b>{html.escape(str(category))}</b> · {urgency_label}\n"
             f"📢 <b>Источник:</b> {html.escape(str(channel_title))}\n"
-            f"🆔 <b>ID:</b> {post_id}\n\n"
-            f"📝 <b>Текст:</b>\n{safe_text}"
+            f"🆔 ID <code>{post_id}</code>\n\n"
+            f"┌─ <b>Текст:</b>\n"
+            f"│ {html.escape(preview_text)}\n"
+            f"└─\n\n"
+            f"📝 <b>Полностью:</b>\n"
+            f"<blockquote expandable>{full_body}</blockquote>"
         )
 
         # Создаём inline-клавиатуру с кнопками одобрения/отклонения
@@ -156,28 +196,49 @@ class NotificationService:
                 retries = 3
                 for attempt in range(retries):
                     try:
-                        await self._bot.send_message(
+                        await self.bot.send_message(
                             admin_id,
                             message,
                             parse_mode='HTML',
                             reply_markup=keyboard,
-                            # Явный таймаут на операцию отправки
                             allow_sending_without_reply=True
                         )
                         logger.info(f"✅ Отправлено уведомление админу ID={admin_id}")
                         sent_count += 1
                         break
-                    except asyncio.TimeoutError as e:
+                    except TimeoutError as e:
                         if attempt < retries - 1:
                             logger.warning(
                                 f"⏳ Таймаут отправки админу ID={admin_id} "
-                                f"(попытка {attempt + 1}/{retries}), повтор..."
+                                f"(попытка {attempt + 1}/{retries}), повтор через {2 ** attempt}с..."
                             )
-                            await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                            await asyncio.sleep(2 ** attempt)
+                        else:
+                            raise
+                    except TelegramNetworkError as e:
+                        # Сетевые ошибки aiogram (Request timeout, connection reset) — ретраим
+                        if attempt < retries - 1:
+                            delay = 2 ** attempt
+                            logger.warning(
+                                f"⏳ Сетевая ошибка админу ID={admin_id} "
+                                f"(попытка {attempt + 1}/{retries}, {type(e).__name__}), повтор через {delay}с..."
+                            )
+                            await asyncio.sleep(delay)
                         else:
                             raise
                     except Exception as e:
-                        # Не временная ошибка — сразу логируем и продолжаем
+                        error_name = type(e).__name__
+                        # TelegramAPIError с timeout/flood — тоже ретраим
+                        if 'timeout' in str(e).lower() or 'flood' in str(e).lower():
+                            if attempt < retries - 1:
+                                delay = 2 ** attempt
+                                logger.warning(
+                                    f"⏳ {error_name} админу ID={admin_id} "
+                                    f"(попытка {attempt + 1}/{retries}), повтор через {delay}с..."
+                                )
+                                await asyncio.sleep(delay)
+                            else:
+                                raise
                         raise
 
             except Exception as e:
@@ -250,7 +311,7 @@ class NotificationService:
         for admin_id in admin_ids:
             try:
                 if self._bot:
-                    await self._bot.send_message(
+                    await self.bot.send_message(
                         admin_id,
                         message,
                         parse_mode='HTML',
@@ -307,7 +368,7 @@ class NotificationService:
         for admin_id in admin_ids:
             try:
                 if self._bot:
-                    await self._bot.send_message(
+                    await self.bot.send_message(
                         admin_id,
                         message,
                         parse_mode='HTML'
@@ -328,6 +389,8 @@ class NotificationService:
         tags: list[str],
         news_id: int,
         urgency: int = 1,
+        bot_username: str = '',
+        publisher_channel_link: str = '',
     ) -> int:
         """
         Отправить новость подписчикам с учётом предпочтений.
@@ -358,7 +421,7 @@ class NotificationService:
                 await session.refresh(subscriber)
 
                 if await self._send_to_subscriber(
-                    session, subscriber, news_text, category, tags, sent_count, urgency
+                    session, subscriber, news_text, category, tags, sent_count, urgency, news_id, bot_username, publisher_channel_link
                 ):
                     sent_count += 1
 
@@ -370,6 +433,8 @@ class NotificationService:
         news_id: int,
         ignore_preferences: bool = True,
         urgency: int = 1,
+        bot_username: str = '',
+        publisher_channel_link: str = '',
     ) -> int:
         """
         Отправить новость всем подписчикам (игнорируя предпочтения).
@@ -410,13 +475,14 @@ class NotificationService:
                 if ignore_preferences:
                     # Отправляем всем без проверки предпочтений
                     if await self._send_to_subscriber_simple(
-                        session, subscriber, news_text, sent_count, urgency, news_id
+                        session, subscriber, news_text, sent_count, urgency, news_id,
+                        category='', bot_username=bot_username, publisher_channel_link=publisher_channel_link,
                     ):
                         sent_count += 1
                 else:
                     # Отправляем с проверкой предпочтений
                     if await self._send_to_subscriber(
-                        session, subscriber, news_text, 'Общее', [], sent_count, urgency
+                        session, subscriber, news_text, 'Общее', [], sent_count, urgency, news_id, bot_username, publisher_channel_link
                     ):
                         sent_count += 1
 
@@ -430,6 +496,9 @@ class NotificationService:
         current_count: int,
         urgency: int = 1,
         news_id: int = None,
+        category: str = '',
+        bot_username: str = '',
+        publisher_channel_link: str = '',
     ) -> bool:
         """
         Отправить новость одному подписчику (без проверки предпочтений).
@@ -469,7 +538,7 @@ class NotificationService:
                 return False
 
             # Отправляем уведомление с retry logic для обработки таймаутов и сетевых ошибок
-            message = _format_subscriber_message(news_text, urgency)
+            message = _format_subscriber_message(news_text, urgency, category=category, bot_username=bot_username, publisher_channel_link=publisher_channel_link)
 
             # Retry logic: 3 попытки с экспоненциальной задержкой
             retries = 3
@@ -482,7 +551,7 @@ class NotificationService:
                         request_timeout=60  # Увеличенный таймаут: 60 секунд
                     )
                     return True
-                except (asyncio.TimeoutError, TimeoutError) as e:
+                except TimeoutError as e:
                     # Таймаут — пробуем снова
                     if attempt < retries - 1:
                         delay = 2 ** attempt  # 1с, 2с, 4с
@@ -497,7 +566,7 @@ class NotificationService:
                             f"({news_id_str}таймаут после {retries} попыток)"
                         )
                         return False
-                except (ClientTimeout, ClientConnectionError, ClientError) as e:
+                except (ClientConnectionError, ClientError) as e:
                     # Сетевые ошибки aiohttp — пробуем снова
                     if attempt < retries - 1:
                         delay = 2 ** attempt
@@ -556,6 +625,9 @@ class NotificationService:
         tags: list[str],
         current_count: int,
         urgency: int = 1,
+        news_id: int = None,
+        bot_username: str = '',
+        publisher_channel_link: str = '',
     ) -> bool:
         """
         Отправить новость одному подписчику.
@@ -563,6 +635,7 @@ class NotificationService:
         Args:
             session: SQLAlchemy сессия для обновления данных
             urgency: Срочность (1-5, >=4 — срочная новость)
+            news_id: ID новости (для логирования)
 
         Returns:
             True если отправлено успешно
@@ -591,22 +664,24 @@ class NotificationService:
             if telegram_id is None:
                 return False
 
+            news_id_str = f"news_id={news_id}, " if news_id else ""
+
             # Отправляем уведомление с retry logic для обработки таймаутов и сетевых ошибок
             if self._bot:
-                message = _format_subscriber_message(news_text, urgency)
+                message = _format_subscriber_message(news_text, urgency, category=category, bot_username=bot_username, publisher_channel_link=publisher_channel_link)
 
                 # Retry logic: 3 попытки с экспоненциальной задержкой
                 retries = 3
                 for attempt in range(retries):
                     try:
-                        await self._bot.send_message(
+                        await self.bot.send_message(
                             telegram_id,
                             message,
                             parse_mode='HTML',
                             request_timeout=60  # Увеличенный таймаут: 60 секунд
                         )
                         return True
-                    except (asyncio.TimeoutError, TimeoutError) as e:
+                    except TimeoutError as e:
                         # Таймаут — пробуем снова
                         if attempt < retries - 1:
                             delay = 2 ** attempt  # 1с, 2с, 4с
@@ -621,7 +696,7 @@ class NotificationService:
                                 f"({news_id_str}таймаут после {retries} попыток)"
                             )
                             return False
-                    except (ClientTimeout, ClientConnectionError, ClientError) as e:
+                    except (ClientConnectionError, ClientError) as e:
                         # Сетевые ошибки aiohttp — пробуем снова
                         if attempt < retries - 1:
                             delay = 2 ** attempt
@@ -636,11 +711,42 @@ class NotificationService:
                                 f"({news_id_str}сетевая ошибка: {type(e).__name__})"
                             )
                             return False
+                    except TelegramNetworkError as e:
+                        # Сетевые ошибки aiogram (Request timeout, connection reset) — ретраим
+                        if attempt < retries - 1:
+                            delay = 2 ** attempt
+                            logger.warning(
+                                f"⏳ Сетевая ошибка при отправке подписчику ID={telegram_id} "
+                                f"({news_id_str}попытка {attempt + 1}/{retries}, {type(e).__name__}), повтор через {delay}с..."
+                            )
+                            await asyncio.sleep(delay)
+                        else:
+                            logger.error(
+                                f"❌ Превышено количество попыток отправки подписчику ID={telegram_id} "
+                                f"({news_id_str}{type(e).__name__})"
+                            )
+                            return False
                     except Exception as e:
+                        error_name = type(e).__name__
+                        # TelegramAPIError с timeout/flood — тоже ретраим
+                        if 'timeout' in str(e).lower() or 'flood' in str(e).lower() or 'network' in error_name.lower():
+                            if attempt < retries - 1:
+                                delay = 2 ** attempt
+                                logger.warning(
+                                    f"⏳ {error_name} при отправке подписчику ID={telegram_id} "
+                                    f"({news_id_str}попытка {attempt + 1}/{retries}), повтор через {delay}с..."
+                                )
+                                await asyncio.sleep(delay)
+                            else:
+                                logger.error(
+                                    f"❌ Превышено количество попыток отправки подписчику ID={telegram_id} "
+                                    f"({news_id_str}{error_name})"
+                                )
+                                return False
                         # Не временная ошибка — сразу логируем и прекращаем
                         logger.error(
                             f"❌ Ошибка отправки новости подписчику ID={telegram_id} "
-                            f"({news_id_str}ошибка: {type(e).__name__}: {e})"
+                            f"({news_id_str}ошибка: {error_name}: {e})"
                         )
                         return False
 
@@ -715,39 +821,149 @@ def _decrypt_subscriber_id(subscriber: User) -> int | None:
         return None
 
 
-def _format_subscriber_message(news_text: str, urgency: int = 1) -> str:
+def format_urgent_news_html(
+    text: str,
+    urgency: int = 4,
+    category: str = '',
+    bot_username: str = '',
+    publisher_channel_link: str = '',
+) -> str:
     """
-    Сформировать сообщение для подписчика.
+    Единый формат срочной новости для всех каналов доставки.
 
-    Args:
-        news_text: Текст новости
-        urgency: Срочность (1-5, >=4 — срочная новость)
+    Аргументы:
+        text: Сырой текст поста/новости
+        urgency: Срочность (1-5, >=4 — срочная)
+        category: Категория новости
+        bot_username: Username бота для ссылки (@botname)
+        publisher_channel_link: Ссылка на канал публикации (t.me/channel)
 
     Returns:
-        Форматированное сообщение
+        Форматированное HTML-сообщение
     """
-    # Приводим к int (может быть строкой из БД)
+    try:
+        urgency = int(urgency) if urgency else 4
+    except (ValueError, TypeError):
+        urgency = 4
+
+    # Все новости urgency >= 4 — «Срочная новость»
+    if urgency >= 4:
+        header = "🚨 <b>Срочная новость!</b>"
+    else:
+        header = "📰 <b>Новость</b>"
+
+    # Очищаем тело
+    clean = html.escape(text.strip()) if text else ''
+    clean_lines = []
+    for ln in clean.split('\n'):
+        ln_s = ln.strip()
+        if ln_s.startswith('\U0001f4e2') and 'точник' in ln_s:
+            continue
+        clean_lines.append(ln_s)
+    clean = '\n'.join(ln for ln in clean_lines if ln)
+
+    if len(clean) > 800:
+        clean = clean[:800] + '...'
+
+    parts = [header]
+
+    if category:
+        parts.append(f"<b>{html.escape(str(category))}</b>")
+
+    parts.append(clean)
+
+    # Подвал: ссылки на канал и бота
+    footer_parts = []
+    if publisher_channel_link:
+        safe_link = html.escape(publisher_channel_link)
+        footer_parts.append(f'<a href="{safe_link}">\U0001f4f0 Канал</a>')
+    if bot_username:
+        safe_url = f'https://t.me/{html.escape(bot_username)}'
+        footer_parts.append(f'<a href="{safe_url}">\U0001f916 Бот</a>')
+
+    if footer_parts:
+        parts.append(' \u2022 '.join(footer_parts))
+
+    return '\n\n'.join(parts)
+
+
+def _format_subscriber_message(
+    news_text: str,
+    urgency: int = 1,
+    category: str = '',
+    channel_title: str = '',
+    bot_username: str = '',
+    publisher_channel_link: str = '',
+) -> str:
+    """
+    Сформировать HTML-сообщение для подписчика.
+
+    Для срочных новостей (urgency >= 4) — делегирует в format_urgent_news_html.
+    Для плановых — использует свой формат.
+
+    Args:
+        news_text: Текст новости (может содержать HTML-разметку)
+        urgency: Срочность (1-5, >=4 — срочная новость)
+        category: Категория новости
+        channel_title: Название канала (для совместимости)
+        bot_username: Username бота для ссылки
+        publisher_channel_link: Ссылка на канал публикации
+
+    Returns:
+        Форматированное HTML-сообщение
+    """
     try:
         urgency = int(urgency) if urgency else 1
     except (ValueError, TypeError):
         urgency = 1
 
-    # Заголовок в зависимости от срочности
+    # Для срочных — единый формат
     if urgency >= 4:
-        title = "🚨 <b>Срочная новость!</b>"
-    else:
-        title = "📰 <b>Новость для вас!</b>"
+        urgent = format_urgent_news_html(
+            text=news_text,
+            urgency=urgency,
+            category=category,
+            bot_username=bot_username,
+            publisher_channel_link=publisher_channel_link,
+        )
+        return urgent + '\n\n<i>Чтобы отписаться, нажмите /unsubscribe</i>'
 
-    # Экранируем HTML символы в тексте новости
-    safe_text = html.escape(news_text[:500])
-    if len(news_text) > 500:
-        safe_text += '...'
+    # Плановая
+    header = "\U0001f4f0 <b>Новость для вас!</b>"
 
-    return (
-        f"{title}\n\n"
-        f"{safe_text}\n\n"
-        f"<i>Чтобы отписаться, нажмите /unsubscribe</i>"
-    )
+    clean_text = news_text.strip()
+    for prefix in [
+        "\U0001f6a8 <b>Срочная новость!</b>\n", "\U0001f6a8 <b>Срочная новость!</b>",
+        "\U0001f4f0 <b>Новость для вас!</b>\n", "\U0001f4f0 <b>Новость для вас!</b>",
+    ]:
+        if clean_text.startswith(prefix):
+            clean_text = clean_text[len(prefix):].strip()
+            break
+
+    # Чистим артефакты источника
+    clean_lines = []
+    for ln in clean_text.split('\n'):
+        ln_s = ln.strip()
+        if ln_s.startswith('\U0001f4e2') and 'точник' in ln_s:
+            continue
+        clean_lines.append(ln_s)
+    clean_text = '\n'.join(ln for ln in clean_lines if ln)
+
+    if not clean_text.startswith('<') and not any(t in clean_text for t in ['<b>', '<i>', '<code>']):
+        clean_text = html.escape(clean_text)
+
+    lines = [ln.strip() for ln in clean_text.split('\n') if ln.strip()]
+    body_text = '\n'.join(lines)
+    if len(body_text) > 500:
+        body_text = body_text[:500] + '...'
+
+    parts = [header]
+    if category:
+        parts.append(f"<b>{html.escape(str(category))}</b>")
+    parts.append(body_text)
+    parts.append("<i>Чтобы отписаться, нажмите /unsubscribe</i>")
+
+    return '\n\n'.join(parts)
 
 
 async def send_message_with_retry(

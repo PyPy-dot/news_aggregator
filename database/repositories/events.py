@@ -61,30 +61,36 @@ class EventRepository(BaseRepository[EventContext]):
 
     async def create_event(
         self,
-        post_id: int,
-        context_data: dict,
-        event_category: str,
+        post_id: Optional[int] = None,
+        context_data: Optional[dict] = None,
+        event_category: str = '',
         tags: Optional[list[str]] = None,
+        source_news_ids: Optional[list[str]] = None,
     ) -> EventContext:
         """
-        Создать новое событие (case-insensitive tags).
+        Создать новое событие.
 
         Args:
-            post_id: ID оригинального поста
+            post_id: ID оригинального поста (опционально — события общие для всех источников)
             context_data: Данные контекста
             event_category: Категория события
             tags: Список тегов
+            source_news_ids: Список ID исходных новостей с префиксом (["tg_5", "rss_13"])
 
         Returns:
             Созданное событие
         """
         event = EventContext(
             post_id=post_id,
-            context_data=json.dumps(context_data, ensure_ascii=False),
+            context_data=json.dumps(context_data or {}, ensure_ascii=False),
             event_category=event_category,
             # Нормализация тэгов к нижнему регистру
             tags=json.dumps(
                 [tag.lower() for tag in tags] if tags else [],
+                ensure_ascii=False
+            ),
+            source_news_ids=json.dumps(
+                source_news_ids or [],
                 ensure_ascii=False
             ),
             created_at=datetime.now(timezone.utc)

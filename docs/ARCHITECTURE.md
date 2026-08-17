@@ -1,8 +1,8 @@
 # 🏗️ Архитектура News Aggregator
 
-**Версия:** 4.0.0
-**Дата обновления:** 2026-08-16
-**Статус:** ✅ Актуализирована — ServiceManager, Health Check, Web Admin v2
+**Версия:** 4.2.0
+**Дата обновления:** 2026-08-17
+**Статус:** ✅ Актуализирована — мульти-источниковая категоризация (Telegram + RSS + Web)
 
 ---
 
@@ -176,47 +176,84 @@ Singleton для управления жизненным циклом серви
 
 ---
 
-### Categorization (категоризация)
+### Categorization (категоризация — мульти-источник)
 
 ```
 services/categorization/
-├── queue.py            # CategorizationQueue (локальная + Redis дубликат)
+├── queue.py            # CategorizationQueue (telegram/rss/web, локальная + Redis)
 ├── classifier.py       # NewsClassifier + ClassificationResult
-├── saver.py            # NewsSaver
-└── processor.py        # CategorizationProcessor
+├── saver.py            # NewsSaver (Telegram-specific)
+└── processor.py        # CategorizationProcessor (диспатчер по source_type)
+```
+
+**CategorizationTask:**
+```python
+@dataclass
+class CategorizationTask:
+    source_type: str    # "telegram" | "rss" | "web"
+    source_id: Optional[int]  # ID в сырой таблице (rss_news.id, web_news.id)
+    channel_id: int     # Только для Telegram
+    prompt: str
+    original_text: str
+    title: str          # Название источника
+    desc: str           # Описание источника
 ```
 
 **Поток данных:**
 ```
-ListenerBot → CategorizationQueue → CategorizationProcessor
-                                    ├─ CategorizerAgent (AI)
-                                    ├─ NewsClassifier (парсинг)
-                                    ├─ NewsSaver (БД)
-                                    └─ NotificationService (уведомления)
+ListenerBot ──┐
+RSS Parser ───┤──→ CategorizationQueue ──→ CategorizationProcessor
+Web Parser ───┘                           ├─ CategorizerAgent (AI)
+                                          ├─ NewsClassifier (парсинг)
+                                          ├─ для Telegram: NewsSaver → posts
+                                          └─ для RSS/Web: update_category() → rss_news / web_news
 ```
 
-**CategorizationQueue:**
-- Локальная очередь (`deque`, maxlen=10) — основной потребитель
-- Redis — дублирующий бэкэнд для распределённых воркеров
-- `add()` пишет в локальную очередь + дублирует в Redis
-- `get()` читает из локальной очереди
+**Обработка по source_type:**
+| Источник | Срочность 4-5 | Срочность 1-3 |
+|----------|--------------|---------------|
+| Telegram | Сохранение поста → Analyst → публикация/уведомления | Пост + событие → Analyst |
+| RSS | Обновить rss_news (category, urgency, tags) | Аналогично |
+| Web | Аналогично RSS | Аналогично |
 
 ---
 
-### News (обработка новостей)
+### News (обработка новостей — мульти-источник)
 
 ```
 services/news/
-├── orchestrator.py     # NewsOrchestrator + стратегии
+├── orchestrator.py     # NewsOrchestrator + стратегии + мульти-источник
 ├── generation.py       # NewsGenerationService
 ├── context.py          # EventContextService
 ├── moderation.py       # ModerationNotificationService
-├── helpers.py          # Helper-функции (векторный поиск)
+├── helpers.py          # Helper-функции (векторный поиск, add_generated_news)
 └── strategies/
     ├── base.py         # NewsProcessingStrategy (абстрактный)
     ├── urgent.py       # UrgentNewsStrategy (срочность 4-5)
     ├── scheduled.py    # ScheduledNewsStrategy (срочность 1-3)
     └── trusted.py      # TrustedSourceStrategy (доверенные источники)
+```
+
+**Мульти-источниковый пайплайн (Orchestrator):**
+```
+posts (checked_at=False)         ──┐
+rss_news (processed=False)  ──────┤──→ _collect_unprocessed_all_sources()
+web_news (processed=False)  ──────┘
+                                        │
+                                группировка по категориям
+                                        │
+                    ┌───────────────────┼───────────────────┐
+                    ▼                   ▼                   ▼
+            категория A           категория B         категория C
+                    │                   │                   │
+            Vector Search (events)      │                   │
+            EditorAgent (сводка)        │                   │
+            ArchivistAgent (контекст)   │                   │
+            generated_news              │                   │
+              source_ids=["tg_5",       │                   │
+                           "rss_13"]    │                   │
+                    ▼                   ▼                   ▼
+            mark_batch_processed() → все источники отмечены
 ```
 
 ---
@@ -308,8 +345,9 @@ services/scheduler/
 | `daily_morning` | по расписанию | Утренняя обработка (по умолчанию 09:00 МСК) |
 | `daily_evening` | по расписанию | Вечерняя обработка (по умолчанию 21:00 МСК) |
 | Обработка событий | 48 часов | Настройка: `event_processing_interval_hours` |
-| Проверка задач | 30 секунд | Таблица `tasks` |
-| RSS-парсинг | 5 минут | Активные RSS источники |
+| Проверка задач | 10 секунд | Таблица `tasks` |
+| RSS-парсинг | 5 минут | Активные RSS источники → CategorizationQueue |
+| Web-парсинг | 5 минут | Активные Web источники → CategorizationQueue |
 
 ---
 

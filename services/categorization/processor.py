@@ -68,6 +68,8 @@ class CategorizationProcessor:
         """
         Обработать одну задачу категоризации.
 
+        Работает для всех источников: telegram, rss, web.
+
         Args:
             task: Задача на категоризацию
         """
@@ -80,7 +82,10 @@ class CategorizationProcessor:
 
             # Проверяем на рекламу
             if classification.is_advertisement:
-                logger.info(f"🚫 Пропущено (реклама): канал ID={task.channel_id}")
+                logger.info(
+                    f"🚫 Пропущено (реклама): {task.source_type} "
+                    f"source_id={task.source_id or task.channel_id}"
+                )
                 return
 
             # Проверяем срочность и обрабатываем соответственно
@@ -101,21 +106,39 @@ class CategorizationProcessor:
         """
         Обработать срочную новость.
 
-        ВСЕ новости проходят через AnalystAgent перед публикацией.
-        После анализа:
-        - Доверенные источники: автоматическая публикация
-        - Обычные срочные: уведомление админам → публикация после одобрения
-        - Если нет админов: сохранение для планировщика
+        Для Telegram: полная логика (Analyst → публикация / уведомления).
+        Для RSS/Web: обогащение сырой записи + ожидание планировщика.
 
         Args:
             task: Задача на категоризацию
             classification: Результат классификации
         """
         logger.info(
-            f"⚡ СРОЧНО! Срочность {classification.urgency}, "
+            f"⚡ СРОЧНО! {task.source_type} срочность {classification.urgency}, "
             f"категория {classification.category}"
         )
 
+        if task.source_type == 'telegram':
+            await self._handle_urgent_telegram(task, classification)
+        else:
+            await self._save_non_telegram_classification(
+                task=task,
+                classification=classification,
+            )
+
+    async def _handle_urgent_telegram(
+        self,
+        task: CategorizationTask,
+        classification: ClassificationResult,
+    ) -> None:
+        """
+        Обработать срочную Telegram-новость.
+
+        Логика:
+        - Сохранение поста → Analyst → обновление поста
+        - Доверенные источники: авто-публикация
+        - Обычные: уведомление админам
+        """
         # Сохраняем новость в БД
         post_id = await self.saver.save_urgent_news(
             channel_id=task.channel_id,
@@ -127,7 +150,7 @@ class CategorizationProcessor:
         channel_title = channel.title if channel else 'Неизвестно'
         is_trusted = channel and channel.is_trusted
 
-        # ВСЕГДА передаём аналитику (включая доверенные источники)
+        # Аналитика
         analysis_result = await self._analyze_post(
             post_id=post_id,
             text=classification.text,
@@ -138,7 +161,6 @@ class CategorizationProcessor:
             logger.error(f"❌ Ошибка анализа поста ID={post_id}")
             return
 
-        # Обновляем пост результатами анализа
         await self._update_post_with_analysis(
             post_id=post_id,
             analysis=analysis_result,
@@ -151,13 +173,11 @@ class CategorizationProcessor:
             f"тэгов={len(analysis_result['post_tags'])}"
         )
 
-        # Проверяем: доверенный источник?
         if is_trusted:
             logger.info(
                 f"✅ ДОВЕРЕННЫЙ ИСТОЧНИК! Публикация после анализа "
                 f"(пост ID={post_id})"
             )
-            # Публикуем после анализа
             await self._publish_after_analysis(
                 post_id=post_id,
                 text=classification.text,
@@ -168,7 +188,6 @@ class CategorizationProcessor:
             )
             return
 
-        # Обычные срочные новости — уведомление админам
         notifications_sent = await self._notify_urgent_news(
             post_id=post_id,
             text=classification.text,
@@ -177,7 +196,6 @@ class CategorizationProcessor:
             channel_title=channel_title,
         )
 
-        # Если нет админов — новость будет обработана планировщиком
         if not notifications_sent:
             logger.info(
                 f"📊 Срочная новость ID={post_id} будет обработана планировщиком "
@@ -397,25 +415,37 @@ class CategorizationProcessor:
         """
         Обработать несрочную новость.
 
-        ВСЕ новости проходят через AnalystAgent.
-        После анализа новость сохраняется в БД для обработки планировщиком.
+        Для Telegram: сохранение поста + события → Analyst → update.
+        Для RSS/Web: обогащение сырой записи (категория, тэги, urgency).
 
         Args:
             task: Задача на категоризацию
             classification: Результат классификации
         """
         logger.info(
-            f"📊 В план: Срочность {classification.urgency}, "
+            f"📊 В план ({task.source_type}): Срочность {classification.urgency}, "
             f"категория {classification.category}"
         )
 
-        # Сохраняем новость в БД
+        if task.source_type == 'telegram':
+            await self._handle_scheduled_telegram(task, classification)
+        else:
+            await self._save_non_telegram_classification(
+                task=task,
+                classification=classification,
+            )
+
+    async def _handle_scheduled_telegram(
+        self,
+        task: CategorizationTask,
+        classification: ClassificationResult,
+    ) -> None:
+        """Обработать несрочную Telegram-новость (бывшая логика)."""
         post_id, event_id = await self.saver.save_scheduled_news(
             channel_id=task.channel_id,
             classification=classification,
         )
 
-        # Передаём аналитику
         analysis_result = await self._analyze_post(
             post_id=post_id,
             text=classification.text,
@@ -423,7 +453,6 @@ class CategorizationProcessor:
         )
 
         if analysis_result:
-            # Обновляем пост результатами анализа
             await self._update_post_with_analysis(
                 post_id=post_id,
                 analysis=analysis_result,
@@ -437,6 +466,73 @@ class CategorizationProcessor:
             )
         else:
             logger.warning(f"⚠️ Пост ID={post_id} сохранён без анализа")
+
+    async def _save_non_telegram_classification(
+        self,
+        task: CategorizationTask,
+        classification: ClassificationResult,
+    ) -> None:
+        """
+        Сохранить результаты категоризации в сырую таблицу (RSS/Web).
+
+        Обновляет category, urgency, category_confidence, tags
+        в соответствующей таблице (rss_news или web_news).
+
+        Args:
+            task: Задача на категоризацию
+            classification: Результат классификации
+        """
+        from services.database import get_database_service
+        from database import RepositoryFactory
+
+        if not task.source_id:
+            logger.error(
+                f"❌ {task.source_type} задача без source_id — "
+                f"нельзя сохранить результаты категоризации"
+            )
+            return
+
+        db_service = get_database_service()
+        async with db_service.session_context() as session:
+            factory = RepositoryFactory(session)
+
+            # Аналитика для определения тегов и confidence
+            analysis_result = await self._analyze_post(
+                post_id=task.source_id,
+                text=classification.text,
+                category=classification.category,
+            )
+
+            tags = analysis_result.get('post_tags', []) if analysis_result else []
+            confidence = analysis_result.get('confidence', classification.confidence) if analysis_result else classification.confidence
+
+            if task.source_type == 'rss':
+                repo = factory.rss_news()
+                await repo.update_category(
+                    news_id=task.source_id,
+                    category=classification.category,
+                    urgency=classification.urgency,
+                    confidence=confidence,
+                    tags=tags if tags else None,
+                )
+            elif task.source_type == 'web':
+                repo = factory.web_news()
+                await repo.update_category(
+                    news_id=task.source_id,
+                    category=classification.category,
+                    urgency=classification.urgency,
+                    confidence=confidence,
+                    tags=tags if tags else None,
+                )
+            else:
+                logger.warning(f"⚠️ Неизвестный source_type: {task.source_type}")
+                return
+
+        logger.info(
+            f"✅ {task.source_type.upper()} {task.source_id} категоризована: "
+            f"{classification.category}, urgency={classification.urgency}, "
+            f"confidence={confidence:.2f}, tags={tags}"
+        )
 
     async def _notify_urgent_news(
         self,

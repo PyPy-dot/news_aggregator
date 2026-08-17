@@ -20,18 +20,24 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CategorizationTask:
     """
-    Задача на категоризацию.
+    Задача на категоризацию (единый формат для всех источников).
 
     Attributes:
-        channel_id: ID канала в Telegram
+        source_type: Тип источника: "telegram", "rss", "web"
+        source_id: ID записи в сырой таблице (rss_news.id, web_news.id) —
+            используется для обновления результатов категоризации.
+            Для Telegram None (там channel_id).
+        channel_id: ID канала в Telegram (только для source_type="telegram")
         prompt: Промпт для AI
         original_text: Исходный текст поста
-        title: Название канала
-        desc: Описание канала
+        title: Название источника
+        desc: Описание источника
     """
-    channel_id: int
-    prompt: str
-    original_text: str
+    source_type: str = 'telegram'
+    source_id: Optional[int] = None
+    channel_id: int = 0
+    prompt: str = ''
+    original_text: str = ''
     title: str = ''
     desc: str = ''
 
@@ -66,9 +72,9 @@ class CategorizationQueue:
         self._not_empty = asyncio.Event()
 
         if self._use_redis:
-            logger.info("✅ CategorizationQueue использует Redis (с локальным fallback)")
+            logger.debug("CategorizationQueue использует Redis (с локальным fallback)")
         else:
-            logger.info("✅ CategorizationQueue использует локальную очередь")
+            logger.debug("CategorizationQueue использует локальную очередь")
 
         self._running = False
 
