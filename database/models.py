@@ -73,6 +73,8 @@ class GeneratedNews(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     # Сгенерированный текст новости
     text = mapped_column(String)
+    # ID исходных новостей с префиксом источника (JSON: ["tg_5", "rss_13", "web_10"])
+    source_ids = mapped_column(String, default='[]')  # JSON: ["tg_5", "rss_13"]
     # ID событий/контекстов, использованных при генерации (JSON список)
     source_event_ids = mapped_column(String, default='[]')  # JSON: [1, 2]
     # Категория сгенерированной новости
@@ -98,8 +100,10 @@ class GeneratedNews(Base):
 class EventContext(Base):
     __tablename__ = 'events'
     id: Mapped[int] = mapped_column(primary_key=True)
-    # ID оригинального поста
-    post_id = mapped_column(ForeignKey(TelegramPost.id))
+    # ID оригинального поста (nullable, без FK — события общие для всех источников)
+    post_id = mapped_column(Integer, nullable=True)
+    # Список ID исходных новостей, на основе которых создан контекст (JSON: ["tg_5", "rss_13"])
+    source_news_ids = mapped_column(String, default='[]')
     # Контекст события (JSON)
     context_data = mapped_column(String)  # JSON строка с контекстом
     # Категория события (для группировки)
@@ -303,16 +307,18 @@ class RSSNews(Base):
     published_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)  # Дата публикации
     guid: Mapped[str] = mapped_column(String(1024), nullable=True)  # Уникальный ID
     image_url: Mapped[str] = mapped_column(String(512), nullable=True)  # URL изображения
-    category: Mapped[str] = mapped_column(String(100), nullable=True)  # Категория
-    tags: Mapped[str] = mapped_column(String(512), nullable=True)  # Теги (JSON)
-    processed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # Обработана ли
-    post_id: Mapped[int] = mapped_column(Integer, ForeignKey('posts.id', ondelete='SET NULL'), nullable=True)  # Связанный пост
+    # Поля категоризации (заполняются через CategorizationProcessor)
+    category: Mapped[str] = mapped_column(String(100), nullable=True)  # Категория от AI
+    urgency: Mapped[int] = mapped_column(Integer, nullable=True)  # Срочность (1-5) от AI
+    category_confidence: Mapped[float] = mapped_column(Float, default=0.0)  # Уверенность категории
+    rate: Mapped[int] = mapped_column(Integer, default=50)  # Рейтинг новости (0-100)
+    tags: Mapped[str] = mapped_column(String(512), nullable=True)  # Теги (JSON) от AI
+    processed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # Обработана ли (включая включение в сводку)
+    generated_news_id: Mapped[int] = mapped_column(Integer, nullable=True)  # ID сгенерированной сводки
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, nullable=False)
 
     # Связь с источником
     source = relationship("RSSSource", back_populates="news")
-    # Связь с постом
-    post = relationship("TelegramPost", backref="rss_news")
 
     def __repr__(self):
         return f"<RSSNews(id={self.id}, title='{self.title[:50]}...', source_id={self.source_id}, processed={self.processed})>"
@@ -357,16 +363,18 @@ class WebNews(Base):
     author: Mapped[str] = mapped_column(String(255), nullable=True)
     published_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     image_url: Mapped[str] = mapped_column(String(512), nullable=True)
+    # Поля категоризации (заполняются через CategorizationProcessor)
     category: Mapped[str] = mapped_column(String(100), nullable=True)
+    urgency: Mapped[int] = mapped_column(Integer, nullable=True)  # Срочность (1-5) от AI
+    category_confidence: Mapped[float] = mapped_column(Float, default=0.0)  # Уверенность категории
+    rate: Mapped[int] = mapped_column(Integer, default=50)  # Рейтинг новости (0-100)
     tags: Mapped[str] = mapped_column(String(512), nullable=True)  # JSON
     processed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    post_id: Mapped[int] = mapped_column(Integer, ForeignKey('posts.id', ondelete='SET NULL'), nullable=True)
+    generated_news_id: Mapped[int] = mapped_column(Integer, nullable=True)  # ID сгенерированной сводки
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, nullable=False)
 
     # Связь с источником
     source = relationship("WebSource", back_populates="news")
-    # Связь с постом
-    post = relationship("TelegramPost", backref="web_news")
 
     def __repr__(self):
         return f"<WebNews(id={self.id}, title='{self.title[:50]}...', source_id={self.source_id}, processed={self.processed})>"

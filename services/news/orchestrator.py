@@ -269,19 +269,14 @@ class NewsOrchestrator:
 
     async def process_pending_news_batch(self, hours: int = 48) -> int:
         """
-        Обработать пакет новостей, ожидающих обработки.
+        Обработать пакет новостей из всех источников, ожидающих обработки.
 
-        Используется планировщиком для плановой обработки.
-        Analyst НЕ запускается — посты уже проанализированы CategorizationProcessor.
+        Собирает из трёх таблиц:
+        - posts (Telegram): checked_at=False
+        - rss_news: processed=False + category IS NOT NULL
+        - web_news: processed=False + category IS NOT NULL
 
-        НОВЫЙ АЛГОРИТМ (группировка по категориям):
-        1. Взять первую запись с checked_at=False
-        2. Найти ВСЕ записи с той же категорией
-        3. Векторный поиск в events для контекста
-        4. Передать Editor группу постов + контекст
-        5. Editor генерирует новость
-        6. Передать Archivist (новое/продолжение)
-        7. Отправить на модерацию
+        Группирует по категориям → Editor → Archivist → generated_news.
 
         Args:
             hours: За сколько часов искать новости
@@ -293,37 +288,259 @@ class NewsOrchestrator:
             logger.warning("⚠️ NewsOrchestrator не запущен, обработка отменена")
             return 0
 
-        posts_repo = self.repo_factory.posts()
+        # Собираем из всех источников
+        all_items = await self._collect_unprocessed_all_sources(hours=hours)
 
-        # Получаем посты для обработки (с checked_at=false)
-        posts_to_process = await posts_repo.get_unanalyzed(hours=hours)
-
-        if not posts_to_process:
+        if not all_items:
             logger.info("📭 Нет новостей для обработки (все уже обработаны)")
             return 0
 
-        logger.info(f"📊 Найдено {len(posts_to_process)} новостей для обработки")
+        logger.info(
+            f"📊 Найдено {len(all_items)} новостей для обработки "
+            f"(tg={sum(1 for i in all_items if i['source_type']=='telegram')}, "
+            f"rss={sum(1 for i in all_items if i['source_type']=='rss')}, "
+            f"web={sum(1 for i in all_items if i['source_type']=='web')})"
+        )
 
         # ГРУППИРОВКА ПО КАТЕГОРИЯМ
         categories = {}
-        for post in posts_to_process:
-            cat = post.category or 'Общее'
+        for item in all_items:
+            cat = item.get('category') or 'Общее'
             if cat not in categories:
                 categories[cat] = []
-            categories[cat].append(post)
+            categories[cat].append(item)
 
         logger.info(f"📁 Категории: {', '.join(f'{k}({len(v)})' for k, v in categories.items())}")
 
         processed_count = 0
-        for category, posts in categories.items():
+        for category, items in categories.items():
             try:
-                # Обрабатываем группу постов одной категории
-                await self._process_analyzed_posts_batch(posts, posts_repo, category)
-                processed_count += len(posts)
+                count = await self._process_multi_source_batch(items, category)
+                processed_count += count
             except Exception as e:
-                logger.error(f"Ошибка обработки группы постов категории {category}: {e}", exc_info=True)
+                logger.error(f"Ошибка обработки группы {category}: {e}", exc_info=True)
 
         return processed_count
+
+    async def _collect_unprocessed_all_sources(self, hours: int = 48) -> list[dict]:
+        """
+        Собрать необработанные новости из всех источников.
+
+        Returns:
+            Список dict: {source_type, source_id, text, category, urgency, tags, confidence}
+        """
+        from datetime import datetime, timezone, timedelta
+
+        all_items = []
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+
+        # 1. Telegram posts
+        posts = await self.repo_factory.posts().get_unanalyzed(hours=hours)
+        for post in posts:
+            if post.created_at < cutoff:
+                continue
+            all_items.append({
+                'source_type': 'telegram',
+                'source_id': post.id,
+                'text': post.text,
+                'category': post.category,
+                'urgency': post.urgency,
+                'tags': post.tags,
+                'confidence': post.category_confidence,
+                'created_at': post.created_at,
+            })
+
+        # 2. RSS news
+        rss_items = await self.repo_factory.rss_news().get_unprocessed_with_category(limit=500)
+        for item in rss_items:
+            if item.published_at and item.published_at < cutoff:
+                continue
+            if item.category is None:
+                continue
+            all_items.append({
+                'source_type': 'rss',
+                'source_id': item.id,
+                'text': f"{item.title}\n\n{item.description or ''}",
+                'category': item.category,
+                'urgency': item.urgency,
+                'tags': item.tags,
+                'confidence': item.category_confidence,
+                'created_at': item.created_at,
+            })
+
+        # 3. Web news
+        web_items = await self.repo_factory.web_news().get_unprocessed_with_category(limit=500)
+        for item in web_items:
+            if item.published_at and item.published_at < cutoff:
+                continue
+            if item.category is None:
+                continue
+            all_items.append({
+                'source_type': 'web',
+                'source_id': item.id,
+                'text': f"{item.title}\n\n{item.description or ''}",
+                'category': item.category,
+                'urgency': item.urgency,
+                'tags': item.tags,
+                'confidence': item.category_confidence,
+                'created_at': item.created_at,
+            })
+
+        return all_items
+
+    async def _process_multi_source_batch(
+        self,
+        items: list[dict],
+        category: str,
+    ) -> int:
+        """
+        Обработать группу новостей одной категории (любой источник).
+
+        Args:
+            items: Список унифицированных dict
+            category: Категория
+
+        Returns:
+            Количество обработанных новостей
+        """
+        from services.ai_agent.agents import EditorAgent, ArchivistAgent
+        from services.news.helpers import add_generated_news
+
+        if not items:
+            return 0
+
+        # 1. Собираем тексты
+        texts = [item['text'] for item in items if item.get('text')]
+        if not texts:
+            return 0
+
+        combined_text = '\n\n'.join(texts[:5])
+
+        # 2. Векторный поиск для контекста
+        logger.info(f"🔍 Векторный поиск для категории {category}...")
+        similar_events, similar_posts = await self._find_context(combined_text, category)
+
+        # 3. Editor
+        logger.info(f"🤖 Генерация новости для {len(items)} источников категории {category}...")
+        editor = EditorAgent()
+
+        posts_context = '\n---\n'.join([
+            f"[{item['source_type']}] ID={item['source_id']} (срочность={item.get('urgency')}):\n"
+            f"{item['text'][:300]}"
+            for i, item in enumerate(items[:5])
+        ])
+
+        events_context = ''
+        if similar_events:
+            events_context = '\n\nПохожие события:\n' + '\n'.join([
+                f"- {e.get('event_description', '')[:200]}"
+                for e in similar_events[:3]
+            ])
+
+        editor_prompt = (
+            f"Сгенерируй новость на основе следующих материалов одной категории ({category}):\n\n"
+            f"{posts_context}\n"
+            f"{events_context}\n\n"
+            f"Важно: объедини информацию из всех источников в единую связную новость."
+        )
+
+        editor_response = await editor.send_question(editor_prompt)
+
+        try:
+            news_data = self.parse_json_response(editor_response, required_fields=['text', 'news_tags'])
+        except ValueError as e:
+            logger.error(f"❌ Ошибка парсинга ответа Editor: {e}")
+            await self._mark_batch_processed(items, None)
+            return len(items)
+
+        news_text = news_data.get('text', '')
+        news_tags = news_data.get('news_tags', [])
+
+        if not news_text or len(news_text) < 50:
+            logger.warning(f"⚠️ Пустая новость для категории {category}")
+            await self._mark_batch_processed(items, None)
+            return len(items)
+
+        # Формируем source_ids
+        source_ids = [f"{item['source_type']}_{item['source_id']}" for item in items]
+
+        # 4. Сохраняем новость
+        news_id = await add_generated_news(
+            text=news_text,
+            category=category,
+            tags=news_tags,
+            source_ids=source_ids,
+            source_event_ids=[e['id'] for e in similar_events[:3]] if similar_events else [],
+            moderation_status='pending',
+        )
+
+        logger.info(f"✅ Новость ID={news_id} сгенерирована из {len(items)} источников ({category})")
+
+        # 5. Archivist — создаёт или обновляет контекст события
+        if similar_events or news_id:
+            try:
+                archivist = ArchivistAgent()
+                archivist_prompt = (
+                    f"Определи, является ли эта новость новым событием или продолжением.\n\n"
+                    f"Новость: {news_text[:300]}...\n\n"
+                    f"Похожие события:{events_context}\n\n"
+                    f"Ответь в формате JSON: {{\"is_new_event\": true/false, \"event_description\": \"...\", \"context_data\": {{}}}}"
+                )
+
+                archivist_response = await archivist.send_question(archivist_prompt)
+                archivist_data = self.parse_json_response(
+                    archivist_response,
+                    required_fields=['is_new_event']
+                )
+
+                events_repo = self.repo_factory.events()
+
+                if archivist_data.get('is_new_event', True):
+                    logger.info(f"🆕 Новость ID={news_id} — новое событие")
+                    context_data = archivist_data.get('context_data', {
+                        'event_description': news_text[:200],
+                    })
+                    await events_repo.create_event(
+                        post_id=None,
+                        context_data=context_data,
+                        event_category=category,
+                        tags=news_tags,
+                        source_news_ids=source_ids,
+                    )
+                else:
+                    logger.info(f"🔗 Новость ID={news_id} — продолжение существующего события")
+                    # Можно обновить существующий контекст если needed
+            except Exception as e:
+                logger.error(f"⚠️ Ошибка Archivist: {e}")
+
+        # 6. Отмечаем все источники как обработанные
+        await self._mark_batch_processed(items, news_id)
+
+        logger.info(f"✅ Обработано {len(items)} источников категории {category}")
+        return len(items)
+
+    async def _mark_batch_processed(
+        self,
+        items: list[dict],
+        news_id: int | None,
+    ) -> None:
+        """
+        Отметить все источники как обработанные.
+
+        Args:
+            items: Список унифицированных dict
+            news_id: ID сгенерированной новости (или None)
+        """
+        for item in items:
+            st = item['source_type']
+            sid = item['source_id']
+
+            if st == 'telegram':
+                await self.repo_factory.posts().mark_analyzed(sid, generated_news_id=news_id)
+            elif st == 'rss':
+                await self.repo_factory.rss_news().mark_processed(sid, generated_news_id=news_id)
+            elif st == 'web':
+                await self.repo_factory.web_news().mark_processed(sid, generated_news_id=news_id)
 
     async def _process_analyzed_posts_batch(
         self,

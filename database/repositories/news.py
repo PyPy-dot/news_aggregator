@@ -172,6 +172,7 @@ class NewsRepository(BaseRepository[GeneratedNews]):
         self,
         text: str,
         category: str,
+        source_ids: Optional[list[str]] = None,
         source_event_ids: Optional[list[int]] = None,
         tags: Optional[list[str]] = None,
         moderation_status: str = 'pending',
@@ -184,6 +185,7 @@ class NewsRepository(BaseRepository[GeneratedNews]):
         Args:
             text: Текст новости
             category: Категория
+            source_ids: ID исходных новостей с префиксом (["tg_5", "rss_13", "web_10"])
             source_event_ids: ID событий
             tags: Теги новости
             moderation_status: Статус модерации
@@ -196,6 +198,7 @@ class NewsRepository(BaseRepository[GeneratedNews]):
         news = GeneratedNews(
             text=text,
             category=category,
+            source_ids=json.dumps(source_ids or [], ensure_ascii=False),
             source_event_ids=json.dumps(source_event_ids or [], ensure_ascii=False),
             tags=json.dumps(tags or [], ensure_ascii=False),
             moderation_status=moderation_status,

@@ -61,6 +61,7 @@ class Scheduler:
         self._task_processor_task: Optional[asyncio.Task] = None
         self._event_bus_task: Optional[asyncio.Task] = None
         self._rss_task: Optional[asyncio.Task] = None
+        self._web_task: Optional[asyncio.Task] = None
         self._expired_cleaner_task: Optional[asyncio.Task] = None
 
         self._running = False
@@ -109,6 +110,7 @@ class Scheduler:
         self._task_processor_task = asyncio.create_task(self._run_task_processor())
         self._event_bus_task = asyncio.create_task(self.orchestrator.start_event_bus())
         self._rss_task = asyncio.create_task(self._run_rss_parser())
+        self._web_task = asyncio.create_task(self._run_web_parser())
         self._expired_cleaner_task = asyncio.create_task(self._run_expired_cleaner())
 
         logger.info("✅ Все задачи планировщика запущены")
@@ -155,6 +157,7 @@ class Scheduler:
             (self._task_processor_task, "Обработчик задач"),
             (self._event_bus_task, "Шина событий"),
             (self._rss_task, "RSS парсер"),
+            (self._web_task, "Web парсер"),
             (self._expired_cleaner_task, "Очистка просроченных"),
         ]
 
@@ -477,3 +480,66 @@ class Scheduler:
                 # Продолжаем работу, ошибка не критична
 
         logger.info("👋 RSS парсер остановлен")
+
+    async def _run_web_parser(self) -> None:
+        """
+        Парсинг Web сайтов каждые 5 минут.
+
+        Проверяет активные Web источники и парсит новые новости.
+        """
+        from services.web.processor import WebProcessorService
+        from services.categorization.queue import CategorizationQueue
+
+        logger.info("🌐 Запуск Web парсера (каждые 5 минут)...")
+
+        # Глобальная очередь категоризации — будет установлена при необходимости
+        _categorization_queue: Optional[CategorizationQueue] = None
+
+        while self._running:
+            try:
+                await asyncio.sleep(300)  # 300 секунд = 5 минут
+
+                if not self._running:
+                    break
+
+                async with self._db_service.session_context() as session:
+                    from database import RepositoryFactory
+                    factory = RepositoryFactory(session)
+
+                    # Lazy init очереди
+                    if _categorization_queue is None:
+                        try:
+                            from services.core.container import get_container
+                            container = get_container()
+                            if container:
+                                _categorization_queue = container.categorization_queue
+                        except Exception:
+                            _categorization_queue = CategorizationQueue()
+
+                    web_processor = WebProcessorService(
+                        repo_factory=factory,
+                        categorization_queue=_categorization_queue,
+                    )
+
+                    # Парсим все активные источники
+                    stats = await web_processor.process_all_active_sources(limit=20)
+
+                    if stats['sources_processed'] > 0:
+                        logger.info(
+                            f"🌐 Web: обработано {stats['sources_processed']} источников, "
+                            f"получено {stats['total_news']} новостей, "
+                            f"добавлено {stats['new_news']} новых"
+                        )
+
+                    # Отправляем необработанные в очередь категоризации
+                    queued = await web_processor.categorize_and_process_news(limit=50)
+                    if queued > 0:
+                        logger.info(f"📨 Web: отправлено {queued} новостей в очередь категоризации")
+
+            except asyncio.CancelledError:
+                logger.info("🛑 Web парсер остановлен")
+                break
+            except Exception as e:
+                logger.error(f"❌ Ошибка в Web парсере: {e}")
+
+        logger.info("👋 Web парсер остановлен")

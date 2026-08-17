@@ -1,5 +1,5 @@
 """
-RSS News repository для работы с новостями из RSS.
+Web News repository для работы с новостями из Web источников.
 """
 
 import json
@@ -9,19 +9,19 @@ from typing import Optional, List
 from sqlalchemy import select, desc, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database.models import RSSNews
+from database.models import WebNews
 from database.repositories.base import BaseRepository
 
 logger = logging.getLogger(__name__)
 
 
-class RSSNewsRepository(BaseRepository[RSSNews]):
+class WebNewsRepository(BaseRepository[WebNews]):
     """
-    Репозиторий для работы с RSS новостями.
+    Репозиторий для работы с Web новостями.
     """
 
     def __init__(self, session: AsyncSession) -> None:
-        super().__init__(session, RSSNews)
+        super().__init__(session, WebNews)
 
     async def create_news(
         self,
@@ -32,13 +32,12 @@ class RSSNewsRepository(BaseRepository[RSSNews]):
         content: Optional[str] = None,
         author: Optional[str] = None,
         published_at: Optional[datetime] = None,
-        guid: Optional[str] = None,
         image_url: Optional[str] = None,
         category: Optional[str] = None,
         tags: Optional[List[str]] = None,
-    ) -> RSSNews:
+    ) -> WebNews:
         """
-        Создать новую RSS новость.
+        Создать новую Web новость.
 
         Args:
             source_id: ID источника
@@ -48,15 +47,14 @@ class RSSNewsRepository(BaseRepository[RSSNews]):
             content: Полный текст
             author: Автор
             published_at: Дата публикации
-            guid: Уникальный ID (GUID)
             image_url: URL изображения
-            category: Категория
+            category: Категория источника (предварительная)
             tags: Теги
 
         Returns:
             Созданная новость
         """
-        news = RSSNews(
+        news = WebNews(
             source_id=source_id,
             title=title,
             link=link,
@@ -64,7 +62,6 @@ class RSSNewsRepository(BaseRepository[RSSNews]):
             content=content,
             author=author,
             published_at=published_at,
-            guid=guid,
             image_url=image_url,
             category=category,
             tags=json.dumps(tags, ensure_ascii=False) if tags else None,
@@ -74,12 +71,12 @@ class RSSNewsRepository(BaseRepository[RSSNews]):
         await self.session.commit()
         await self.session.refresh(news)
 
-        logger.debug(f"📰 RSS новость создана: {title[:50]}...")
+        logger.debug(f"📰 Web новость создана: {title[:50]}...")
         return news
 
-    async def get_unprocessed(self, limit: int = 50) -> List[RSSNews]:
+    async def get_unprocessed(self, limit: int = 50) -> List[WebNews]:
         """
-        Получить необработанные новости.
+        Получить необработанные новости (ещё не прошли категоризацию).
 
         Args:
             limit: Максимальное количество новостей
@@ -88,9 +85,9 @@ class RSSNewsRepository(BaseRepository[RSSNews]):
             Список необработанных новостей
         """
         result = await self.session.execute(
-            select(RSSNews)
-            .where(RSSNews.processed == False)
-            .order_by(desc(RSSNews.published_at))
+            select(WebNews)
+            .where(WebNews.processed == False)
+            .order_by(desc(WebNews.published_at))
             .limit(limit)
         )
         return result.scalars().all()
@@ -115,7 +112,7 @@ class RSSNewsRepository(BaseRepository[RSSNews]):
             news.generated_news_id = generated_news_id
 
         await self.session.commit()
-        logger.debug(f"✅ RSS новость отмечена как обработанная: {news.title[:50]}...")
+        logger.debug(f"✅ Web новость отмечена как обработанная: {news.title[:50]}...")
         return True
 
     async def update_category(
@@ -152,10 +149,10 @@ class RSSNewsRepository(BaseRepository[RSSNews]):
             news.tags = json.dumps([tag.lower() for tag in tags], ensure_ascii=False)
 
         await self.session.commit()
-        logger.debug(f"🏷️ RSS новость {news_id} категоризована: {category}, urgency={urgency}")
+        logger.debug(f"🏷️ Web новость {news_id} категоризована: {category}, urgency={urgency}")
         return True
 
-    async def get_unprocessed_with_category(self, limit: int = 50) -> List[RSSNews]:
+    async def get_unprocessed_with_category(self, limit: int = 50) -> List[WebNews]:
         """
         Получить необработанные новости, у которых уже есть категория (прошли категоризацию).
 
@@ -166,123 +163,36 @@ class RSSNewsRepository(BaseRepository[RSSNews]):
             Список новостей с установленной категорией
         """
         result = await self.session.execute(
-            select(RSSNews)
-            .where(RSSNews.processed == False)
-            .where(RSSNews.category.isnot(None))
-            .order_by(desc(RSSNews.published_at))
+            select(WebNews)
+            .where(WebNews.processed == False)
+            .where(WebNews.category.isnot(None))
+            .order_by(desc(WebNews.published_at))
             .limit(limit)
         )
         return result.scalars().all()
-
-    async def exists_by_guid(self, source_id: int, guid: str) -> bool:
-        """
-        Проверить, существует ли новость с таким GUID.
-
-        Args:
-            source_id: ID источника
-            guid: Уникальный ID новости
-
-        Returns:
-            True если существует, False иначе
-        """
-        result = await self.session.execute(
-            select(RSSNews.id)
-            .where(RSSNews.source_id == source_id)
-            .where(RSSNews.guid == guid)
-        )
-        return result.scalar_one_or_none() is not None
 
     async def exists_by_link(self, source_id: int, link: str) -> bool:
-        """
-        Проверить, существует ли новость с такой ссылкой.
-
-        Args:
-            source_id: ID источника
-            link: Ссылка на новость
-
-        Returns:
-            True если существует, False иначе
-        """
+        """Проверить, существует ли новость с такой ссылкой."""
         result = await self.session.execute(
-            select(RSSNews.id)
-            .where(RSSNews.source_id == source_id)
-            .where(RSSNews.link == link)
+            select(WebNews.id)
+            .where(WebNews.source_id == source_id)
+            .where(WebNews.link == link)
         )
         return result.scalar_one_or_none() is not None
 
-    async def get_by_source(self, source_id: int, limit: int = 50) -> List[RSSNews]:
-        """
-        Получить новости по источнику.
-
-        Args:
-            source_id: ID источника
-            limit: Максимальное количество новостей
-
-        Returns:
-            Список новостей
-        """
+    async def get_by_source(self, source_id: int, limit: int = 50) -> List[WebNews]:
+        """Получить новости по источнику."""
         result = await self.session.execute(
-            select(RSSNews)
-            .where(RSSNews.source_id == source_id)
-            .order_by(desc(RSSNews.published_at))
-            .limit(limit)
-        )
-        return result.scalars().all()
-
-    async def get_recent_news(self, hours: int = 24, limit: int = 100) -> List[RSSNews]:
-        """
-        Получить недавние новости.
-
-        Args:
-            hours: За сколько часов
-            limit: Максимальное количество новостей
-
-        Returns:
-            Список новостей
-        """
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
-
-        result = await self.session.execute(
-            select(RSSNews)
-            .where(RSSNews.published_at >= cutoff)
-            .order_by(desc(RSSNews.published_at))
+            select(WebNews)
+            .where(WebNews.source_id == source_id)
+            .order_by(desc(WebNews.published_at))
             .limit(limit)
         )
         return result.scalars().all()
 
     async def count_unprocessed(self) -> int:
-        """
-        Подсчитать количество необработанных новостей.
-
-        Returns:
-            Количество необработанных новостей
-        """
+        """Подсчитать количество необработанных новостей."""
         result = await self.session.execute(
-            select(func.count()).select_from(RSSNews).where(RSSNews.processed == False)
+            select(func.count()).select_from(WebNews).where(WebNews.processed == False)
         )
         return result.scalar() or 0
-
-    async def delete_old_news(self, days: int = 30) -> int:
-        """
-        Удалить старые новости.
-
-        Args:
-            days: Удалять новости старше N дней
-
-        Returns:
-            Количество удалённых новостей
-        """
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-
-        result = await self.session.execute(
-            delete(RSSNews)
-            .where(RSSNews.published_at < cutoff)
-            .where(RSSNews.processed == True)
-        )
-        await self.session.commit()
-
-        deleted_count = result.rowcount
-        if deleted_count > 0:
-            logger.info(f"🗑️ Удалено {deleted_count} старых RSS новостей")
-
-        return deleted_count
