@@ -4,6 +4,78 @@
 
 ---
 
+## 2026-08-17 — v4.2.0 — Унифицированный мульти-источниковый пайплайн
+
+### Мульти-источниковая категоризация (Telegram + RSS + Web)
+
+Единый пайплайн обработки для всех источников. Раньше RSS создавал `posts` напрямую
+с хардкодом `channel_id=-1001`, а Web вообще не был подключён к процессу обработки.
+
+**Архитектура после:**
+```
+Источник → Сырая таблица → CategorizationQueue → Categorizer → Analyst
+  → Обновление сырой таблицы → Orchestrator (batch по категориям)
+  → Editor → Archivist → generated_news (source_ids: ["tg_5", "rss_13", "web_10"])
+```
+
+### Database — модели и миграция
+
+- **`GeneratedNews.source_ids`** — JSON-список исходных новостей с префиксом источника
+- **`EventContext.source_news_ids`** — список новостей, на основе которых создан контекст
+- **`EventContext.post_id`** — больше не привязан FK к `TelegramPost.id` (общий контекст для всех источников)
+- **`RSSNews`** — новые поля: `urgency`, `category_confidence`, `rate`, `generated_news_id`; убран `post_id` (FK к posts)
+- **`WebNews`** — новые поля: `urgency`, `category_confidence`, `rate`, `generated_news_id`; убран `post_id` (FK к posts)
+- **Миграция** `migrate_multisource_2026_08_17.py` — пересоздание `events` без FK, новые поля во всех таблицах
+
+### CategorizationQueue — мульти-источник
+
+- **`CategorizationTask`** — поля `source_type` (telegram/rss/web), `source_id`; `channel_id` теперь опциональный
+- **`CategorizationProcessor`** — диспатчер по `source_type`: Telegram идёт по старой логике, RSS/Web обновляют сырые таблицы через `update_category()`
+
+### RSS — через общую очередь
+
+- **`RSSProcessorService.categorize_and_process_news()`** — больше не создаёт `posts` напрямую;
+  кладёт задачи в `CategorizationQueue` для единой обработки
+
+### Web — полный пайплайн
+
+- **`WebNewsRepository`** — репозиторий с полным API (create, get_unprocessed, mark_processed, update_category)
+- **`WebSourceRepository`** — CRUD источников (create, get_active, get_sources_due_for_check, toggle, delete)
+- **`WebProcessorService`** — парсинг → `web_news` → `CategorizationQueue`
+- **Scheduler `_run_web_parser()`** — запуск каждые 5 минут (как RSS)
+- **Route `/web/`** — CRUD источников, ручной парсинг, список новостей
+
+### Orchestrator — мульти-источниковый
+
+- **`_collect_unprocessed_all_sources()`** — собирает из `posts`, `rss_news`, `web_news`
+- **`_process_multi_source_batch()`** — Editor генерирует сводку из всех источников одной категории;
+  Archivist создаёт контекст события с `source_news_ids`
+- **`_mark_batch_processed()`** — отмечает источники как обработанные в соответствующих таблицах
+- **`generated_news.source_ids`** — `["tg_5", "rss_13", "web_10"]`
+
+### Изменённые файлы (16)
+
+| Файл | Изменения |
+|------|-----------|
+| `database/models.py` | Новые поля, убраны FK |
+| `database/factory.py` | +web_sources(), +web_news() |
+| `database/migrations/migrate_multisource_2026_08_17.py` | **новый** миграция |
+| `database/repositories/web_news.py` | **новый** репозиторий |
+| `database/repositories/web_sources.py` | **новый** репозиторий |
+| `database/repositories/rss_news.py` | update_category(), get_unprocessed_with_category() |
+| `database/repositories/news.py` | source_ids параметр |
+| `database/repositories/events.py` | source_news_ids, post_id nullable |
+| `services/categorization/queue.py` | source_type, source_id |
+| `services/categorization/processor.py` | мульти-источниковая логика |
+| `services/news/orchestrator.py` | мульти-источниковый batch |
+| `services/news/helpers.py` | source_ids параметр |
+| `services/rss/processor.py` | через CategorizationQueue |
+| `services/web/processor.py` | **новый** процессор |
+| `services/scheduler/scheduler.py` | +_run_web_parser() |
+| `services/web_admin/routes/web.py` | CRUD источников |
+
+---
+
 ## 2026-08-17 — v4.1.0 — Семантический поиск, Web Admin страницы, реиндексация
 
 ### Семантический поиск — исправления и абстрактный слой

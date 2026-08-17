@@ -7,7 +7,7 @@
 - RSS/Atom ленты (feedparser)
 - Web-сайты (requests + BeautifulSoup4)
 
-**Версия:** 4.1.0
+**Версия:** 4.2.0
 **Последнее обновление:** 2026-08-17
 
 ---
@@ -66,13 +66,13 @@
 
 | Метрика | Значение |
 |---------|----------|
-| **Строк кода (services)** | ~34 500 |
-| **Строк кода (database)** | ~5 100 |
+| **Строк кода (services)** | ~36 000 |
+| **Строк кода (database)** | ~5 500 |
 | **Файлов тестов** | 63 |
-| **API endpoint'ов** | 52 |
-| **Страниц веб-админки** | 7 (главная, консоль, настройки, новости, каналы, пользователи, задачи, RSS, web) |
+| **API endpoint'ов** | 58 |
+| **Страниц веб-админки** | 8 (главная, консоль, настройки, новости, каналы, пользователи, задачи, RSS, web) |
 | **Модулей** | 16 |
-| **Репозиториев** | 11 |
+| **Репозиториев** | 13 |
 
 ---
 
@@ -299,11 +299,23 @@ python main.py
     → Публикация → Уведомление подписчикам
 ```
 
-### RSS и Web парсинг
+### RSS и Web парсинг (через общую очередь)
 ```
-RSS/Web Parser → БД (rss_news / web_news)
-    → AI категоризация → Post (checked_at=false)
-    → Планировщик → Editor → Archivist → Модерация
+RSS Parser → rss_news (raw)
+Web Parser → web_news (raw)
+    │
+    ├── RSS: CategorizationQueue (source_type='rss')
+    ├── Web: CategorizationQueue (source_type='web')
+    │
+    ├── CategorizerAgent → классификация
+    ├── AnalystAgent → тэги, confidence
+    ├── Обновление сырой таблицы (category, urgency, tags)
+    │
+    ├── Orchestrator (собирает из posts + rss_news + web_news)
+    ├── Группировка по категориям
+    ├── EditorAgent → сводка из всех источников
+    ├── ArchivistAgent → контекст события
+    └── generated_news (source_ids: ["tg_5", "rss_13", "web_10"])
 ```
 
 ---
